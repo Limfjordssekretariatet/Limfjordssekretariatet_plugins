@@ -1,5 +1,6 @@
 import math
 import os
+import processing
 from qgis.PyQt import uic, QtWidgets
 from qgis.PyQt.QtCore import QVariant
 from qgis.PyQt.QtWidgets import QMessageBox
@@ -9,6 +10,7 @@ from qgis.core import (
     QgsCoordinateReferenceSystem, QgsCoordinateTransform,
     QgsCoordinateTransformContext, QgsFeatureRequest
 )
+from .Sliver import clean_layer
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), 'lav_grid_dialog.ui'))
 
@@ -100,13 +102,35 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
 
         provider.addFeatures(features)
         grid_layer.updateExtents()
+
+        # Fix geometrier før sliver-rensning, så vi undgår overlappende artefakter.
+        grid_layer = processing.run("native:fixgeometries", {"INPUT": grid_layer, "OUTPUT": "memory:"})["OUTPUT"]
+        grid_layer.updateExtents()
+
+        # Fjern sliver-artifakter efter grid-oprettelse uden at ændre de overordnede grid-regler.
+        min_area = max(1, int(min_ha * 10000)) if min_ha > 0 else 1
+        sliver_d = min(15.0, max(1.0, math.sqrt(min_area) * 0.2))
+        try:
+            grid_layer = clean_layer(grid_layer, d=sliver_d, min_area=1,
+                                     grid_size=0.001, max_iters=3, despike=0.1)
+        except Exception:
+            pass  # sliver-rensning fejlede – fortsæt med urenset grid
+        grid_layer.setName('Grid')
+        if grid_layer.fields().indexFromName('areal_ha') >= 0:
+            grid_layer.startEditing()
+            for fid, feat in enumerate(grid_layer.getFeatures(), start=1):
+                feat['id'] = fid
+                feat['areal_ha'] = round(feat.geometry().area() / 10000, 4)
+                grid_layer.updateFeature(feat)
+            grid_layer.commitChanges()
+
         QgsProject.instance().addMapLayer(grid_layer)
 
-        total_ha = sum(f.geometry().area() / 10000 for f in features)
-        avg_result = total_ha / len(features)
+        total_ha = sum(f.geometry().area() / 10000 for f in grid_layer.getFeatures())
+        avg_result = total_ha / grid_layer.featureCount()
         QMessageBox.information(
             self, 'Grid oprettet',
-            f'Grid oprettet med {len(features)} felter.\n'
+            f'Grid oprettet med {grid_layer.featureCount()} felter.\n'
             f'Gennemsnitsstørrelse: {avg_result:.2f} ha\n'
             f'Total areal: {total_ha:.1f} ha'
         )
@@ -309,7 +333,7 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         cos_a, sin_a = math.cos(angle), math.sin(angle)
         col_w = length / n_cols
         row_h = width / n_rows
-        eps = 1.0  # 1 m overlap so cell edges don't leave hairline gaps
+        eps = 0.001  # lille tolerance, så celler ikke overlapper i praksis
 
         def make_pt(u, v):
             return QgsPointXY(cx + u * cos_a - v * sin_a,
