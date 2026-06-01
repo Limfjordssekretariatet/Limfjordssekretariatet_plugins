@@ -106,8 +106,8 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         if stream_layer is not None:
             cleaned = self._split_by_streams(cleaned, stream_layer)
             # Fase 5: Re-normaliser efter vandløbssplit
-            # (smelter for-små stumper med nabo på SAMME side; krydser kun som sidste udvej)
             cleaned = self._merge_small(cleaned, min_ha, stream_geom=stream_geom)
+            cleaned = self._subdivide_large(cleaned, avg_ha, max_ha, min_ha)
 
         # Fase 6: Byg endeligt lag
         grid_layer = self._build_layer(cleaned, name='Grid')
