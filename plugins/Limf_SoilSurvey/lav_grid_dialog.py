@@ -86,8 +86,8 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         temp_layer = processing.run("native:fixgeometries",
                                     {"INPUT": temp_layer, "OUTPUT": "memory:"})["OUTPUT"]
         try:
-            temp_layer = clean_layer(temp_layer, d=0.5, min_area=1,
-                                     grid_size=0.001, max_iters=3, despike=0.05)
+            temp_layer = clean_layer(temp_layer, d=15.0, min_area=1,
+                                     grid_size=0.001, max_iters=3, despike=0.1)
         except Exception:
             pass  # sliver-rensning fejlede – fortsæt med urenset grid
 
