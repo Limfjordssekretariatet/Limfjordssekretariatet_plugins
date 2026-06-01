@@ -106,15 +106,17 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         if stream_layer is not None:
             cleaned = self._split_by_streams(cleaned, stream_layer)
 
-            # Fase 5: Normaliser størrelser på hver side af vandløbet.
-            # clean_layer bruges IKKE her – den kender ikke til vandløb og
-            # ville smelte på tværs og slette vandløbet som grænse.
-            cleaned = self._merge_small(cleaned, min_ha, stream_geom=stream_geom)
+            # Fase 5: Snap tynde strimler (< 20 m brede) til vandløbet ved at
+            # smelte dem med nabo på SAMME side. Derefter opdel for-store stykker.
+            SNAP_M = 20.0
+            cleaned = self._merge_small(cleaned, min_ha,
+                                        stream_geom=stream_geom, min_width=SNAP_M)
             cleaned = self._subdivide_large(cleaned, avg_ha, max_ha, min_ha)
 
-            # Fase 6: Re-split – vandløbet er den absolutte endelige grænse
+            # Fase 6: Vandløbet er absolut endelig grænse – re-split + afsluttende snap
             cleaned = self._split_by_streams(cleaned, stream_layer)
-            cleaned = self._merge_small(cleaned, min_ha, stream_geom=stream_geom)
+            cleaned = self._merge_small(cleaned, min_ha,
+                                        stream_geom=stream_geom, min_width=SNAP_M)
 
         # Fase 6: Byg endeligt lag
         grid_layer = self._build_layer(cleaned, name='Grid')
@@ -467,20 +469,28 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
                 result.append(piece)
         return result if result else [geom]
 
-    def _merge_small(self, parcels, min_ha, stream_geom=None):
-        """Iteratively merge parcels below min_ha with the neighbour sharing
-        the longest common boundary.  A merge is only accepted when the result
-        is a single connected polygon — this prevents disconnected MultiPolygons.
+    def _merge_small(self, parcels, min_ha, stream_geom=None, min_width=0.0):
+        """Iteratively merge parcels that are too small OR too thin with the
+        neighbour sharing the longest common boundary.
+        min_width (m): merge polygoner hvis estimeret bredde (4·A/P) < 2·min_width.
         Hvis stream_geom er angivet, prioriteres sammenfletning med naboen på
         SAMME side af vandløbet (krydsende sammenflettninger nedscore kraftigt)."""
         min_area = min_ha * 10000
+        width_threshold = 2.0 * min_width  # 4·A/P ≈ 2·min_dim for rektangel
         parcels = list(parcels)
 
         changed = True
         while changed:
             changed = False
             for i in range(len(parcels)):
-                if parcels[i].area() >= min_area:
+                area = parcels[i].area()
+                too_small = area < min_area
+                too_thin = False
+                if min_width > 0 and not too_small:
+                    perim = parcels[i].length()
+                    if perim > 0:
+                        too_thin = (4.0 * area / perim) < width_threshold
+                if not (too_small or too_thin):
                     continue
 
                 # Build scored candidate list (require a real shared edge, not just a point)
