@@ -144,32 +144,36 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
 
     def _load_streams(self, union_geom, work_crs):
         """Load alle .shp-filer fra Data/Streams, transformer til work_crs,
-        clip til studieområdet og returnér samlet linjegeometri eller None."""
+        og returnér samlet linjegeometri eller None."""
         streams_dir = os.path.join(os.path.dirname(__file__), 'Data', 'Streams')
         if not os.path.isdir(streams_dir):
             return None
+        bbox = union_geom.boundingBox()
         all_geoms = []
         for fname in sorted(os.listdir(streams_dir)):
             if not fname.lower().endswith('.shp'):
                 continue
-            layer = QgsVectorLayer(os.path.join(streams_dir, fname), 'stream', 'ogr')
+            path = os.path.join(streams_dir, fname)
+            layer = QgsVectorLayer(path, 'stream', 'ogr')
             if not layer.isValid():
                 continue
-            need_tr = layer.crs() != work_crs
-            tr = (QgsCoordinateTransform(layer.crs(), work_crs, QgsCoordinateTransformContext())
-                  if need_tr else None)
-            bbox = union_geom.boundingBox()
-            for feat in layer.getFeatures(QgsFeatureRequest().setFilterRect(
-                    tr.transformBoundingBox(bbox, QgsCoordinateTransform.ReverseTransform)
-                    if tr else bbox)):
+            layer_crs = layer.crs()
+            need_tr = layer_crs != work_crs
+            if need_tr:
+                # Separat reverse-transform til filter-bbox
+                tr_rev = QgsCoordinateTransform(work_crs, layer_crs, QgsCoordinateTransformContext())
+                filter_rect = tr_rev.transformBoundingBox(bbox)
+                tr_fwd = QgsCoordinateTransform(layer_crs, work_crs, QgsCoordinateTransformContext())
+            else:
+                filter_rect = bbox
+                tr_fwd = None
+            for feat in layer.getFeatures(QgsFeatureRequest().setFilterRect(filter_rect)):
                 geom = feat.geometry()
                 if not geom or geom.isNull() or geom.isEmpty():
                     continue
-                if tr:
-                    geom.transform(tr)
-                clipped = geom.intersection(union_geom)
-                if clipped and not clipped.isEmpty():
-                    all_geoms.append(QgsGeometry(clipped))
+                if tr_fwd:
+                    geom.transform(tr_fwd)
+                all_geoms.append(QgsGeometry(geom))
         if not all_geoms:
             return None
         result = all_geoms[0]
@@ -178,28 +182,27 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         return result
 
     def _split_by_streams(self, parcels, stream_geom, work_crs):
-        """Split parceller langs vandløbslinjer med native:splitwithlines."""
-        temp = self._build_layer(parcels)
-        stream_layer = QgsVectorLayer(
-            f'LineString?crs={work_crs.authid()}', 'streams', 'memory')
-        dp = stream_layer.dataProvider()
-        f = QgsFeature()
-        f.setGeometry(stream_geom)
-        dp.addFeatures([f])
-        stream_layer.updateExtents()
-        result = processing.run('native:splitwithlines', {
-            'INPUT': temp,
-            'LINES': stream_layer,
-            'OUTPUT': 'memory:'
-        })['OUTPUT']
-        split = []
-        for feat in result.getFeatures():
-            geom = feat.geometry()
-            if geom and not geom.isEmpty():
-                for part in self._single_parts(geom):
-                    if part.area() >= 1:
-                        split.append(QgsGeometry(part))
-        return split if split else parcels
+        """Split parceller langs vandløbslinjer via tiny buffer + difference.
+        Pålideligt for alle linjetyper uanset om de krydser parcel-kanten præcist."""
+        stream_buffer = stream_geom.buffer(0.01, 2)  # 1 cm buffer langs vandløbet
+        result = []
+        for geom in parcels:
+            if not geom.intersects(stream_geom):
+                result.append(geom)
+                continue
+            try:
+                diff = geom.difference(stream_buffer)
+                if diff and not diff.isEmpty():
+                    parts = [p for p in self._single_parts(diff) if p.area() >= 1]
+                    if len(parts) >= 2:
+                        result.extend(QgsGeometry(p) for p in parts)
+                    else:
+                        result.append(QgsGeometry(geom))
+                else:
+                    result.append(QgsGeometry(geom))
+            except Exception:
+                result.append(QgsGeometry(geom))
+        return result if result else parcels
 
     def _load_markkort_parcels(self, union_geom, work_crs):
         """Clip Markkort2024 to union_geom, dissolve overlapping/duplicate features
