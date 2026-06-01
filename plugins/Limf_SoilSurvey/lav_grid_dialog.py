@@ -106,19 +106,15 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         if stream_layer is not None:
             cleaned = self._split_by_streams(cleaned, stream_layer)
 
-            # Fase 5: Rens uheldige former efter vandløbssplit (genbruger fase 2+3)
-            tmp = self._build_layer(cleaned)
-            tmp = processing.run("native:fixgeometries",
-                                 {"INPUT": tmp, "OUTPUT": "memory:"})["OUTPUT"]
-            try:
-                tmp = clean_layer(tmp, d=15.0, min_area=1,
-                                  grid_size=0.001, max_iters=3, despike=0.1)
-            except Exception:
-                pass
-            cleaned = [QgsGeometry(f.geometry()) for f in tmp.getFeatures()
-                       if not f.geometry().isEmpty() and f.geometry().area() >= 1]
+            # Fase 5: Normaliser størrelser på hver side af vandløbet.
+            # clean_layer bruges IKKE her – den kender ikke til vandløb og
+            # ville smelte på tværs og slette vandløbet som grænse.
             cleaned = self._merge_small(cleaned, min_ha, stream_geom=stream_geom)
             cleaned = self._subdivide_large(cleaned, avg_ha, max_ha, min_ha)
+
+            # Fase 6: Re-split – vandløbet er den absolutte endelige grænse
+            cleaned = self._split_by_streams(cleaned, stream_layer)
+            cleaned = self._merge_small(cleaned, min_ha, stream_geom=stream_geom)
 
         # Fase 6: Byg endeligt lag
         grid_layer = self._build_layer(cleaned, name='Grid')
