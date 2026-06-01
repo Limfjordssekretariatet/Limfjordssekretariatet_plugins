@@ -72,19 +72,16 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             QMessageBox.warning(self, 'Fejl', 'Laget indeholder ingen geometri.')
             return
 
-        # Fase 1: Byg grid-polygoner (markkort + vandløbssplit + opsplit + sammenflet)
-        stream_geom, n_streams = self._load_streams(union_geom, work_crs)
+        # Fase 1: Byg grid-polygoner (markkort + opsplit + sammenflet)
         parcels = self._load_markkort_parcels(union_geom, work_crs)
-        if stream_geom is not None:
-            parcels = self._split_by_streams(parcels, stream_geom, work_crs)
         parcels = self._subdivide_large(parcels, avg_ha, max_ha, min_ha)
-        parcels = self._merge_small(parcels, min_ha, stream_geom=stream_geom)
+        parcels = self._merge_small(parcels, min_ha)
 
         if not parcels:
             QMessageBox.warning(self, 'Fejl', 'Ingen felter blev oprettet.')
             return
 
-        # Fase 2: Rens geometriske hairline-artefakter (konservativ d=0.5m)
+        # Fase 2: Rens geometriske hairline-artefakter
         temp_layer = self._build_layer(parcels)
         temp_layer = processing.run("native:fixgeometries",
                                     {"INPUT": temp_layer, "OUTPUT": "memory:"})["OUTPUT"]
@@ -92,24 +89,27 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             temp_layer = clean_layer(temp_layer, d=15.0, min_area=1,
                                      grid_size=0.001, max_iters=3, despike=0.1)
         except Exception:
-            pass  # sliver-rensning fejlede – fortsæt med urenset grid
+            pass
 
         # Fase 3: Re-normaliser størrelser efter rensning
         cleaned = [QgsGeometry(f.geometry()) for f in temp_layer.getFeatures()
                    if not f.geometry().isEmpty() and f.geometry().area() >= 1]
-        cleaned = self._merge_small(cleaned, min_ha, stream_geom=stream_geom)
+        cleaned = self._merge_small(cleaned, min_ha)
         cleaned = self._subdivide_large(cleaned, avg_ha, max_ha, min_ha)
-
-        # Fase 3.5: Re-håndhæv vandløbsgrænser (sliver-rensning kan have smeltet på tværs)
-        if stream_geom is not None:
-            cleaned = self._split_by_streams(cleaned, stream_geom, work_crs)
-            cleaned = self._merge_small(cleaned, min_ha, stream_geom=stream_geom)
 
         if not cleaned:
             QMessageBox.warning(self, 'Fejl', 'Ingen felter efter re-normalisering.')
             return
 
-        # Fase 4: Byg endeligt lag
+        # Fase 4: Split langs vandløb (altid sidst, på det færdige grid)
+        stream_geom, n_streams = self._load_streams(union_geom, work_crs)
+        if stream_geom is not None:
+            cleaned = self._split_by_streams(cleaned, stream_geom, work_crs)
+            # Fase 5: Re-normaliser efter vandløbssplit
+            # (smelter for-små stumper med nabo på SAMME side; krydser kun som sidste udvej)
+            cleaned = self._merge_small(cleaned, min_ha, stream_geom=stream_geom)
+
+        # Fase 6: Byg endeligt lag
         grid_layer = self._build_layer(cleaned, name='Grid')
         QgsProject.instance().addMapLayer(grid_layer)
 
