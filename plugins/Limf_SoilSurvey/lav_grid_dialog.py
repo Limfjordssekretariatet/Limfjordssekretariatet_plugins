@@ -100,6 +100,11 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         cleaned = self._merge_small(cleaned, min_ha, stream_geom=stream_geom)
         cleaned = self._subdivide_large(cleaned, avg_ha, max_ha, min_ha)
 
+        # Fase 3.5: Re-håndhæv vandløbsgrænser (sliver-rensning kan have smeltet på tværs)
+        if stream_geom is not None:
+            cleaned = self._split_by_streams(cleaned, stream_geom, work_crs)
+            cleaned = self._merge_small(cleaned, min_ha, stream_geom=stream_geom)
+
         if not cleaned:
             QMessageBox.warning(self, 'Fejl', 'Ingen felter efter re-normalisering.')
             return
@@ -189,38 +194,38 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         return result, n
 
     def _split_by_streams(self, parcels, stream_geom, work_crs):
-        """Split parceller langs vandløb via native:difference + multiparttosingleparts."""
+        """Split parceller langs vandløbslinjer med native:splitwithlines.
+        Hver stream-feature tilføjes individuelt for at undgå MultiLineString-typemismatch."""
         from qgis.core import QgsMessageLog
 
-        stream_buffer = stream_geom.buffer(1.0, 5)
-        if stream_buffer is None or stream_buffer.isEmpty():
-            QgsMessageLog.logMessage('SoilSurvey: stream buffer fejlede', 'SoilSurvey')
-            return parcels
-
-        # Byg parcel-lag og stream-buffer-lag
         parcel_layer = self._build_layer(parcels)
-        buf_layer = QgsVectorLayer(f'Polygon?crs={work_crs.authid()}', 'strbuf', 'memory')
-        dp = buf_layer.dataProvider()
-        f = QgsFeature()
-        f.setGeometry(stream_buffer)
-        dp.addFeatures([f])
-        buf_layer.updateExtents()
 
-        # Fjern stream-buffer fra parcellerne, opdel derefter multiparts
-        diff_result = processing.run('native:difference', {
+        # Dekomponer stream_geom til individuelle LineString-features
+        stream_layer = QgsVectorLayer(
+            f'LineString?crs={work_crs.authid()}', 'streams', 'memory')
+        dp = stream_layer.dataProvider()
+        stream_feats = []
+        for part in stream_geom.asGeometryCollection():
+            if part and not part.isEmpty():
+                f = QgsFeature()
+                f.setGeometry(part)
+                stream_feats.append(f)
+        if not stream_feats:
+            return parcels
+        dp.addFeatures(stream_feats)
+        stream_layer.updateExtents()
+
+        result_layer = processing.run('native:splitwithlines', {
             'INPUT': parcel_layer,
-            'OVERLAY': buf_layer,
-            'OUTPUT': 'memory:'
-        })['OUTPUT']
-        single_result = processing.run('native:multiparttosingleparts', {
-            'INPUT': diff_result,
+            'LINES': stream_layer,
             'OUTPUT': 'memory:'
         })['OUTPUT']
 
-        result = [QgsGeometry(f.geometry()) for f in single_result.getFeatures()
+        result = [QgsGeometry(f.geometry()) for f in result_layer.getFeatures()
                   if not f.geometry().isEmpty() and f.geometry().area() >= 1]
         QgsMessageLog.logMessage(
-            f'SoilSurvey: vandløbssplit {len(parcels)} → {len(result)} parceller',
+            f'SoilSurvey: vandløbssplit {len(parcels)} → {len(result)} parceller '
+            f'(+{len(result) - len(parcels)} nye)',
             'SoilSurvey')
         return result if result else parcels
 
