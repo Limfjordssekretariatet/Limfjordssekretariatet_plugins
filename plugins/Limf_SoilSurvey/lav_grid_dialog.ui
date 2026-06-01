@@ -57,7 +57,7 @@
         <double>1000.0</double>
        </property>
        <property name="value">
-        <double>5.0</double>
+        <double>2.0</double>
        </property>
        <property name="decimals">
         <number>1</number>
@@ -80,7 +80,7 @@
         <double>1000.0</double>
        </property>
        <property name="value">
-        <double>7.5</double>
+        <double>5.0</double>
        </property>
        <property name="decimals">
         <number>1</number>
@@ -103,7 +103,7 @@
         <double>1000.0</double>
        </property>
        <property name="value">
-        <double>1.0</double>
+        <double>0.2</double>
        </property>
        <property name="decimals">
         <number>2</number>

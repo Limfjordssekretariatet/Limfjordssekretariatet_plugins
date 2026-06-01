@@ -73,7 +73,7 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             return
 
         # Fase 1: Byg grid-polygoner (markkort + vandløbssplit + opsplit + sammenflet)
-        stream_geom = self._load_streams(union_geom, work_crs)
+        stream_geom, n_streams = self._load_streams(union_geom, work_crs)
         parcels = self._load_markkort_parcels(union_geom, work_crs)
         if stream_geom is not None:
             parcels = self._split_by_streams(parcels, stream_geom, work_crs)
@@ -110,11 +110,14 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
 
         total_ha = sum(f.geometry().area() / 10000 for f in grid_layer.getFeatures())
         avg_result = total_ha / grid_layer.featureCount()
+        stream_info = (f'\nVandløb: {n_streams} features lastet og anvendt.'
+                       if n_streams else '\nVandløb: ingen features fundet i området.')
         QMessageBox.information(
             self, 'Grid oprettet',
             f'Grid oprettet med {grid_layer.featureCount()} felter.\n'
             f'Gennemsnitsstørrelse: {avg_result:.2f} ha\n'
             f'Total areal: {total_ha:.1f} ha'
+            + stream_info
         )
         self.accept()
 
@@ -143,11 +146,13 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         return layer
 
     def _load_streams(self, union_geom, work_crs):
-        """Load alle .shp-filer fra Data/Streams, transformer til work_crs,
-        og returnér samlet linjegeometri eller None."""
+        """Load alle .shp-filer fra Data/Streams, transformer til work_crs.
+        Returnerer (QgsGeometry|None, antal_features)."""
+        from qgis.core import QgsMessageLog
         streams_dir = os.path.join(os.path.dirname(__file__), 'Data', 'Streams')
         if not os.path.isdir(streams_dir):
-            return None
+            QgsMessageLog.logMessage(f'SoilSurvey: streams-mappe ikke fundet: {streams_dir}', 'SoilSurvey')
+            return None, 0
         bbox = union_geom.boundingBox()
         all_geoms = []
         for fname in sorted(os.listdir(streams_dir)):
@@ -156,11 +161,11 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             path = os.path.join(streams_dir, fname)
             layer = QgsVectorLayer(path, 'stream', 'ogr')
             if not layer.isValid():
+                QgsMessageLog.logMessage(f'SoilSurvey: kan ikke åbne {fname}', 'SoilSurvey')
                 continue
             layer_crs = layer.crs()
             need_tr = layer_crs != work_crs
             if need_tr:
-                # Separat reverse-transform til filter-bbox
                 tr_rev = QgsCoordinateTransform(work_crs, layer_crs, QgsCoordinateTransformContext())
                 filter_rect = tr_rev.transformBoundingBox(bbox)
                 tr_fwd = QgsCoordinateTransform(layer_crs, work_crs, QgsCoordinateTransformContext())
@@ -174,34 +179,49 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
                 if tr_fwd:
                     geom.transform(tr_fwd)
                 all_geoms.append(QgsGeometry(geom))
+        n = len(all_geoms)
+        QgsMessageLog.logMessage(f'SoilSurvey: {n} vandløbsfeatures fundet i bbox', 'SoilSurvey')
         if not all_geoms:
-            return None
+            return None, 0
         result = all_geoms[0]
         for g in all_geoms[1:]:
             result = result.combine(g)
-        return result
+        return result, n
 
     def _split_by_streams(self, parcels, stream_geom, work_crs):
-        """Split parceller langs vandløbslinjer via tiny buffer + difference.
-        Pålideligt for alle linjetyper uanset om de krydser parcel-kanten præcist."""
-        stream_buffer = stream_geom.buffer(0.01, 2)  # 1 cm buffer langs vandløbet
-        result = []
-        for geom in parcels:
-            if not geom.intersects(stream_geom):
-                result.append(geom)
-                continue
-            try:
-                diff = geom.difference(stream_buffer)
-                if diff and not diff.isEmpty():
-                    parts = [p for p in self._single_parts(diff) if p.area() >= 1]
-                    if len(parts) >= 2:
-                        result.extend(QgsGeometry(p) for p in parts)
-                    else:
-                        result.append(QgsGeometry(geom))
-                else:
-                    result.append(QgsGeometry(geom))
-            except Exception:
-                result.append(QgsGeometry(geom))
+        """Split parceller langs vandløb via native:difference + multiparttosingleparts."""
+        from qgis.core import QgsMessageLog
+
+        stream_buffer = stream_geom.buffer(1.0, 5)
+        if stream_buffer is None or stream_buffer.isEmpty():
+            QgsMessageLog.logMessage('SoilSurvey: stream buffer fejlede', 'SoilSurvey')
+            return parcels
+
+        # Byg parcel-lag og stream-buffer-lag
+        parcel_layer = self._build_layer(parcels)
+        buf_layer = QgsVectorLayer(f'Polygon?crs={work_crs.authid()}', 'strbuf', 'memory')
+        dp = buf_layer.dataProvider()
+        f = QgsFeature()
+        f.setGeometry(stream_buffer)
+        dp.addFeatures([f])
+        buf_layer.updateExtents()
+
+        # Fjern stream-buffer fra parcellerne, opdel derefter multiparts
+        diff_result = processing.run('native:difference', {
+            'INPUT': parcel_layer,
+            'OVERLAY': buf_layer,
+            'OUTPUT': 'memory:'
+        })['OUTPUT']
+        single_result = processing.run('native:multiparttosingleparts', {
+            'INPUT': diff_result,
+            'OUTPUT': 'memory:'
+        })['OUTPUT']
+
+        result = [QgsGeometry(f.geometry()) for f in single_result.getFeatures()
+                  if not f.geometry().isEmpty() and f.geometry().area() >= 1]
+        QgsMessageLog.logMessage(
+            f'SoilSurvey: vandløbssplit {len(parcels)} → {len(result)} parceller',
+            'SoilSurvey')
         return result if result else parcels
 
     def _load_markkort_parcels(self, union_geom, work_crs):
