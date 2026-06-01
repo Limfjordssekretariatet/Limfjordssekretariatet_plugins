@@ -72,10 +72,13 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             QMessageBox.warning(self, 'Fejl', 'Laget indeholder ingen geometri.')
             return
 
-        # Fase 1: Byg grid-polygoner (markkort + opsplit + sammenflet)
+        # Fase 1: Byg grid-polygoner (markkort + vandløbssplit + opsplit + sammenflet)
+        stream_geom = self._load_streams(union_geom, work_crs)
         parcels = self._load_markkort_parcels(union_geom, work_crs)
+        if stream_geom is not None:
+            parcels = self._split_by_streams(parcels, stream_geom, work_crs)
         parcels = self._subdivide_large(parcels, avg_ha, max_ha, min_ha)
-        parcels = self._merge_small(parcels, min_ha)
+        parcels = self._merge_small(parcels, min_ha, stream_geom=stream_geom)
 
         if not parcels:
             QMessageBox.warning(self, 'Fejl', 'Ingen felter blev oprettet.')
@@ -94,7 +97,7 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         # Fase 3: Re-normaliser størrelser efter rensning
         cleaned = [QgsGeometry(f.geometry()) for f in temp_layer.getFeatures()
                    if not f.geometry().isEmpty() and f.geometry().area() >= 1]
-        cleaned = self._merge_small(cleaned, min_ha)
+        cleaned = self._merge_small(cleaned, min_ha, stream_geom=stream_geom)
         cleaned = self._subdivide_large(cleaned, avg_ha, max_ha, min_ha)
 
         if not cleaned:
@@ -138,6 +141,65 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         provider.addFeatures(features)
         layer.updateExtents()
         return layer
+
+    def _load_streams(self, union_geom, work_crs):
+        """Load alle .shp-filer fra Data/Streams, transformer til work_crs,
+        clip til studieområdet og returnér samlet linjegeometri eller None."""
+        streams_dir = os.path.join(os.path.dirname(__file__), 'Data', 'Streams')
+        if not os.path.isdir(streams_dir):
+            return None
+        all_geoms = []
+        for fname in sorted(os.listdir(streams_dir)):
+            if not fname.lower().endswith('.shp'):
+                continue
+            layer = QgsVectorLayer(os.path.join(streams_dir, fname), 'stream', 'ogr')
+            if not layer.isValid():
+                continue
+            need_tr = layer.crs() != work_crs
+            tr = (QgsCoordinateTransform(layer.crs(), work_crs, QgsCoordinateTransformContext())
+                  if need_tr else None)
+            bbox = union_geom.boundingBox()
+            for feat in layer.getFeatures(QgsFeatureRequest().setFilterRect(
+                    tr.transformBoundingBox(bbox, QgsCoordinateTransform.ReverseTransform)
+                    if tr else bbox)):
+                geom = feat.geometry()
+                if not geom or geom.isNull() or geom.isEmpty():
+                    continue
+                if tr:
+                    geom.transform(tr)
+                clipped = geom.intersection(union_geom)
+                if clipped and not clipped.isEmpty():
+                    all_geoms.append(QgsGeometry(clipped))
+        if not all_geoms:
+            return None
+        result = all_geoms[0]
+        for g in all_geoms[1:]:
+            result = result.combine(g)
+        return result
+
+    def _split_by_streams(self, parcels, stream_geom, work_crs):
+        """Split parceller langs vandløbslinjer med native:splitwithlines."""
+        temp = self._build_layer(parcels)
+        stream_layer = QgsVectorLayer(
+            f'LineString?crs={work_crs.authid()}', 'streams', 'memory')
+        dp = stream_layer.dataProvider()
+        f = QgsFeature()
+        f.setGeometry(stream_geom)
+        dp.addFeatures([f])
+        stream_layer.updateExtents()
+        result = processing.run('native:splitwithlines', {
+            'INPUT': temp,
+            'LINES': stream_layer,
+            'OUTPUT': 'memory:'
+        })['OUTPUT']
+        split = []
+        for feat in result.getFeatures():
+            geom = feat.geometry()
+            if geom and not geom.isEmpty():
+                for part in self._single_parts(geom):
+                    if part.area() >= 1:
+                        split.append(QgsGeometry(part))
+        return split if split else parcels
 
     def _load_markkort_parcels(self, union_geom, work_crs):
         """Clip Markkort2024 to union_geom, dissolve overlapping/duplicate features
@@ -374,10 +436,12 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
                 result.append(piece)
         return result if result else [geom]
 
-    def _merge_small(self, parcels, min_ha):
+    def _merge_small(self, parcels, min_ha, stream_geom=None):
         """Iteratively merge parcels below min_ha with the neighbour sharing
         the longest common boundary.  A merge is only accepted when the result
-        is a single connected polygon — this prevents disconnected MultiPolygons."""
+        is a single connected polygon — this prevents disconnected MultiPolygons.
+        Hvis stream_geom er angivet, prioriteres sammenfletning med naboen på
+        SAMME side af vandløbet (krydsende sammenflettninger nedscore kraftigt)."""
         min_area = min_ha * 10000
         parcels = list(parcels)
 
@@ -400,8 +464,19 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
                         if shared is None or shared.isNull() or shared.isEmpty():
                             continue
                         score = shared.length() + shared.area()
-                        if score > 0.1:   # discard corner-only touches (score ≈ 0)
-                            candidates.append((score, j))
+                        if score <= 0.1:   # discard corner-only touches (score ≈ 0)
+                            continue
+                        # Nedscore kraftigt hvis fællesgrænsen løber langs et vandløb
+                        if stream_geom is not None:
+                            try:
+                                overlap = shared.intersection(stream_geom)
+                                if overlap and not overlap.isEmpty():
+                                    frac = overlap.length() / max(shared.length(), 0.001)
+                                    if frac > 0.3:
+                                        score *= 0.001
+                            except Exception:
+                                pass
+                        candidates.append((score, j))
                     except Exception:
                         continue
 
