@@ -72,58 +72,37 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             QMessageBox.warning(self, 'Fejl', 'Laget indeholder ingen geometri.')
             return
 
+        # Fase 1: Byg grid-polygoner (markkort + opsplit + sammenflet)
         parcels = self._load_markkort_parcels(union_geom, work_crs)
         parcels = self._subdivide_large(parcels, avg_ha, max_ha, min_ha)
         parcels = self._merge_small(parcels, min_ha)
 
-        grid_layer = QgsVectorLayer('Polygon?crs=EPSG:25832', 'Grid', 'memory')
-        provider = grid_layer.dataProvider()
-        provider.addAttributes([
-            QgsField('id', QVariant.Int),
-            QgsField('areal_ha', QVariant.Double),
-        ])
-        grid_layer.updateFields()
-
-        features = []
-        fid = 1
-        for geom in parcels:
-            for part in self._single_parts(geom):
-                if part.area() < 1:
-                    continue
-                feat = QgsFeature()
-                feat.setGeometry(part)
-                feat.setAttributes([fid, round(part.area() / 10000, 4)])
-                features.append(feat)
-                fid += 1
-
-        if not features:
+        if not parcels:
             QMessageBox.warning(self, 'Fejl', 'Ingen felter blev oprettet.')
             return
 
-        provider.addFeatures(features)
-        grid_layer.updateExtents()
-
-        # Fix geometrier før sliver-rensning, så vi undgår overlappende artefakter.
-        grid_layer = processing.run("native:fixgeometries", {"INPUT": grid_layer, "OUTPUT": "memory:"})["OUTPUT"]
-        grid_layer.updateExtents()
-
-        # Fjern sliver-artifakter efter grid-oprettelse uden at ændre de overordnede grid-regler.
-        min_area = max(1, int(min_ha * 10000)) if min_ha > 0 else 1
-        sliver_d = min(15.0, max(1.0, math.sqrt(min_area) * 0.2))
+        # Fase 2: Rens geometriske hairline-artefakter (konservativ d=0.5m)
+        temp_layer = self._build_layer(parcels)
+        temp_layer = processing.run("native:fixgeometries",
+                                    {"INPUT": temp_layer, "OUTPUT": "memory:"})["OUTPUT"]
         try:
-            grid_layer = clean_layer(grid_layer, d=sliver_d, min_area=1,
-                                     grid_size=0.001, max_iters=3, despike=0.1)
+            temp_layer = clean_layer(temp_layer, d=0.5, min_area=1,
+                                     grid_size=0.001, max_iters=3, despike=0.05)
         except Exception:
             pass  # sliver-rensning fejlede – fortsæt med urenset grid
-        grid_layer.setName('Grid')
-        if grid_layer.fields().indexFromName('areal_ha') >= 0:
-            grid_layer.startEditing()
-            for fid, feat in enumerate(grid_layer.getFeatures(), start=1):
-                feat['id'] = fid
-                feat['areal_ha'] = round(feat.geometry().area() / 10000, 4)
-                grid_layer.updateFeature(feat)
-            grid_layer.commitChanges()
 
+        # Fase 3: Re-normaliser størrelser efter rensning
+        cleaned = [QgsGeometry(f.geometry()) for f in temp_layer.getFeatures()
+                   if not f.geometry().isEmpty() and f.geometry().area() >= 1]
+        cleaned = self._merge_small(cleaned, min_ha)
+        cleaned = self._subdivide_large(cleaned, avg_ha, max_ha, min_ha)
+
+        if not cleaned:
+            QMessageBox.warning(self, 'Fejl', 'Ingen felter efter re-normalisering.')
+            return
+
+        # Fase 4: Byg endeligt lag
+        grid_layer = self._build_layer(cleaned, name='Grid')
         QgsProject.instance().addMapLayer(grid_layer)
 
         total_ha = sum(f.geometry().area() / 10000 for f in grid_layer.getFeatures())
@@ -135,6 +114,30 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             f'Total areal: {total_ha:.1f} ha'
         )
         self.accept()
+
+    def _build_layer(self, parcels, name='Grid_temp'):
+        """Byg memory-polygon-lag med id/areal_ha fra en liste af QgsGeometry."""
+        layer = QgsVectorLayer('Polygon?crs=EPSG:25832', name, 'memory')
+        provider = layer.dataProvider()
+        provider.addAttributes([
+            QgsField('id', QVariant.Int),
+            QgsField('areal_ha', QVariant.Double),
+        ])
+        layer.updateFields()
+        features = []
+        fid = 1
+        for geom in parcels:
+            for part in self._single_parts(geom):
+                if part.area() < 1:
+                    continue
+                feat = QgsFeature()
+                feat.setGeometry(part)
+                feat.setAttributes([fid, round(part.area() / 10000, 4)])
+                features.append(feat)
+                fid += 1
+        provider.addFeatures(features)
+        layer.updateExtents()
+        return layer
 
     def _load_markkort_parcels(self, union_geom, work_crs):
         """Clip Markkort2024 to union_geom, dissolve overlapping/duplicate features
