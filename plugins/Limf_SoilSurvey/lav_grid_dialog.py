@@ -8,7 +8,7 @@ from qgis.core import (
     QgsProject, QgsVectorLayer, QgsFeature, QgsGeometry,
     QgsField, QgsPointXY, QgsWkbTypes,
     QgsCoordinateReferenceSystem, QgsCoordinateTransform,
-    QgsCoordinateTransformContext, QgsFeatureRequest
+    QgsCoordinateTransformContext, QgsFeatureRequest, QgsMessageLog
 )
 from .Sliver import clean_layer
 
@@ -102,9 +102,9 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             return
 
         # Fase 4: Split langs vandløb (altid sidst, på det færdige grid)
-        stream_geom, n_streams = self._load_streams(union_geom, work_crs)
-        if stream_geom is not None:
-            cleaned = self._split_by_streams(cleaned, stream_geom, work_crs)
+        stream_layer, stream_geom, n_streams = self._load_streams(union_geom, work_crs)
+        if stream_layer is not None:
+            cleaned = self._split_by_streams(cleaned, stream_layer)
             # Fase 5: Re-normaliser efter vandløbssplit
             # (smelter for-små stumper med nabo på SAMME side; krydser kun som sidste udvej)
             cleaned = self._merge_small(cleaned, min_ha, stream_geom=stream_geom)
@@ -151,70 +151,66 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         return layer
 
     def _load_streams(self, union_geom, work_crs):
-        """Load alle .shp-filer fra Data/Streams, transformer til work_crs.
-        Returnerer (QgsGeometry|None, antal_features)."""
-        from qgis.core import QgsMessageLog
+        """Load alle .shp-filer fra Data/Streams som et klar-til-brug QgsVectorLayer
+        (reprojectet + single-part LineStrings). Returnerer (layer, combined_geom, n)."""
         streams_dir = os.path.join(os.path.dirname(__file__), 'Data', 'Streams')
         if not os.path.isdir(streams_dir):
             QgsMessageLog.logMessage(f'SoilSurvey: streams-mappe ikke fundet: {streams_dir}', 'SoilSurvey')
-            return None, 0
-        bbox = union_geom.boundingBox()
-        all_geoms = []
+            return None, None, 0
+
+        layers_to_merge = []
         for fname in sorted(os.listdir(streams_dir)):
             if not fname.lower().endswith('.shp'):
                 continue
             path = os.path.join(streams_dir, fname)
-            layer = QgsVectorLayer(path, 'stream', 'ogr')
-            if not layer.isValid():
+            lyr = QgsVectorLayer(path, 'stream', 'ogr')
+            if not lyr.isValid():
                 QgsMessageLog.logMessage(f'SoilSurvey: kan ikke åbne {fname}', 'SoilSurvey')
                 continue
-            layer_crs = layer.crs()
-            need_tr = layer_crs != work_crs
-            if need_tr:
-                tr_rev = QgsCoordinateTransform(work_crs, layer_crs, QgsCoordinateTransformContext())
-                filter_rect = tr_rev.transformBoundingBox(bbox)
-                tr_fwd = QgsCoordinateTransform(layer_crs, work_crs, QgsCoordinateTransformContext())
-            else:
-                filter_rect = bbox
-                tr_fwd = None
-            for feat in layer.getFeatures(QgsFeatureRequest().setFilterRect(filter_rect)):
-                geom = feat.geometry()
-                if not geom or geom.isNull() or geom.isEmpty():
-                    continue
-                if tr_fwd:
-                    geom.transform(tr_fwd)
-                all_geoms.append(QgsGeometry(geom))
-        n = len(all_geoms)
-        QgsMessageLog.logMessage(f'SoilSurvey: {n} vandløbsfeatures fundet i bbox', 'SoilSurvey')
-        if not all_geoms:
-            return None, 0
-        result = all_geoms[0]
-        for g in all_geoms[1:]:
-            result = result.combine(g)
-        return result, n
+            # Reproject til work_crs hvis nødvendigt
+            if lyr.crs() != work_crs:
+                lyr = processing.run('native:reprojectlayer', {
+                    'INPUT': lyr, 'TARGET_CRS': work_crs, 'OUTPUT': 'memory:'
+                })['OUTPUT']
+            layers_to_merge.append(lyr)
 
-    def _split_by_streams(self, parcels, stream_geom, work_crs):
-        """Split parceller langs vandløbslinjer med native:splitwithlines.
-        Hver stream-feature tilføjes individuelt for at undgå MultiLineString-typemismatch."""
-        from qgis.core import QgsMessageLog
+        if not layers_to_merge:
+            QgsMessageLog.logMessage('SoilSurvey: ingen gyldige stream-lag fundet', 'SoilSurvey')
+            return None, None, 0
 
+        # Sammenflet til ét lag og klip til studieområdets bbox
+        merged = processing.run('native:mergevectorlayers', {
+            'LAYERS': layers_to_merge, 'CRS': work_crs, 'OUTPUT': 'memory:'
+        })['OUTPUT']
+        clipped = processing.run('native:extractbylocation', {
+            'INPUT': merged,
+            'PREDICATE': [0],  # intersects
+            'INTERSECT': self._build_layer([union_geom]),
+            'OUTPUT': 'memory:'
+        })['OUTPUT']
+        # Eksploder multipart → single LineStrings (undgår type-mismatch i splitwithlines)
+        single = processing.run('native:multiparttosingleparts', {
+            'INPUT': clipped, 'OUTPUT': 'memory:'
+        })['OUTPUT']
+
+        n = single.featureCount()
+        QgsMessageLog.logMessage(f'SoilSurvey: {n} vandløbs-LineStrings klar til split', 'SoilSurvey')
+        if n == 0:
+            return None, None, 0
+
+        # Kombineret geometri til _merge_small intersection-test
+        combined = None
+        for feat in single.getFeatures():
+            g = feat.geometry()
+            if g and not g.isEmpty():
+                combined = QgsGeometry(g) if combined is None else combined.combine(g)
+
+        return single, combined, n
+
+    def _split_by_streams(self, parcels, stream_layer):
+        """Split parceller langs vandløb med native:splitwithlines.
+        stream_layer er et klar-til-brug QgsVectorLayer med single-part LineStrings."""
         parcel_layer = self._build_layer(parcels)
-
-        # Dekomponer stream_geom til individuelle LineString-features
-        stream_layer = QgsVectorLayer(
-            f'LineString?crs={work_crs.authid()}', 'streams', 'memory')
-        dp = stream_layer.dataProvider()
-        stream_feats = []
-        for part in stream_geom.asGeometryCollection():
-            if part and not part.isEmpty():
-                f = QgsFeature()
-                f.setGeometry(part)
-                stream_feats.append(f)
-        if not stream_feats:
-            return parcels
-        dp.addFeatures(stream_feats)
-        stream_layer.updateExtents()
-
         result_layer = processing.run('native:splitwithlines', {
             'INPUT': parcel_layer,
             'LINES': stream_layer,
