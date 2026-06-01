@@ -105,7 +105,18 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         stream_layer, stream_geom, n_streams = self._load_streams(union_geom, work_crs)
         if stream_layer is not None:
             cleaned = self._split_by_streams(cleaned, stream_layer)
-            # Fase 5: Re-normaliser efter vandløbssplit
+
+            # Fase 5: Rens uheldige former efter vandløbssplit (genbruger fase 2+3)
+            tmp = self._build_layer(cleaned)
+            tmp = processing.run("native:fixgeometries",
+                                 {"INPUT": tmp, "OUTPUT": "memory:"})["OUTPUT"]
+            try:
+                tmp = clean_layer(tmp, d=15.0, min_area=1,
+                                  grid_size=0.001, max_iters=3, despike=0.1)
+            except Exception:
+                pass
+            cleaned = [QgsGeometry(f.geometry()) for f in tmp.getFeatures()
+                       if not f.geometry().isEmpty() and f.geometry().area() >= 1]
             cleaned = self._merge_small(cleaned, min_ha, stream_geom=stream_geom)
             cleaned = self._subdivide_large(cleaned, avg_ha, max_ha, min_ha)
 
