@@ -86,13 +86,18 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         temp_layer = self._build_layer(parcels)
         temp_layer = processing.run("native:fixgeometries",
                                     {"INPUT": temp_layer, "OUTPUT": "memory:"})["OUTPUT"]
-        temp_layer = processing.run("native:snaptogrid", {
-            "INPUT": temp_layer, "HSPACING": 0.001, "VSPACING": 0.001,
-            "ZSPACING": 0, "MSPACING": 0, "OUTPUT": "memory:"
-        })["OUTPUT"]
-        temp_layer = processing.run("native:fixgeometries",
-                                    {"INPUT": temp_layer, "OUTPUT": "memory:"})["OUTPUT"]
-        parcels = self._eliminate_thin(temp_layer, min_ha, min_width=20.0)
+        # Snap vertices til 1mm grid via QgsGeometry.snappedToGrid (QGIS 3.40-kompatibelt)
+        snapped = []
+        for feat in temp_layer.getFeatures():
+            g = feat.geometry()
+            if g and not g.isEmpty():
+                sg = g.snappedToGrid(0.001, 0.001)
+                if sg and not sg.isEmpty() and sg.area() >= 1:
+                    snapped.append(sg)
+        snap_layer = self._build_layer(snapped)
+        snap_layer = processing.run("native:fixgeometries",
+                                    {"INPUT": snap_layer, "OUTPUT": "memory:"})["OUTPUT"]
+        parcels = self._eliminate_thin(snap_layer, min_ha, min_width=20.0)
 
         # Fase 3: Re-normaliser størrelser
         cleaned = self._merge_small(parcels, min_ha)
