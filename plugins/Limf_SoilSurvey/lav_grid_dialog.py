@@ -118,16 +118,26 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             cleaned = self._merge_small(cleaned, min_ha,
                                         stream_geom=stream_geom, min_width=SNAP_M)
 
-            # Fase 7: Fjern slivers op til 10 m via close+open (despike)
-            cleaned = self._despike(cleaned, despike_m=10.0)
+            # Fase 7: Fjern slivers op til 10 m.
+            # clean_layer identificerer slivers via opening (buffer) men smelter dem
+            # via eliminateselectedpolygons – ingen afrundede kanter, ingen huller.
+            tmp = self._build_layer(cleaned)
+            tmp = processing.run("native:fixgeometries",
+                                 {"INPUT": tmp, "OUTPUT": "memory:"})["OUTPUT"]
+            try:
+                tmp = clean_layer(tmp, d=10.0, min_area=1,
+                                  grid_size=0.001, max_iters=3, despike=0.1)
+            except Exception:
+                pass
+            cleaned = [QgsGeometry(f.geometry()) for f in tmp.getFeatures()
+                       if not f.geometry().isEmpty() and f.geometry().area() >= 1]
 
-            # Fase 8: Re-håndhæv vandløb efter despike (despike kender ikke vandløb)
+            # Fase 8: Re-håndhæv vandløb efter sliver-rensning
             cleaned = self._split_by_streams(cleaned, stream_layer)
             cleaned = self._merge_small(cleaned, min_ha,
                                         stream_geom=stream_geom, min_width=SNAP_M)
 
         # Fase 9: Byg endeligt lag
-        # (kommentar: gammelt 'Fase 8' ovenfor er nu Fase 9)
         grid_layer = self._build_layer(cleaned, name='Grid')
         QgsProject.instance().addMapLayer(grid_layer)
 
