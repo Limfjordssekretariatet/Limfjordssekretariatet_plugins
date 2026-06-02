@@ -118,10 +118,16 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             cleaned = self._merge_small(cleaned, min_ha,
                                         stream_geom=stream_geom, min_width=SNAP_M)
 
-            # Fase 7: Fjern dangles/løse strimler via close+open buffer-sekvens
-            cleaned = self._despike(cleaned, despike_m=1.0)
+            # Fase 7: Fjern slivers op til 10 m via close+open (despike)
+            cleaned = self._despike(cleaned, despike_m=10.0)
 
-        # Fase 8: Byg endeligt lag  (kommentar opdateret fra fase 6)
+            # Fase 8: Re-håndhæv vandløb efter despike (despike kender ikke vandløb)
+            cleaned = self._split_by_streams(cleaned, stream_layer)
+            cleaned = self._merge_small(cleaned, min_ha,
+                                        stream_geom=stream_geom, min_width=SNAP_M)
+
+        # Fase 9: Byg endeligt lag
+        # (kommentar: gammelt 'Fase 8' ovenfor er nu Fase 9)
         grid_layer = self._build_layer(cleaned, name='Grid')
         QgsProject.instance().addMapLayer(grid_layer)
 
