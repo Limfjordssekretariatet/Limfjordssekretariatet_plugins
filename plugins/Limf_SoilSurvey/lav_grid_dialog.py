@@ -118,7 +118,10 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             cleaned = self._merge_small(cleaned, min_ha,
                                         stream_geom=stream_geom, min_width=SNAP_M)
 
-        # Fase 6: Byg endeligt lag
+            # Fase 7: Fjern dangles/løse strimler via close+open buffer-sekvens
+            cleaned = self._despike(cleaned, despike_m=1.0)
+
+        # Fase 8: Byg endeligt lag  (kommentar opdateret fra fase 6)
         grid_layer = self._build_layer(cleaned, name='Grid')
         QgsProject.instance().addMapLayer(grid_layer)
 
@@ -232,6 +235,21 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             f'SoilSurvey: vandløbssplit {len(parcels)} → {len(result)} parceller '
             f'(+{len(result) - len(parcels)} nye)',
             'SoilSurvey')
+        return result if result else parcels
+
+    def _despike(self, parcels, despike_m=1.0):
+        """Fjern dangles/løse strimler via close+open buffer-sekvens.
+        Svarer til Sliver.py's despike-trin: (+d, -d, -d, +d)."""
+        layer = self._build_layer(parcels)
+        for dist in (despike_m, -despike_m, -despike_m, despike_m):
+            layer = processing.run('native:buffer', {
+                'INPUT': layer, 'DISTANCE': dist,
+                'JOIN_STYLE': 0, 'SEGMENTS': 5, 'OUTPUT': 'memory:'
+            })['OUTPUT']
+        layer = processing.run('native:fixgeometries',
+                               {'INPUT': layer, 'OUTPUT': 'memory:'})['OUTPUT']
+        result = [QgsGeometry(f.geometry()) for f in layer.getFeatures()
+                  if not f.geometry().isEmpty() and f.geometry().area() >= 1]
         return result if result else parcels
 
     def _load_markkort_parcels(self, union_geom, work_crs):
