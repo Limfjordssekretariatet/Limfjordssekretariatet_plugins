@@ -81,20 +81,18 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             QMessageBox.warning(self, 'Fejl', 'Ingen felter blev oprettet.')
             return
 
-        # Fase 2: Fjern slivers via geometrisk merge (ingen buffer → ingen huller/afrunding).
-        # min_width=20 svarer til: smelt polygoner smalere end ~20 m med bedste nabo.
-        # fixgeometries efter merge reparerer selvskærende geometrier (årsag til dangles).
+        # Fase 2: Fjern slivers via eliminateselectedpolygons (QGIS-native topologi-merge).
+        # snaptogrid(1mm) sikrer at nabopolygoner deler præcis kant → ingen afviste merges.
         temp_layer = self._build_layer(parcels)
         temp_layer = processing.run("native:fixgeometries",
                                     {"INPUT": temp_layer, "OUTPUT": "memory:"})["OUTPUT"]
-        parcels = [QgsGeometry(f.geometry()) for f in temp_layer.getFeatures()
-                   if not f.geometry().isEmpty() and f.geometry().area() >= 1]
-        parcels = self._merge_small(parcels, min_ha, min_width=20.0)
-        tmp = self._build_layer(parcels)
-        tmp = processing.run("native:fixgeometries",
-                             {"INPUT": tmp, "OUTPUT": "memory:"})["OUTPUT"]
-        parcels = [QgsGeometry(f.geometry()) for f in tmp.getFeatures()
-                   if not f.geometry().isEmpty() and f.geometry().area() >= 1]
+        temp_layer = processing.run("native:snaptogrid", {
+            "INPUT": temp_layer, "HSPACING": 0.001, "VSPACING": 0.001,
+            "ZSPACING": 0, "MSPACING": 0, "OUTPUT": "memory:"
+        })["OUTPUT"]
+        temp_layer = processing.run("native:fixgeometries",
+                                    {"INPUT": temp_layer, "OUTPUT": "memory:"})["OUTPUT"]
+        parcels = self._eliminate_thin(temp_layer, min_ha, min_width=20.0)
 
         # Fase 3: Re-normaliser størrelser
         cleaned = self._merge_small(parcels, min_ha)
@@ -236,6 +234,26 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             f'(+{len(result) - len(parcels)} nye)',
             'SoilSurvey')
         return result if result else parcels
+
+    def _eliminate_thin(self, layer, min_ha, min_width=20.0):
+        """Fjern tynde/små polygoner via qgis:eliminateselectedpolygons.
+        Mere robust end combine() – håndterer korrekt alle topologi-edge-cases."""
+        min_area = min_ha * 10000
+        width_t  = 2.0 * min_width
+        expr = (f'(4.0 * $area / $perimeter < {width_t}) '
+                f'OR ($area < {min_area})')
+        layer.selectByExpression(expr)
+        if layer.selectedFeatureCount() == 0:
+            layer.removeSelection()
+            return [QgsGeometry(f.geometry()) for f in layer.getFeatures()
+                    if not f.geometry().isEmpty() and f.geometry().area() >= 1]
+        result = processing.run('qgis:eliminateselectedpolygons', {
+            'INPUT': layer, 'MODE': 2, 'OUTPUT': 'memory:'
+        })['OUTPUT']
+        result = processing.run('native:fixgeometries',
+                                {'INPUT': result, 'OUTPUT': 'memory:'})['OUTPUT']
+        return [QgsGeometry(f.geometry()) for f in result.getFeatures()
+                if not f.geometry().isEmpty() and f.geometry().area() >= 1]
 
     def _despike(self, parcels, despike_m=1.0):
         """Fjern dangles/løse strimler via close+open buffer-sekvens.
