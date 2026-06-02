@@ -105,8 +105,13 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             cleaned = self._merge_small(cleaned, min_ha,
                                         stream_geom=stream_geom, min_width=SLIVER_WIDTH_M)
 
-        # Fase 4: Endelig topologi-rensning (snap til 1mm-grid fjerner residual-dangles)
-        cleaned = self._snap_clean(cleaned)
+        # Fase 4: Garanteret sliver-fjernelse + needle-rensning.
+        # (a) eliminate dissolver enhver resterende tynd/lille polygon ind i nabo
+        #     (QGIS-native, laver aldrig needles).
+        # (b) miter-buffer opening fjerner de hårfine needle-dangles combine()
+        #     efterlader – firkantet join bevarer 90°-hjørner skarpe.
+        cleaned = self._eliminate_slivers(cleaned, min_ha, SLIVER_WIDTH_M)
+        cleaned = self._remove_spikes(cleaned, eps=0.05)
 
         # Fase 5: Byg endeligt lag
         grid_layer = self._build_layer(cleaned, name='Grid')
@@ -241,6 +246,60 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
                 if part.area() >= 1:
                     cleaned.append(part)
         return cleaned
+
+    def _remove_spikes(self, parcels, eps=0.05):
+        """Fjern hårfine needle-dangles via en miter-buffer opening (erode→dilate).
+        Firkantet join (JOIN_STYLE=2) + høj miter-grænse bevarer 90°-hjørner skarpe,
+        så der IKKE opstår afrundede hjørner (modsat round-join despike). Spidser
+        smallere end ~2·eps forsvinder, resten af geometrien er uændret."""
+        layer = self._build_layer(parcels)
+        for dist in (-eps, eps):
+            try:
+                layer = processing.run('native:buffer', {
+                    'INPUT': layer, 'DISTANCE': dist,
+                    'JOIN_STYLE': 2, 'MITER_LIMIT': 100, 'SEGMENTS': 1,
+                    'OUTPUT': 'memory:'
+                })['OUTPUT']
+            except Exception:
+                return parcels
+        layer = processing.run('native:fixgeometries',
+                               {'INPUT': layer, 'OUTPUT': 'memory:'})['OUTPUT']
+        out = []
+        for f in layer.getFeatures():
+            g = f.geometry()
+            if g and not g.isEmpty():
+                for part in self._single_parts(g):
+                    if part.area() >= 1:
+                        out.append(QgsGeometry(part))
+        return out if out else parcels
+
+    def _eliminate_slivers(self, parcels, min_ha, min_width):
+        """Sidste udvej: fjern resterende for-små/for-tynde polygoner via
+        qgis:eliminateselectedpolygons (dissolve uden needles, ALTID rent)."""
+        layer = self._build_layer(parcels)
+        layer = processing.run('native:fixgeometries',
+                               {'INPUT': layer, 'OUTPUT': 'memory:'})['OUTPUT']
+        min_area = min_ha * 10000
+        expr = (f'(2.0 * $area / $perimeter < {min_width}) '
+                f'OR ($area < {min_area})')
+        layer.selectByExpression(expr)
+        n = layer.selectedFeatureCount()
+        QgsMessageLog.logMessage(
+            f'SoilSurvey: eliminate {n} resterende slivers', 'SoilSurvey')
+        if n == 0:
+            layer.removeSelection()
+            return parcels
+        try:
+            layer = processing.run('qgis:eliminateselectedpolygons', {
+                'INPUT': layer, 'MODE': 2, 'OUTPUT': 'memory:'  # 2 = største fælles kant
+            })['OUTPUT']
+            layer = processing.run('native:fixgeometries',
+                                   {'INPUT': layer, 'OUTPUT': 'memory:'})['OUTPUT']
+        except Exception as e:
+            QgsMessageLog.logMessage(f'SoilSurvey: eliminate fejlede: {e}', 'SoilSurvey')
+            return parcels
+        return [QgsGeometry(f.geometry()) for f in layer.getFeatures()
+                if not f.geometry().isEmpty() and f.geometry().area() >= 1]
 
     def _load_markkort_parcels(self, union_geom, work_crs):
         """Clip Markkort2024 to union_geom, dissolve overlapping/duplicate features
@@ -554,14 +613,19 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
                         chosen_j, chosen_geom = j, parts[0]
                         break
 
-                # … ellers tag bedste kandidat alligevel (sliver SKAL fjernes)
+                # … ellers tag bedste kandidat alligevel (sliver SKAL fjernes).
+                # Behold største del, så et evt. multipart-resultat ikke
+                # re-eksploderes til sliveren igen i _snap_clean.
                 if chosen_j is None:
                     _, j = candidates[0]
                     merged = parcels[i].combine(parcels[j])
                     if merged and not merged.isEmpty():
                         if not merged.isGeosValid():
                             merged = merged.makeValid()
-                        chosen_j, chosen_geom = j, merged
+                        parts = list(self._single_parts(merged))
+                        if parts:
+                            chosen_j = j
+                            chosen_geom = max(parts, key=lambda g: g.area())
 
                 if chosen_j is not None:
                     parcels = [chosen_geom if k == chosen_j else p
@@ -569,4 +633,8 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
                     changed = True
                     break   # genstart ydre løkke
 
+        remaining = sum(1 for p in parcels if is_target(p))
+        QgsMessageLog.logMessage(
+            f'SoilSurvey: merge_small færdig – {len(parcels)} parceller, '
+            f'{remaining} targets tilbage (min_width={min_width})', 'SoilSurvey')
         return parcels
