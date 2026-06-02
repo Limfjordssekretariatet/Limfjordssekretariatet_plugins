@@ -111,7 +111,7 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         # (b) miter-buffer opening fjerner de hårfine needle-dangles combine()
         #     efterlader – firkantet join bevarer 90°-hjørner skarpe.
         cleaned = self._eliminate_slivers(cleaned, min_ha, SLIVER_WIDTH_M)
-        cleaned = self._remove_spikes(cleaned, eps=0.05)
+        cleaned = self._remove_spikes(cleaned, eps=0.5)
 
         # Fase 5: Byg endeligt lag
         grid_layer = self._build_layer(cleaned, name='Grid')
@@ -594,13 +594,18 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
                         score = shared.length() + shared.area()
                         if score <= 0.01:   # kun hjørneberøring
                             continue
+                        # Mild samme-side-præference: en nabo hvis fælles kant
+                        # løber langs vandløbet nedscores let (×0.5). Det vælger
+                        # samme-side når den deler en lang kant, men undgår at
+                        # tvinge en sliver ind i en KORT samme-side-kant (som
+                        # ville efterlade en spike). Små stykker må krydse.
                         if stream_geom is not None:
                             try:
                                 overlap = shared.intersection(stream_geom)
                                 if overlap and not overlap.isEmpty():
                                     frac = overlap.length() / max(shared.length(), 0.001)
                                     if frac > 0.3:
-                                        score *= 0.001
+                                        score *= 0.5
                             except Exception:
                                 pass
                         candidates.append((score, j))
