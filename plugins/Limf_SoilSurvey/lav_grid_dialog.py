@@ -118,10 +118,7 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             cleaned = self._merge_small(cleaned, min_ha,
                                         stream_geom=stream_geom, min_width=SNAP_M)
 
-            # Fase 7: Fjern dangles/løse strimler via close+open buffer-sekvens
-            cleaned = self._despike(cleaned, despike_m=1.0)
-
-        # Fase 8: Byg endeligt lag  (kommentar opdateret fra fase 6)
+        # Fase 7: Byg endeligt lag
         grid_layer = self._build_layer(cleaned, name='Grid')
         QgsProject.instance().addMapLayer(grid_layer)
 
