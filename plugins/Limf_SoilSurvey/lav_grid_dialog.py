@@ -81,20 +81,17 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             QMessageBox.warning(self, 'Fejl', 'Ingen felter blev oprettet.')
             return
 
-        # Fase 2: Rens geometriske hairline-artefakter
+        # Fase 2: Rens slivers via geometrisk merge – ingen buffer → ingen afrundede kanter.
+        # min_width=15 svarer til: smelt polygoner smalere end ~15 m med bedste nabo.
         temp_layer = self._build_layer(parcels)
         temp_layer = processing.run("native:fixgeometries",
                                     {"INPUT": temp_layer, "OUTPUT": "memory:"})["OUTPUT"]
-        try:
-            temp_layer = clean_layer(temp_layer, d=15.0, min_area=1,
-                                     grid_size=0.001, max_iters=3, despike=0.1)
-        except Exception:
-            pass
-
-        # Fase 3: Re-normaliser størrelser efter rensning
-        cleaned = [QgsGeometry(f.geometry()) for f in temp_layer.getFeatures()
+        parcels = [QgsGeometry(f.geometry()) for f in temp_layer.getFeatures()
                    if not f.geometry().isEmpty() and f.geometry().area() >= 1]
-        cleaned = self._merge_small(cleaned, min_ha)
+        parcels = self._merge_small(parcels, min_ha, min_width=15.0)
+
+        # Fase 3: Re-normaliser størrelser
+        cleaned = self._merge_small(parcels, min_ha)
         cleaned = self._subdivide_large(cleaned, avg_ha, max_ha, min_ha)
 
         if not cleaned:
