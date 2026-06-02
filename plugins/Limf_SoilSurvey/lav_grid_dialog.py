@@ -212,20 +212,32 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         return single, combined, n
 
     def _split_by_streams(self, parcels, stream_layer):
-        """Split parceller langs vandløb med native:splitwithlines.
-        stream_layer er et klar-til-brug QgsVectorLayer med single-part LineStrings."""
+        """Split parceller langs vandløb via polygonize (robust, ingen slits/dangles).
+
+        splitwithlines på polygoner laver 'slits' (nul-bredde needles) når en
+        vandløbslinje ender INDE i et felt. I stedet bygges et nodet linjenet af
+        grid-grænser + vandløb, som polygoniseres: kun lukkede områder bliver
+        polygoner, så et vandløb der ikke krydser helt igennem deler ikke feltet
+        og efterlader ingen dangle. Alle output deler eksakt nodede kanter."""
         parcel_layer = self._build_layer(parcels)
-        result_layer = processing.run('native:splitwithlines', {
-            'INPUT': parcel_layer,
-            'LINES': stream_layer,
-            'OUTPUT': 'memory:'
+        grid_lines = processing.run('native:polygonstolines',
+                                    {'INPUT': parcel_layer, 'OUTPUT': 'memory:'})['OUTPUT']
+        merged = processing.run('native:mergevectorlayers', {
+            'LAYERS': [grid_lines, stream_layer],
+            'CRS': parcel_layer.crs(), 'OUTPUT': 'memory:'
+        })['OUTPUT']
+        # Nod linjenettet (split hver linje ved alle skæringer) før polygonisering
+        noded = processing.run('native:splitwithlines', {
+            'INPUT': merged, 'LINES': merged, 'OUTPUT': 'memory:'
+        })['OUTPUT']
+        polygons = processing.run('native:polygonize', {
+            'INPUT': noded, 'KEEP_FIELDS': False, 'OUTPUT': 'memory:'
         })['OUTPUT']
 
-        result = [QgsGeometry(f.geometry()) for f in result_layer.getFeatures()
+        result = [QgsGeometry(f.geometry()) for f in polygons.getFeatures()
                   if not f.geometry().isEmpty() and f.geometry().area() >= 1]
         QgsMessageLog.logMessage(
-            f'SoilSurvey: vandløbssplit {len(parcels)} → {len(result)} parceller '
-            f'(+{len(result) - len(parcels)} nye)',
+            f'SoilSurvey: polygonize-split {len(parcels)} → {len(result)} parceller',
             'SoilSurvey')
         return result if result else parcels
 
