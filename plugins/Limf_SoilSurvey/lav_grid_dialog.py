@@ -81,14 +81,27 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             QMessageBox.warning(self, 'Fejl', 'Ingen felter blev oprettet.')
             return
 
-        # Fase 2: Rens slivers via geometrisk merge – ingen buffer → ingen afrundede kanter.
-        # min_width=15 svarer til: smelt polygoner smalere end ~15 m med bedste nabo.
+        # Fase 2a: Rens slivers via geometrisk merge – ingen buffer → ingen afrundede kanter.
         temp_layer = self._build_layer(parcels)
         temp_layer = processing.run("native:fixgeometries",
                                     {"INPUT": temp_layer, "OUTPUT": "memory:"})["OUTPUT"]
         parcels = [QgsGeometry(f.geometry()) for f in temp_layer.getFeatures()
                    if not f.geometry().isEmpty() and f.geometry().area() >= 1]
         parcels = self._merge_small(parcels, min_ha, min_width=15.0)
+
+        # Fase 2b: Fjern dangles via clean_layer med minimal d (1m → 1m hjørnerunding,
+        # usynlig ved landbrugskort-skalaer ≥ 1:2000). Kører FØR vandløbssplit
+        # så vandløbsgrænserne ikke påvirkes.
+        tmp = self._build_layer(parcels)
+        tmp = processing.run("native:fixgeometries",
+                             {"INPUT": tmp, "OUTPUT": "memory:"})["OUTPUT"]
+        try:
+            tmp = clean_layer(tmp, d=1.0, min_area=1,
+                              grid_size=0.001, max_iters=3, despike=1.0)
+        except Exception:
+            pass
+        parcels = [QgsGeometry(f.geometry()) for f in tmp.getFeatures()
+                   if not f.geometry().isEmpty() and f.geometry().area() >= 1]
 
         # Fase 3: Re-normaliser størrelser
         cleaned = self._merge_small(parcels, min_ha)
