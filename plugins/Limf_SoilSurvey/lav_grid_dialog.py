@@ -10,12 +10,12 @@ from qgis.core import (
     QgsCoordinateReferenceSystem, QgsCoordinateTransform,
     QgsCoordinateTransformContext, QgsFeatureRequest, QgsMessageLog
 )
-from .Sliver import clean_layer
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), 'lav_grid_dialog.ui'))
 
 MARKKORT_PATH = os.path.join(os.path.dirname(__file__), 'Data', 'Markkort', 'Markkort_V3_snap.shp')
 MAX_ASPECT_RATIO = 3.0   # default max length/width ratio before subdivision kicks in
+SLIVER_WIDTH_M = 10.0     # polygoner smallere end dette (bredde) smeltes ind i nabo
 
 
 class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
@@ -72,59 +72,43 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             QMessageBox.warning(self, 'Fejl', 'Laget indeholder ingen geometri.')
             return
 
-        # Fase 1: Byg grid-polygoner (markkort + opsplit + sammenflet)
+        # Fase 1: Byg grid (markkort + opsplit + sliver-merge).
+        # _merge_small snapper internt til 1mm-grid → ingen dangles, og
+        # smelter alt smallere end SLIVER_WIDTH_M ind i bedste nabo.
         parcels = self._load_markkort_parcels(union_geom, work_crs)
         parcels = self._subdivide_large(parcels, avg_ha, max_ha, min_ha)
-        parcels = self._merge_small(parcels, min_ha)
+        parcels = self._merge_small(parcels, min_ha, min_width=SLIVER_WIDTH_M)
 
         if not parcels:
             QMessageBox.warning(self, 'Fejl', 'Ingen felter blev oprettet.')
             return
 
-        # Fase 2: Fjern slivers via eliminateselectedpolygons (QGIS-native topologi-merge).
-        # snaptogrid(1mm) sikrer at nabopolygoner deler præcis kant → ingen afviste merges.
-        temp_layer = self._build_layer(parcels)
-        temp_layer = processing.run("native:fixgeometries",
-                                    {"INPUT": temp_layer, "OUTPUT": "memory:"})["OUTPUT"]
-        # Snap vertices til 1mm grid via QgsGeometry.snappedToGrid (QGIS 3.40-kompatibelt)
-        snapped = []
-        for feat in temp_layer.getFeatures():
-            g = feat.geometry()
-            if g and not g.isEmpty():
-                sg = g.snappedToGrid(0.001, 0.001)
-                if sg and not sg.isEmpty() and sg.area() >= 1:
-                    snapped.append(sg)
-        snap_layer = self._build_layer(snapped)
-        snap_layer = processing.run("native:fixgeometries",
-                                    {"INPUT": snap_layer, "OUTPUT": "memory:"})["OUTPUT"]
-        parcels = self._eliminate_thin(snap_layer, min_ha, min_width=20.0)
-
-        # Fase 3: Re-normaliser størrelser
-        cleaned = self._merge_small(parcels, min_ha)
-        cleaned = self._subdivide_large(cleaned, avg_ha, max_ha, min_ha)
+        # Fase 2: Re-normaliser størrelser
+        cleaned = self._subdivide_large(parcels, avg_ha, max_ha, min_ha)
+        cleaned = self._merge_small(cleaned, min_ha, min_width=SLIVER_WIDTH_M)
 
         if not cleaned:
             QMessageBox.warning(self, 'Fejl', 'Ingen felter efter re-normalisering.')
             return
 
-        # Fase 4: Split langs vandløb (altid sidst, på det færdige grid)
+        # Fase 3: Split langs vandløb (altid sidst, på det færdige grid)
         stream_layer, stream_geom, n_streams = self._load_streams(union_geom, work_crs)
         if stream_layer is not None:
             cleaned = self._split_by_streams(cleaned, stream_layer)
-
-            # Fase 5: Snap tynde strimler (< 20 m brede) til vandløbet ved at
-            # smelte dem med nabo på SAMME side. Derefter opdel for-store stykker.
-            SNAP_M = 20.0
+            # Smelt slivers ind i nabo på SAMME side af vandløbet
             cleaned = self._merge_small(cleaned, min_ha,
-                                        stream_geom=stream_geom, min_width=SNAP_M)
+                                        stream_geom=stream_geom, min_width=SLIVER_WIDTH_M)
             cleaned = self._subdivide_large(cleaned, avg_ha, max_ha, min_ha)
 
-            # Fase 6: Vandløbet er absolut endelig grænse – re-split + afsluttende snap
+            # Vandløbet er absolut endelig grænse – re-split + afsluttende sliver-merge
             cleaned = self._split_by_streams(cleaned, stream_layer)
             cleaned = self._merge_small(cleaned, min_ha,
-                                        stream_geom=stream_geom, min_width=SNAP_M)
+                                        stream_geom=stream_geom, min_width=SLIVER_WIDTH_M)
 
-        # Fase 7: Byg endeligt lag
+        # Fase 4: Endelig topologi-rensning (snap til 1mm-grid fjerner residual-dangles)
+        cleaned = self._snap_clean(cleaned)
+
+        # Fase 5: Byg endeligt lag
         grid_layer = self._build_layer(cleaned, name='Grid')
         QgsProject.instance().addMapLayer(grid_layer)
 
@@ -240,40 +224,23 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             'SoilSurvey')
         return result if result else parcels
 
-    def _eliminate_thin(self, layer, min_ha, min_width=20.0):
-        """Fjern tynde/små polygoner via qgis:eliminateselectedpolygons.
-        Mere robust end combine() – håndterer korrekt alle topologi-edge-cases."""
-        min_area = min_ha * 10000
-        width_t  = 2.0 * min_width
-        expr = (f'(4.0 * $area / $perimeter < {width_t}) '
-                f'OR ($area < {min_area})')
-        layer.selectByExpression(expr)
-        if layer.selectedFeatureCount() == 0:
-            layer.removeSelection()
-            return [QgsGeometry(f.geometry()) for f in layer.getFeatures()
-                    if not f.geometry().isEmpty() and f.geometry().area() >= 1]
-        result = processing.run('qgis:eliminateselectedpolygons', {
-            'INPUT': layer, 'MODE': 2, 'OUTPUT': 'memory:'
-        })['OUTPUT']
-        result = processing.run('native:fixgeometries',
-                                {'INPUT': result, 'OUTPUT': 'memory:'})['OUTPUT']
-        return [QgsGeometry(f.geometry()) for f in result.getFeatures()
-                if not f.geometry().isEmpty() and f.geometry().area() >= 1]
-
-    def _despike(self, parcels, despike_m=1.0):
-        """Fjern dangles/løse strimler via close+open buffer-sekvens.
-        Svarer til Sliver.py's despike-trin: (+d, -d, -d, +d)."""
-        layer = self._build_layer(parcels)
-        for dist in (despike_m, -despike_m, -despike_m, despike_m):
-            layer = processing.run('native:buffer', {
-                'INPUT': layer, 'DISTANCE': dist,
-                'JOIN_STYLE': 0, 'SEGMENTS': 5, 'OUTPUT': 'memory:'
-            })['OUTPUT']
-        layer = processing.run('native:fixgeometries',
-                               {'INPUT': layer, 'OUTPUT': 'memory:'})['OUTPUT']
-        result = [QgsGeometry(f.geometry()) for f in layer.getFeatures()
-                  if not f.geometry().isEmpty() and f.geometry().area() >= 1]
-        return result if result else parcels
+    def _snap_clean(self, parcels):
+        """Snap geometrier til 1mm-grid + makeValid, og eksplodér til single-parts.
+        Aligner nabokanter præcist, så efterfølgende combine() ikke efterlader
+        spikes/dangles, og fjerner mikroskopiske selvoverlap."""
+        cleaned = []
+        for g in parcels:
+            if g is None or g.isEmpty():
+                continue
+            sg = g.snappedToGrid(0.001, 0.001)
+            if sg is None or sg.isEmpty():
+                continue
+            if not sg.isGeosValid():
+                sg = sg.makeValid()
+            for part in self._single_parts(sg):
+                if part.area() >= 1:
+                    cleaned.append(part)
+        return cleaned
 
     def _load_markkort_parcels(self, union_geom, work_crs):
         """Clip Markkort2024 to union_geom, dissolve overlapping/duplicate features
@@ -511,30 +478,38 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         return result if result else [geom]
 
     def _merge_small(self, parcels, min_ha, stream_geom=None, min_width=0.0):
-        """Iteratively merge parcels that are too small OR too thin with the
-        neighbour sharing the longest common boundary.
-        min_width (m): merge polygoner hvis estimeret bredde (4·A/P) < 2·min_width.
-        Hvis stream_geom er angivet, prioriteres sammenfletning med naboen på
-        SAMME side af vandløbet (krydsende sammenflettninger nedscore kraftigt)."""
+        """Smelt for-små (areal < min_ha) ELLER for-tynde (bredde < min_width)
+        polygoner ind i nabopolygonen med længst fælles kant.
+
+        Bredden estimeres som 2·areal/omkreds (≈ den smalle dimension, også for
+        buede strimler). Er stream_geom angivet, prioriteres naboen på SAMME side
+        af vandløbet – en nabo på tværs vælges kun som sidste udvej (når der ikke
+        findes andre naboer end på den anden side).
+
+        Geometrierne snappes til 1mm-grid først, så combine() flugter sømmene og
+        ikke laver spikes/dangles. En sliver smeltes ALTID væk: kan ingen merge
+        give ét rent polygon, tages bedste kandidat alligevel."""
         min_area = min_ha * 10000
-        width_threshold = 2.0 * min_width  # 4·A/P ≈ 2·min_dim for rektangel
-        parcels = list(parcels)
+        parcels = self._snap_clean(list(parcels))
+
+        def is_target(geom):
+            a = geom.area()
+            if a < min_area:
+                return True
+            if min_width > 0:
+                p = geom.length()
+                if p > 0 and (2.0 * a / p) < min_width:
+                    return True
+            return False
 
         changed = True
         while changed:
             changed = False
             for i in range(len(parcels)):
-                area = parcels[i].area()
-                too_small = area < min_area
-                too_thin = False
-                if min_width > 0 and not too_small:
-                    perim = parcels[i].length()
-                    if perim > 0:
-                        too_thin = (4.0 * area / perim) < width_threshold
-                if not (too_small or too_thin):
+                if not is_target(parcels[i]):
                     continue
 
-                # Build scored candidate list (require a real shared edge, not just a point)
+                # Scor naboer: længst fælles kant vinder; tvær-vandløb straffes hårdt
                 candidates = []
                 for j in range(len(parcels)):
                     if i == j:
@@ -546,9 +521,8 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
                         if shared is None or shared.isNull() or shared.isEmpty():
                             continue
                         score = shared.length() + shared.area()
-                        if score <= 0.1:   # discard corner-only touches (score ≈ 0)
+                        if score <= 0.01:   # kun hjørneberøring
                             continue
-                        # Nedscore kraftigt hvis fællesgrænsen løber langs et vandløb
                         if stream_geom is not None:
                             try:
                                 overlap = shared.intersection(stream_geom)
@@ -562,17 +536,37 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
                     except Exception:
                         continue
 
-                # Try candidates best-first; accept only if merge stays connected
-                for _, j in sorted(candidates, reverse=True):
+                if not candidates:
+                    continue
+                candidates.sort(reverse=True)
+
+                # Foretræk merge der giver ét sammenhængende polygon …
+                chosen_j = None
+                chosen_geom = None
+                for _, j in candidates:
                     merged = parcels[i].combine(parcels[j])
-                    poly_parts = list(self._single_parts(merged))
-                    if len(poly_parts) == 1:
-                        parcels = [merged if k == j else p
-                                   for k, p in enumerate(parcels) if k != i]
-                        changed = True
+                    if merged is None or merged.isEmpty():
+                        continue
+                    if not merged.isGeosValid():
+                        merged = merged.makeValid()
+                    parts = list(self._single_parts(merged))
+                    if len(parts) == 1:
+                        chosen_j, chosen_geom = j, parts[0]
                         break
 
-                if changed:
-                    break   # restart outer loop from beginning
+                # … ellers tag bedste kandidat alligevel (sliver SKAL fjernes)
+                if chosen_j is None:
+                    _, j = candidates[0]
+                    merged = parcels[i].combine(parcels[j])
+                    if merged and not merged.isEmpty():
+                        if not merged.isGeosValid():
+                            merged = merged.makeValid()
+                        chosen_j, chosen_geom = j, merged
+
+                if chosen_j is not None:
+                    parcels = [chosen_geom if k == chosen_j else p
+                               for k, p in enumerate(parcels) if k != i]
+                    changed = True
+                    break   # genstart ydre løkke
 
         return parcels
