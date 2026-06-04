@@ -86,8 +86,10 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         # bruges → ingen overlap, snappede hjørner, ingen needles.
         diag = [f'celler={len(parcels)}']
         stream_layer, stream_geom, n_streams = self._load_streams(union_geom, work_crs)
+        regions = None
         if stream_layer is not None:
             cleaned = self._split_by_streams(parcels, stream_layer)
+            regions = self._stream_regions(union_geom, stream_layer)
         else:
             cleaned = self._polygonize_coverage(parcels)
         diag.append(f'dækning={len(cleaned)}')
@@ -97,9 +99,10 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             return
 
         # Fase 3: Fjern slivers/små felter TOPOLOGISK (eliminate dissolver ind i
-        # nabo med længst fælles kant – bevarer ren dækning, laver aldrig needles).
+        # nabo med længst fælles kant). Med 'regions' holdes merge på SAMME side
+        # af vandløbet → en strimmel smeltes aldrig på tværs (= ingen arme).
         n_thin_before = self._count_thin(cleaned, SLIVER_WIDTH_M, min_ha)
-        cleaned = self._eliminate_slivers(cleaned, min_ha, SLIVER_WIDTH_M)
+        cleaned = self._eliminate_slivers(cleaned, min_ha, SLIVER_WIDTH_M, regions=regions)
         n_thin_after = self._count_thin(cleaned, SLIVER_WIDTH_M, min_ha)
         diag.append(f'efter elim={len(cleaned)}')
         diag.append(f'tynde {n_thin_before}->{n_thin_after}')
@@ -212,18 +215,6 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         parcel_layer = self._build_layer(parcels)
         grid_lines = processing.run('native:polygonstolines',
                                     {'INPUT': parcel_layer, 'OUTPUT': 'memory:'})['OUTPUT']
-        # Snap grid-linjer til vandløbet: en celle-grænse der løber tæt på eller
-        # konvergerer mod vandløbet trækkes ind på det, så den tynde kile mellem
-        # dem kollapser (kilerne blev ellers til arme når de smeltes væk).
-        for alg in ('native:snapgeometries', 'qgis:snapgeometries'):
-            try:
-                grid_lines = processing.run(alg, {
-                    'INPUT': grid_lines, 'REFERENCE_LAYER': stream_layer,
-                    'TOLERANCE': SLIVER_WIDTH_M, 'BEHAVIOR': 1, 'OUTPUT': 'memory:'
-                })['OUTPUT']
-                break
-            except Exception:
-                continue
         merged = processing.run('native:mergevectorlayers', {
             'LAYERS': [grid_lines, stream_layer],
             'CRS': parcel_layer.crs(), 'OUTPUT': 'memory:'
@@ -282,11 +273,51 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         min_area = min_ha * 10000
         return sum(1 for g in parcels if self._is_sliver(g, min_area, min_width))
 
-    def _eliminate_slivers(self, parcels, min_ha, min_width):
+    def _stream_regions(self, union_geom, stream_layer):
+        """Del studieområdet i sammenhængende regioner adskilt af vandløbene.
+        Bruges til at holde sliver-merge på SAMME side af vandløbet, så en
+        strimmel aldrig smeltes på tværs (= det der skaber arme)."""
+        layer = self._build_layer([QgsGeometry(union_geom)])
+        lines = processing.run('native:polygonstolines',
+                               {'INPUT': layer, 'OUTPUT': 'memory:'})['OUTPUT']
+        merged = processing.run('native:mergevectorlayers', {
+            'LAYERS': [lines, stream_layer], 'CRS': layer.crs(), 'OUTPUT': 'memory:'
+        })['OUTPUT']
+        noded = processing.run('native:splitwithlines',
+                               {'INPUT': merged, 'LINES': merged, 'OUTPUT': 'memory:'})['OUTPUT']
+        polys = processing.run('native:polygonize',
+                               {'INPUT': noded, 'KEEP_FIELDS': False, 'OUTPUT': 'memory:'})['OUTPUT']
+        regions = [QgsGeometry(f.geometry()) for f in polys.getFeatures()
+                   if not f.geometry().isEmpty() and f.geometry().area() >= 1]
+        QgsMessageLog.logMessage(
+            f'SoilSurvey: {len(regions)} vandløbs-regioner', 'SoilSurvey')
+        return regions
+
+    def _eliminate_slivers(self, parcels, min_ha, min_width, regions=None):
         """Fjern slivers (op til min_width bred, eller under min areal) ved at
         smelte hver ind i naboen de deler STØRST fælles kant med
         (qgis:eliminateselectedpolygons MODE=2 – bevarer ren dækning, ingen needles).
-        Looper indtil ingen targets er tilbage (en merge kan afsløre en ny sliver)."""
+
+        Hvis 'regions' (vandløbs-adskilte områder) er angivet, grupperes parcellerne
+        per region og elimineres SEPARAT inden for hver – så en strimmel kun smeltes
+        ind i en nabo på SAMME side af vandløbet (ellers bliver den til en arm)."""
+        if regions and len(regions) > 1:
+            groups = [[] for _ in regions]
+            leftover = []
+            for g in parcels:
+                pt = g.pointOnSurface()
+                ri = next((i for i, reg in enumerate(regions) if reg.contains(pt)), None)
+                if ri is None:
+                    leftover.append(g)
+                else:
+                    groups[ri].append(g)
+            result = []
+            for grp in groups:
+                if grp:
+                    result.extend(self._eliminate_slivers(grp, min_ha, min_width))
+            result.extend(leftover)
+            return result
+
         layer = self._build_layer(parcels)
         layer = processing.run('native:fixgeometries',
                                {'INPUT': layer, 'OUTPUT': 'memory:'})['OUTPUT']
