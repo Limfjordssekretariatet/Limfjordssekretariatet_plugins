@@ -15,7 +15,7 @@ FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), 'lav_grid
 
 MARKKORT_PATH = os.path.join(os.path.dirname(__file__), 'Data', 'Markkort', 'Markkort_V3_snap.shp')
 MAX_ASPECT_RATIO = 3.0   # default max length/width ratio before subdivision kicks in
-SLIVER_WIDTH_M = 10.0     # polygoner smallere end dette (bredde) smeltes ind i nabo
+SLIVER_WIDTH_M = 15.0     # polygoner smallere end dette (bredde) smeltes ind i nabo
 
 
 class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
@@ -245,39 +245,52 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
                   if not f.geometry().isEmpty() and f.geometry().area() >= 1]
         return result if result else parcels
 
+    def _is_sliver(self, geom, min_area, min_width):
+        """En polygon er en sliver hvis den er for lille (areal) ELLER for smal.
+        Bredden måles på to måder, så både lige, stubbede OG buede strimler fanges:
+          • 2·areal/omkreds  → fanger lange/buede strimler
+          • MBR-bredde       → fanger stubbede/rektangulære felter
+        """
+        a = geom.area()
+        if a < min_area:
+            return True
+        p = geom.length()
+        if p > 0 and (2.0 * a / p) < min_width:
+            return True
+        try:
+            _, _, _, _length, width = self._get_mbr_params(geom)
+            if width < min_width:
+                return True
+        except Exception:
+            pass
+        return False
+
     def _count_thin(self, parcels, min_width, min_ha):
-        """Tæl polygoner der er for tynde (2·A/P < min_width) eller for små."""
+        """Tæl slivers (for tynde eller for små) i en liste af geometrier."""
         min_area = min_ha * 10000
-        c = 0
-        for g in parcels:
-            a = g.area()
-            p = g.length()
-            if a < min_area or (p > 0 and 2.0 * a / p < min_width):
-                c += 1
-        return c
+        return sum(1 for g in parcels if self._is_sliver(g, min_area, min_width))
 
     def _eliminate_slivers(self, parcels, min_ha, min_width):
-        """Fjern for-små/for-tynde polygoner via qgis:eliminateselectedpolygons
-        (dissolve ind i nabo med længst fælles kant – bevarer ren dækning, laver
-        aldrig needles). Looper indtil ingen targets er tilbage (en merge kan
-        skabe en ny tynd nabo der også skal fjernes)."""
+        """Fjern slivers (op til min_width bred, eller under min areal) ved at
+        smelte hver ind i naboen de deler STØRST fælles kant med
+        (qgis:eliminateselectedpolygons MODE=2 – bevarer ren dækning, ingen needles).
+        Looper indtil ingen targets er tilbage (en merge kan afsløre en ny sliver)."""
         layer = self._build_layer(parcels)
         layer = processing.run('native:fixgeometries',
                                {'INPUT': layer, 'OUTPUT': 'memory:'})['OUTPUT']
         min_area = min_ha * 10000
-        expr = (f'(2.0 * $area / $perimeter < {min_width}) '
-                f'OR ($area < {min_area})')
-        for _ in range(8):
-            layer.selectByExpression(expr)
-            n = layer.selectedFeatureCount()
-            total = layer.featureCount()
+        for _ in range(12):
+            ids = [f.id() for f in layer.getFeatures()
+                   if not f.geometry().isEmpty()
+                   and self._is_sliver(f.geometry(), min_area, min_width)]
+            n, total = len(ids), layer.featureCount()
             QgsMessageLog.logMessage(
                 f'SoilSurvey: eliminate-pass – {n}/{total} targets', 'SoilSurvey')
             if n == 0 or n >= total:
                 # n>=total: alt er "tyndt" (fx ét enkelt jagget felt) – stop, ellers
                 # forsvinder hele laget.
-                layer.removeSelection()
                 break
+            layer.selectByIds(ids)
             try:
                 layer = processing.run('qgis:eliminateselectedpolygons', {
                     'INPUT': layer, 'MODE': 2, 'OUTPUT': 'memory:'  # 2 = største fælles kant
