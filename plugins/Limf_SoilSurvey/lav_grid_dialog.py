@@ -72,23 +72,24 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             QMessageBox.warning(self, 'Fejl', 'Laget indeholder ingen geometri.')
             return
 
-        # Fase 1: Hent markkort-felter og split FØRST langs vandløb.
-        # Rækkefølgen er vigtig: splitter vi vandløb EFTER opdeling i celler,
-        # opstår tynde kiler mellem celle-grænser og vandløbet (som bliver til
-        # arme/spikes når de smeltes væk). Ved at splitte felterne langs vandløbet
-        # FØRST bliver vandløbet en ren feltgrænse, og de efterfølgende celle-
-        # grænser genereres relativt til hver vandløbs-afgrænset brik → ingen kiler.
+        # Fase 1: Byg celler fra markkort (klip + opdel til ~gennemsnit).
         parcels = self._load_markkort_parcels(union_geom, work_crs)
-        diag = [f'markkort={len(parcels)}']
+        parcels = self._subdivide_large(parcels, avg_ha, max_ha, min_ha)
+        if not parcels:
+            QMessageBox.warning(self, 'Fejl', 'Ingen felter blev oprettet.')
+            return
+
+        # Fase 2: Byg REN topologisk dækning + split langs vandløb i ét hug.
+        # Grid-linjerne snappes til vandløbet (tolerance = SLIVER_WIDTH_M) FØR
+        # polygonisering, så en celle-grænse der løber tæt på/konvergerer mod
+        # vandløbet falder sammen med det → ingen tynde kiler/arme. KUN polygonize
+        # bruges → ingen overlap, snappede hjørner, ingen needles.
+        diag = [f'celler={len(parcels)}']
         stream_layer, stream_geom, n_streams = self._load_streams(union_geom, work_crs)
         if stream_layer is not None:
-            parcels = self._split_by_streams(parcels, stream_layer)
-            diag.append(f'vandløbssplit={len(parcels)}')
-
-        # Fase 2: Opdel hver brik til ~gennemsnit og byg REN topologisk dækning.
-        # KUN polygonize bruges → garanteret ingen overlap og snappede hjørner.
-        parcels = self._subdivide_large(parcels, avg_ha, max_ha, min_ha)
-        cleaned = self._polygonize_coverage(parcels)
+            cleaned = self._split_by_streams(parcels, stream_layer)
+        else:
+            cleaned = self._polygonize_coverage(parcels)
         diag.append(f'dækning={len(cleaned)}')
 
         if not cleaned:
@@ -211,6 +212,18 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         parcel_layer = self._build_layer(parcels)
         grid_lines = processing.run('native:polygonstolines',
                                     {'INPUT': parcel_layer, 'OUTPUT': 'memory:'})['OUTPUT']
+        # Snap grid-linjer til vandløbet: en celle-grænse der løber tæt på eller
+        # konvergerer mod vandløbet trækkes ind på det, så den tynde kile mellem
+        # dem kollapser (kilerne blev ellers til arme når de smeltes væk).
+        for alg in ('native:snapgeometries', 'qgis:snapgeometries'):
+            try:
+                grid_lines = processing.run(alg, {
+                    'INPUT': grid_lines, 'REFERENCE_LAYER': stream_layer,
+                    'TOLERANCE': SLIVER_WIDTH_M, 'BEHAVIOR': 0, 'OUTPUT': 'memory:'
+                })['OUTPUT']
+                break
+            except Exception:
+                continue
         merged = processing.run('native:mergevectorlayers', {
             'LAYERS': [grid_lines, stream_layer],
             'CRS': parcel_layer.crs(), 'OUTPUT': 'memory:'
