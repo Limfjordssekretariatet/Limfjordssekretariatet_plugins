@@ -72,48 +72,42 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             QMessageBox.warning(self, 'Fejl', 'Laget indeholder ingen geometri.')
             return
 
-        # Fase 1: Byg grid (markkort + opsplit + sliver-merge).
-        # _merge_small snapper internt til 1mm-grid → ingen dangles, og
-        # smelter alt smallere end SLIVER_WIDTH_M ind i bedste nabo.
+        # Fase 1: Byg celler fra markkort (klip + opdel til ~gennemsnit).
         parcels = self._load_markkort_parcels(union_geom, work_crs)
         parcels = self._subdivide_large(parcels, avg_ha, max_ha, min_ha)
-        parcels = self._merge_small(parcels, min_ha, min_width=SLIVER_WIDTH_M)
-
         if not parcels:
             QMessageBox.warning(self, 'Fejl', 'Ingen felter blev oprettet.')
             return
 
-        # Fase 2: Re-normaliser størrelser
-        cleaned = self._subdivide_large(parcels, avg_ha, max_ha, min_ha)
-        cleaned = self._merge_small(cleaned, min_ha, min_width=SLIVER_WIDTH_M)
-
-        if not cleaned:
-            QMessageBox.warning(self, 'Fejl', 'Ingen felter efter re-normalisering.')
-            return
-
-        # Fase 3: Split langs vandløb (altid sidst, på det færdige grid)
+        # Fase 2: Byg REN topologisk dækning + split langs vandløb i ét hug.
+        # KUN polygonize bruges → garanteret ingen overlap og snappede hjørner.
+        # combine()/intersection (uafhængige geometrier) er FJERNET – de var
+        # kilden til overlap, usnappede hjørner, slivers og spikes.
+        diag = [f'celler={len(parcels)}']
         stream_layer, stream_geom, n_streams = self._load_streams(union_geom, work_crs)
         if stream_layer is not None:
-            cleaned = self._split_by_streams(cleaned, stream_layer)
-            # Smelt slivers ind i nabo på SAMME side af vandløbet
-            cleaned = self._merge_small(cleaned, min_ha,
-                                        stream_geom=stream_geom, min_width=SLIVER_WIDTH_M)
-            cleaned = self._subdivide_large(cleaned, avg_ha, max_ha, min_ha)
+            cleaned = self._split_by_streams(parcels, stream_layer)
+        else:
+            cleaned = self._polygonize_coverage(parcels)
+        diag.append(f'dækning={len(cleaned)}')
 
-            # Vandløbet er absolut endelig grænse – re-split + afsluttende sliver-merge
-            cleaned = self._split_by_streams(cleaned, stream_layer)
-            cleaned = self._merge_small(cleaned, min_ha,
-                                        stream_geom=stream_geom, min_width=SLIVER_WIDTH_M)
+        if not cleaned:
+            QMessageBox.warning(self, 'Fejl', 'Ingen dækning kunne bygges.')
+            return
 
-        # Fase 4: Garanteret sliver-fjernelse + needle-rensning.
-        # (a) eliminate dissolver enhver resterende tynd/lille polygon ind i nabo
-        #     (QGIS-native, laver aldrig needles).
-        # (b) miter-buffer opening fjerner de hårfine needle-dangles combine()
-        #     efterlader – firkantet join bevarer 90°-hjørner skarpe.
+        # Fase 3: Fjern slivers/små felter TOPOLOGISK (eliminate dissolver ind i
+        # nabo med længst fælles kant – bevarer ren dækning, laver aldrig needles).
+        n_thin_before = self._count_thin(cleaned, SLIVER_WIDTH_M, min_ha)
         cleaned = self._eliminate_slivers(cleaned, min_ha, SLIVER_WIDTH_M)
-        cleaned = self._remove_spikes(cleaned, eps=0.5)
+        n_thin_after = self._count_thin(cleaned, SLIVER_WIDTH_M, min_ha)
+        diag.append(f'efter elim={len(cleaned)}')
+        diag.append(f'tynde {n_thin_before}->{n_thin_after}')
 
-        # Fase 5: Byg endeligt lag
+        if not cleaned:
+            QMessageBox.warning(self, 'Fejl', 'Ingen felter tilbage.')
+            return
+
+        # Fase 4: Byg endeligt lag
         grid_layer = self._build_layer(cleaned, name='Grid')
         QgsProject.instance().addMapLayer(grid_layer)
 
@@ -127,6 +121,7 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             f'Gennemsnitsstørrelse: {avg_result:.2f} ha\n'
             f'Total areal: {total_ha:.1f} ha'
             + stream_info
+            + '\n\n[diag] ' + '  '.join(diag)
         )
         self.accept()
 
@@ -202,14 +197,8 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         if n == 0:
             return None, None, 0
 
-        # Kombineret geometri til _merge_small intersection-test
-        combined = None
-        for feat in single.getFeatures():
-            g = feat.geometry()
-            if g and not g.isEmpty():
-                combined = QgsGeometry(g) if combined is None else combined.combine(g)
-
-        return single, combined, n
+        # (combined-geometri ikke længere nødvendig – stream-aware merge er fjernet)
+        return single, None, n
 
     def _split_by_streams(self, parcels, stream_layer):
         """Split parceller langs vandløb via polygonize (robust, ingen slits/dangles).
@@ -241,75 +230,63 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             'SoilSurvey')
         return result if result else parcels
 
-    def _snap_clean(self, parcels):
-        """Snap geometrier til 1mm-grid + makeValid, og eksplodér til single-parts.
-        Aligner nabokanter præcist, så efterfølgende combine() ikke efterlader
-        spikes/dangles, og fjerner mikroskopiske selvoverlap."""
-        cleaned = []
-        for g in parcels:
-            if g is None or g.isEmpty():
-                continue
-            sg = g.snappedToGrid(0.001, 0.001)
-            if sg is None or sg.isEmpty():
-                continue
-            if not sg.isGeosValid():
-                sg = sg.makeValid()
-            for part in self._single_parts(sg):
-                if part.area() >= 1:
-                    cleaned.append(part)
-        return cleaned
-
-    def _remove_spikes(self, parcels, eps=0.05):
-        """Fjern hårfine needle-dangles via en miter-buffer opening (erode→dilate).
-        Firkantet join (JOIN_STYLE=2) + høj miter-grænse bevarer 90°-hjørner skarpe,
-        så der IKKE opstår afrundede hjørner (modsat round-join despike). Spidser
-        smallere end ~2·eps forsvinder, resten af geometrien er uændret."""
+    def _polygonize_coverage(self, parcels):
+        """Byg en REN topologisk dækning (ingen overlap, snappede hjørner) ved at
+        nodne polygonernes grænselinjer og polygonisere. Fjerner overlap/slip som
+        de geometriske operationer (intersection osv.) kan have efterladt."""
         layer = self._build_layer(parcels)
-        for dist in (-eps, eps):
-            try:
-                layer = processing.run('native:buffer', {
-                    'INPUT': layer, 'DISTANCE': dist,
-                    'JOIN_STYLE': 2, 'MITER_LIMIT': 100, 'SEGMENTS': 1,
-                    'OUTPUT': 'memory:'
-                })['OUTPUT']
-            except Exception:
-                return parcels
-        layer = processing.run('native:fixgeometries',
+        lines = processing.run('native:polygonstolines',
                                {'INPUT': layer, 'OUTPUT': 'memory:'})['OUTPUT']
-        out = []
-        for f in layer.getFeatures():
-            g = f.geometry()
-            if g and not g.isEmpty():
-                for part in self._single_parts(g):
-                    if part.area() >= 1:
-                        out.append(QgsGeometry(part))
-        return out if out else parcels
+        noded = processing.run('native:splitwithlines',
+                               {'INPUT': lines, 'LINES': lines, 'OUTPUT': 'memory:'})['OUTPUT']
+        polys = processing.run('native:polygonize',
+                               {'INPUT': noded, 'KEEP_FIELDS': False, 'OUTPUT': 'memory:'})['OUTPUT']
+        result = [QgsGeometry(f.geometry()) for f in polys.getFeatures()
+                  if not f.geometry().isEmpty() and f.geometry().area() >= 1]
+        return result if result else parcels
+
+    def _count_thin(self, parcels, min_width, min_ha):
+        """Tæl polygoner der er for tynde (2·A/P < min_width) eller for små."""
+        min_area = min_ha * 10000
+        c = 0
+        for g in parcels:
+            a = g.area()
+            p = g.length()
+            if a < min_area or (p > 0 and 2.0 * a / p < min_width):
+                c += 1
+        return c
 
     def _eliminate_slivers(self, parcels, min_ha, min_width):
-        """Sidste udvej: fjern resterende for-små/for-tynde polygoner via
-        qgis:eliminateselectedpolygons (dissolve uden needles, ALTID rent)."""
+        """Fjern for-små/for-tynde polygoner via qgis:eliminateselectedpolygons
+        (dissolve ind i nabo med længst fælles kant – bevarer ren dækning, laver
+        aldrig needles). Looper indtil ingen targets er tilbage (en merge kan
+        skabe en ny tynd nabo der også skal fjernes)."""
         layer = self._build_layer(parcels)
         layer = processing.run('native:fixgeometries',
                                {'INPUT': layer, 'OUTPUT': 'memory:'})['OUTPUT']
         min_area = min_ha * 10000
         expr = (f'(2.0 * $area / $perimeter < {min_width}) '
                 f'OR ($area < {min_area})')
-        layer.selectByExpression(expr)
-        n = layer.selectedFeatureCount()
-        QgsMessageLog.logMessage(
-            f'SoilSurvey: eliminate {n} resterende slivers', 'SoilSurvey')
-        if n == 0:
-            layer.removeSelection()
-            return parcels
-        try:
-            layer = processing.run('qgis:eliminateselectedpolygons', {
-                'INPUT': layer, 'MODE': 2, 'OUTPUT': 'memory:'  # 2 = største fælles kant
-            })['OUTPUT']
-            layer = processing.run('native:fixgeometries',
-                                   {'INPUT': layer, 'OUTPUT': 'memory:'})['OUTPUT']
-        except Exception as e:
-            QgsMessageLog.logMessage(f'SoilSurvey: eliminate fejlede: {e}', 'SoilSurvey')
-            return parcels
+        for _ in range(8):
+            layer.selectByExpression(expr)
+            n = layer.selectedFeatureCount()
+            total = layer.featureCount()
+            QgsMessageLog.logMessage(
+                f'SoilSurvey: eliminate-pass – {n}/{total} targets', 'SoilSurvey')
+            if n == 0 or n >= total:
+                # n>=total: alt er "tyndt" (fx ét enkelt jagget felt) – stop, ellers
+                # forsvinder hele laget.
+                layer.removeSelection()
+                break
+            try:
+                layer = processing.run('qgis:eliminateselectedpolygons', {
+                    'INPUT': layer, 'MODE': 2, 'OUTPUT': 'memory:'  # 2 = største fælles kant
+                })['OUTPUT']
+                layer = processing.run('native:fixgeometries',
+                                       {'INPUT': layer, 'OUTPUT': 'memory:'})['OUTPUT']
+            except Exception as e:
+                QgsMessageLog.logMessage(f'SoilSurvey: eliminate fejlede: {e}', 'SoilSurvey')
+                break
         return [QgsGeometry(f.geometry()) for f in layer.getFeatures()
                 if not f.geometry().isEmpty() and f.geometry().area() >= 1]
 
@@ -548,110 +525,6 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
                 result.append(piece)
         return result if result else [geom]
 
-    def _merge_small(self, parcels, min_ha, stream_geom=None, min_width=0.0):
-        """Smelt for-små (areal < min_ha) ELLER for-tynde (bredde < min_width)
-        polygoner ind i nabopolygonen med længst fælles kant.
-
-        Bredden estimeres som 2·areal/omkreds (≈ den smalle dimension, også for
-        buede strimler). Er stream_geom angivet, prioriteres naboen på SAMME side
-        af vandløbet – en nabo på tværs vælges kun som sidste udvej (når der ikke
-        findes andre naboer end på den anden side).
-
-        Geometrierne snappes til 1mm-grid først, så combine() flugter sømmene og
-        ikke laver spikes/dangles. En sliver smeltes ALTID væk: kan ingen merge
-        give ét rent polygon, tages bedste kandidat alligevel."""
-        min_area = min_ha * 10000
-        parcels = self._snap_clean(list(parcels))
-
-        def is_target(geom):
-            a = geom.area()
-            if a < min_area:
-                return True
-            if min_width > 0:
-                p = geom.length()
-                if p > 0 and (2.0 * a / p) < min_width:
-                    return True
-            return False
-
-        changed = True
-        while changed:
-            changed = False
-            for i in range(len(parcels)):
-                if not is_target(parcels[i]):
-                    continue
-
-                # Scor naboer: længst fælles kant vinder; tvær-vandløb straffes hårdt
-                candidates = []
-                for j in range(len(parcels)):
-                    if i == j:
-                        continue
-                    try:
-                        if not parcels[i].intersects(parcels[j]):
-                            continue
-                        shared = parcels[i].intersection(parcels[j])
-                        if shared is None or shared.isNull() or shared.isEmpty():
-                            continue
-                        score = shared.length() + shared.area()
-                        if score <= 0.01:   # kun hjørneberøring
-                            continue
-                        # Mild samme-side-præference: en nabo hvis fælles kant
-                        # løber langs vandløbet nedscores let (×0.5). Det vælger
-                        # samme-side når den deler en lang kant, men undgår at
-                        # tvinge en sliver ind i en KORT samme-side-kant (som
-                        # ville efterlade en spike). Små stykker må krydse.
-                        if stream_geom is not None:
-                            try:
-                                overlap = shared.intersection(stream_geom)
-                                if overlap and not overlap.isEmpty():
-                                    frac = overlap.length() / max(shared.length(), 0.001)
-                                    if frac > 0.3:
-                                        score *= 0.5
-                            except Exception:
-                                pass
-                        candidates.append((score, j))
-                    except Exception:
-                        continue
-
-                if not candidates:
-                    continue
-                candidates.sort(reverse=True)
-
-                # Foretræk merge der giver ét sammenhængende polygon …
-                chosen_j = None
-                chosen_geom = None
-                for _, j in candidates:
-                    merged = parcels[i].combine(parcels[j])
-                    if merged is None or merged.isEmpty():
-                        continue
-                    if not merged.isGeosValid():
-                        merged = merged.makeValid()
-                    parts = list(self._single_parts(merged))
-                    if len(parts) == 1:
-                        chosen_j, chosen_geom = j, parts[0]
-                        break
-
-                # … ellers tag bedste kandidat alligevel (sliver SKAL fjernes).
-                # Behold største del, så et evt. multipart-resultat ikke
-                # re-eksploderes til sliveren igen i _snap_clean.
-                if chosen_j is None:
-                    _, j = candidates[0]
-                    merged = parcels[i].combine(parcels[j])
-                    if merged and not merged.isEmpty():
-                        if not merged.isGeosValid():
-                            merged = merged.makeValid()
-                        parts = list(self._single_parts(merged))
-                        if parts:
-                            chosen_j = j
-                            chosen_geom = max(parts, key=lambda g: g.area())
-
-                if chosen_j is not None:
-                    parcels = [chosen_geom if k == chosen_j else p
-                               for k, p in enumerate(parcels) if k != i]
-                    changed = True
-                    break   # genstart ydre løkke
-
-        remaining = sum(1 for p in parcels if is_target(p))
-        QgsMessageLog.logMessage(
-            f'SoilSurvey: merge_small færdig – {len(parcels)} parceller, '
-            f'{remaining} targets tilbage (min_width={min_width})', 'SoilSurvey')
-        return parcels
+    # (_merge_small fjernet: combine()-baseret merge skabte overlap/usnappede
+    #  hjørner/spikes. Sliver-fjernelse sker nu topologi-sikkert via
+    #  _eliminate_slivers, og ren dækning sikres af _polygonize_coverage.)
