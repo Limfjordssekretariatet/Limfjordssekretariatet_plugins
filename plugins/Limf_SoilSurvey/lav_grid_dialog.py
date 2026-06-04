@@ -72,23 +72,23 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             QMessageBox.warning(self, 'Fejl', 'Laget indeholder ingen geometri.')
             return
 
-        # Fase 1: Byg celler fra markkort (klip + opdel til ~gennemsnit).
+        # Fase 1: Hent markkort-felter og split FØRST langs vandløb.
+        # Rækkefølgen er vigtig: splitter vi vandløb EFTER opdeling i celler,
+        # opstår tynde kiler mellem celle-grænser og vandløbet (som bliver til
+        # arme/spikes når de smeltes væk). Ved at splitte felterne langs vandløbet
+        # FØRST bliver vandløbet en ren feltgrænse, og de efterfølgende celle-
+        # grænser genereres relativt til hver vandløbs-afgrænset brik → ingen kiler.
         parcels = self._load_markkort_parcels(union_geom, work_crs)
-        parcels = self._subdivide_large(parcels, avg_ha, max_ha, min_ha)
-        if not parcels:
-            QMessageBox.warning(self, 'Fejl', 'Ingen felter blev oprettet.')
-            return
-
-        # Fase 2: Byg REN topologisk dækning + split langs vandløb i ét hug.
-        # KUN polygonize bruges → garanteret ingen overlap og snappede hjørner.
-        # combine()/intersection (uafhængige geometrier) er FJERNET – de var
-        # kilden til overlap, usnappede hjørner, slivers og spikes.
-        diag = [f'celler={len(parcels)}']
+        diag = [f'markkort={len(parcels)}']
         stream_layer, stream_geom, n_streams = self._load_streams(union_geom, work_crs)
         if stream_layer is not None:
-            cleaned = self._split_by_streams(parcels, stream_layer)
-        else:
-            cleaned = self._polygonize_coverage(parcels)
+            parcels = self._split_by_streams(parcels, stream_layer)
+            diag.append(f'vandløbssplit={len(parcels)}')
+
+        # Fase 2: Opdel hver brik til ~gennemsnit og byg REN topologisk dækning.
+        # KUN polygonize bruges → garanteret ingen overlap og snappede hjørner.
+        parcels = self._subdivide_large(parcels, avg_ha, max_ha, min_ha)
+        cleaned = self._polygonize_coverage(parcels)
         diag.append(f'dækning={len(cleaned)}')
 
         if not cleaned:
