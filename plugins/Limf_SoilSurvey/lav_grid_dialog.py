@@ -219,7 +219,7 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             try:
                 grid_lines = processing.run(alg, {
                     'INPUT': grid_lines, 'REFERENCE_LAYER': stream_layer,
-                    'TOLERANCE': SLIVER_WIDTH_M, 'BEHAVIOR': 0, 'OUTPUT': 'memory:'
+                    'TOLERANCE': SLIVER_WIDTH_M, 'BEHAVIOR': 1, 'OUTPUT': 'memory:'
                 })['OUTPUT']
                 break
             except Exception:
@@ -260,19 +260,18 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
 
     def _is_sliver(self, geom, min_area, min_width):
         """En polygon er en sliver hvis den er for lille (areal) ELLER for smal.
-        Bredden måles på to måder, så både lige, stubbede OG buede strimler fanges:
-          • 2·areal/omkreds  → fanger lange/buede strimler
-          • MBR-bredde       → fanger stubbede/rektangulære felter
-        """
+
+        Tyndhed måles ved EROSION: polygonen er tyndere end min_width overalt,
+        hvis den forsvinder når den eroderes med min_width/2. Det fanger både
+        lige OG buede strimler – men flagger IKKE en jagget-men-tyk celle (den
+        beholder en kerne efter erosion). 2·A/P-målet gjorde netop det forkerte:
+        det forvekslede jaggethed med tyndhed og overdetekterede slivers."""
         a = geom.area()
         if a < min_area:
             return True
-        p = geom.length()
-        if p > 0 and (2.0 * a / p) < min_width:
-            return True
         try:
-            _, _, _, _length, width = self._get_mbr_params(geom)
-            if width < min_width:
+            eroded = geom.buffer(-min_width / 2.0, 4)
+            if eroded is None or eroded.isEmpty():
                 return True
         except Exception:
             pass
@@ -292,6 +291,7 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         layer = processing.run('native:fixgeometries',
                                {'INPUT': layer, 'OUTPUT': 'memory:'})['OUTPUT']
         min_area = min_ha * 10000
+        prev_n = None
         for _ in range(12):
             ids = [f.id() for f in layer.getFeatures()
                    if not f.geometry().isEmpty()
@@ -303,6 +303,10 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
                 # n>=total: alt er "tyndt" (fx ét enkelt jagget felt) – stop, ellers
                 # forsvinder hele laget.
                 break
+            if prev_n is not None and n >= prev_n:
+                # ingen fremgang (en sliver kan ikke elimineres – fx isoleret) – stop
+                break
+            prev_n = n
             layer.selectByIds(ids)
             try:
                 layer = processing.run('qgis:eliminateselectedpolygons', {
