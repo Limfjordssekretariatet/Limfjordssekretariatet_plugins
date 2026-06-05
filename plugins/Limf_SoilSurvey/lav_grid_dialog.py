@@ -225,10 +225,20 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         parcel_layer = self._build_layer(parcels)
         grid_lines = processing.run('native:polygonstolines',
                                     {'INPUT': parcel_layer, 'OUTPUT': 'memory:'})['OUTPUT']
-        # Snap feltgrænserne ind på vandløbet: hvor en (markkort)feltgrænse løber
-        # tæt på/parallelt med vandløbet, trækkes den ind på det, så den tynde
-        # strimmel mellem markkortgrænse og vandløb kollapser. Kaldes på felt-
-        # niveau (før opdeling), så kun feltgrænser snappes – ikke celle-grænser.
+        # Densificér feltgrænserne FØRST: et langt lige segment har ingen vertices i
+        # midten, så snapgeometries (der kun flytter eksisterende vertices) kan ikke
+        # trække midten ind på det bugtede vandløb. Med vertices hver ~2 m kan hele
+        # segmentet snappes, så den tynde korridor mellem feltkant og vandløb kollapser.
+        for dalg in ('native:densifygeometriesgivenaninterval', 'qgis:densifygeometriesgivenaninterval'):
+            try:
+                grid_lines = processing.run(dalg, {
+                    'INPUT': grid_lines, 'INTERVAL': 2.0, 'OUTPUT': 'memory:'
+                })['OUTPUT']
+                break
+            except Exception:
+                continue
+        # Snap så feltgrænserne ind på vandløbet (kaldes på felt-niveau før opdeling,
+        # så kun feltgrænser snappes – ikke celle-grænser).
         for alg in ('native:snapgeometries', 'qgis:snapgeometries'):
             try:
                 grid_lines = processing.run(alg, {
