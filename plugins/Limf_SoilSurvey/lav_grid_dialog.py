@@ -307,6 +307,10 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             QgsMessageLog.logMessage(f'SoilSurvey: split_thin_parts fejlede: {e}', 'SoilSurvey')
             return parcels
 
+        n_cores = sum(1 for f in cores.getFeatures()
+                      if not f.geometry().isEmpty() and f.geometry().area() >= 1)
+        n_thin = sum(1 for f in thin.getFeatures()
+                     if not f.geometry().isEmpty() and f.geometry().area() >= 1)
         result = []
         for lyr in (cores, thin):
             for f in lyr.getFeatures():
@@ -315,6 +319,9 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
                     for part in self._single_parts(g):
                         if part.area() >= 1:
                             result.append(QgsGeometry(part))
+        QgsMessageLog.logMessage(
+            f'SoilSurvey: split_thin_parts {len(parcels)} → {n_cores} kerner '
+            f'+ {n_thin} haler = {len(result)}', 'SoilSurvey')
         return result if result else parcels
 
     def _is_sliver(self, geom, min_area, min_width):
@@ -379,6 +386,9 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
                     leftover.append(g)
                 else:
                     groups[ri].append(g)
+            QgsMessageLog.logMessage(
+                f'SoilSurvey: region-grupper {[len(x) for x in groups]} '
+                f'leftover={len(leftover)}', 'SoilSurvey')
             result = []
             for grp in groups:
                 if grp:
