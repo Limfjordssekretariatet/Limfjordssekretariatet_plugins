@@ -80,10 +80,8 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         parcels = self._load_markkort_parcels(union_geom, work_crs)
         diag = [f'markkort={len(parcels)}']
         stream_layer, stream_geom, n_streams = self._load_streams(union_geom, work_crs)
-        regions = None
         if stream_layer is not None:
             parcels = self._split_by_streams(parcels, stream_layer)
-            regions = self._stream_regions(union_geom, stream_layer)
             diag.append(f'vandløbssplit={len(parcels)}')
 
         parcels = self._subdivide_large(parcels, avg_ha, max_ha, min_ha)
@@ -108,11 +106,12 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         cleaned = self._polygonize_coverage(cleaned)
         diag.append(f'split-tynd={len(cleaned)}')
 
-        # Fase 3: Fjern slivers/små felter TOPOLOGISK (eliminate dissolver ind i
-        # nabo med længst fælles kant). Med 'regions' holdes merge på SAMME side
-        # af vandløbet → en strimmel smeltes aldrig på tværs (= ingen arme).
+        # Fase 3: Fjern slivers/små felter TOPOLOGISK (eliminate dissolver hver ind
+        # i naboen med længst fælles kant). UDEN region-spærring: en hale/korridor
+        # langs et vandløb skal lægges sammen med den røde mark den løber langs
+        # (ofte på den anden side af vandløbet), ikke tvinges ind i moderklumpen.
         n_thin_before = self._count_thin(cleaned, SLIVER_WIDTH_M, min_ha)
-        cleaned = self._eliminate_slivers(cleaned, min_ha, SLIVER_WIDTH_M, regions=regions)
+        cleaned = self._eliminate_slivers(cleaned, min_ha, SLIVER_WIDTH_M)
         n_thin_after = self._count_thin(cleaned, SLIVER_WIDTH_M, min_ha)
         diag.append(f'efter elim={len(cleaned)}')
         diag.append(f'tynde {n_thin_before}->{n_thin_after}')
