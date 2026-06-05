@@ -2,7 +2,7 @@
 name=Limf_SoilSurvey
 qgisMinimumVersion=3.0
 description=Plugin til håndtering af jordprøver
-version=2.1.8
+version=2.1.9
 author=Henrik Rosenskjold
 email=henrik.rosenskjold@aalborg.dk
 about=Plugin med værktøjer til grid (Markkort-baseret), centerpunkter, QField-klargøring og rapporteksport.
