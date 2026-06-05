@@ -217,6 +217,19 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         parcel_layer = self._build_layer(parcels)
         grid_lines = processing.run('native:polygonstolines',
                                     {'INPUT': parcel_layer, 'OUTPUT': 'memory:'})['OUTPUT']
+        # Snap feltgrænserne ind på vandløbet: hvor en (markkort)feltgrænse løber
+        # tæt på/parallelt med vandløbet, trækkes den ind på det, så den tynde
+        # strimmel mellem markkortgrænse og vandløb kollapser. Kaldes på felt-
+        # niveau (før opdeling), så kun feltgrænser snappes – ikke celle-grænser.
+        for alg in ('native:snapgeometries', 'qgis:snapgeometries'):
+            try:
+                grid_lines = processing.run(alg, {
+                    'INPUT': grid_lines, 'REFERENCE_LAYER': stream_layer,
+                    'TOLERANCE': SLIVER_WIDTH_M, 'BEHAVIOR': 1, 'OUTPUT': 'memory:'
+                })['OUTPUT']
+                break
+            except Exception:
+                continue
         merged = processing.run('native:mergevectorlayers', {
             'LAYERS': [grid_lines, stream_layer],
             'CRS': parcel_layer.crs(), 'OUTPUT': 'memory:'
