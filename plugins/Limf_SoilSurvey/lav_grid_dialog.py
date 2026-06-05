@@ -100,6 +100,14 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             QMessageBox.warning(self, 'Fejl', 'Ingen dækning kunne bygges.')
             return
 
+        # Fase 2b: Adskil tynde haler/kanaler fra de tykke kerner (haletudse-former).
+        # En tynd hale på et ellers stort polygon flagges ikke som sliver; ved at
+        # skære den fra kan eliminate bagefter smelte den ind i naboen den løber
+        # langs – i stedet for at den hænger på moderpolygonet.
+        cleaned = self._split_thin_parts(cleaned, SLIVER_WIDTH_M)
+        cleaned = self._polygonize_coverage(cleaned)
+        diag.append(f'split-tynd={len(cleaned)}')
+
         # Fase 3: Fjern slivers/små felter TOPOLOGISK (eliminate dissolver ind i
         # nabo med længst fælles kant). Med 'regions' holdes merge på SAMME side
         # af vandløbet → en strimmel smeltes aldrig på tværs (= ingen arme).
@@ -262,6 +270,41 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
                                {'INPUT': noded, 'KEEP_FIELDS': False, 'OUTPUT': 'memory:'})['OUTPUT']
         result = [QgsGeometry(f.geometry()) for f in polys.getFeatures()
                   if not f.geometry().isEmpty() and f.geometry().area() >= 1]
+        return result if result else parcels
+
+    def _split_thin_parts(self, parcels, min_width):
+        """Skær tynde haler/kanaler fra de tykke kerner i hvert polygon.
+
+        En miter-opening (erode min_width/2 → dilate tilbage) giver de tykke
+        KERNER (åbning ⊆ original, så ingen overshoot). Resten = original − kerne
+        er de tynde HALER. Begge lægges tilbage som separate polygoner; kerne ∪ hale
+        = det oprindelige areal, så dækningen bevares (ingen huller). Bagefter kan
+        eliminate smelte hver hale ind i naboen den deler længst kant med."""
+        r = min_width / 2.0
+        layer = self._build_layer(parcels)
+        try:
+            eroded = processing.run('native:buffer', {
+                'INPUT': layer, 'DISTANCE': -r, 'SEGMENTS': 2,
+                'JOIN_STYLE': 1, 'MITER_LIMIT': 10, 'DISSOLVE': False,
+                'OUTPUT': 'memory:'})['OUTPUT']        # 1 = miter (skarpe hjørner)
+            cores = processing.run('native:buffer', {
+                'INPUT': eroded, 'DISTANCE': r, 'SEGMENTS': 2,
+                'JOIN_STYLE': 1, 'MITER_LIMIT': 10, 'DISSOLVE': False,
+                'OUTPUT': 'memory:'})['OUTPUT']
+            thin = processing.run('native:difference', {
+                'INPUT': layer, 'OVERLAY': cores, 'OUTPUT': 'memory:'})['OUTPUT']
+        except Exception as e:
+            QgsMessageLog.logMessage(f'SoilSurvey: split_thin_parts fejlede: {e}', 'SoilSurvey')
+            return parcels
+
+        result = []
+        for lyr in (cores, thin):
+            for f in lyr.getFeatures():
+                g = f.geometry()
+                if g and not g.isEmpty():
+                    for part in self._single_parts(g):
+                        if part.area() >= 1:
+                            result.append(QgsGeometry(part))
         return result if result else parcels
 
     def _is_sliver(self, geom, min_area, min_width):
