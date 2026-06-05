@@ -15,7 +15,7 @@ FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), 'lav_grid
 
 MARKKORT_PATH = os.path.join(os.path.dirname(__file__), 'Data', 'Markkort', 'Markkort_V3_snap.shp')
 MAX_ASPECT_RATIO = 3.0   # default max length/width ratio before subdivision kicks in
-SLIVER_WIDTH_M = 15.0     # polygoner smallere end dette (bredde) smeltes ind i nabo
+SLIVER_WIDTH_M = 20.0     # polygoner smallere end dette (bredde) smeltes ind i nabo
 
 
 class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
