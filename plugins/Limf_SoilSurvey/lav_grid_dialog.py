@@ -113,6 +113,10 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         # af vandløbet → en strimmel smeltes aldrig på tværs (= ingen arme).
         n_thin_before = self._count_thin(cleaned, SLIVER_WIDTH_M, min_ha)
         cleaned = self._eliminate_slivers(cleaned, min_ha, SLIVER_WIDTH_M, regions=regions)
+        # Mop-up UDEN region-spærring: fjern strimler der blev strandet uden en
+        # nabo på samme side (små stykker må krydse vandløbet, jf. reglen). Region-
+        # runden har allerede forhindret de store arme, så her er kun få stranded.
+        cleaned = self._eliminate_slivers(cleaned, min_ha, SLIVER_WIDTH_M)
         n_thin_after = self._count_thin(cleaned, SLIVER_WIDTH_M, min_ha)
         diag.append(f'efter elim={len(cleaned)}')
         diag.append(f'tynde {n_thin_before}->{n_thin_after}')
