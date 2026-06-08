@@ -251,20 +251,41 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             'LAYERS': [grid_lines, stream_layer],
             'CRS': parcel_layer.crs(), 'OUTPUT': 'memory:'
         })['OUTPUT']
-        # Nod linjenettet (split hver linje ved alle skæringer) før polygonisering
-        noded = processing.run('native:splitwithlines', {
-            'INPUT': merged, 'LINES': merged, 'OUTPUT': 'memory:'
-        })['OUTPUT']
-        polygons = processing.run('native:polygonize', {
-            'INPUT': noded, 'KEEP_FIELDS': False, 'OUTPUT': 'memory:'
-        })['OUTPUT']
-
-        result = [QgsGeometry(f.geometry()) for f in polygons.getFeatures()
-                  if not f.geometry().isEmpty() and f.geometry().area() >= 1]
+        result = self._node_and_polygonize(merged, parcel_layer.crs())
         QgsMessageLog.logMessage(
             f'SoilSurvey: polygonize-split {len(parcels)} → {len(result)} parceller',
             'SoilSurvey')
         return result if result else parcels
+
+    def _node_and_polygonize(self, line_layer, crs):
+        """Nod linjer robust via GEOS unaryUnion og polygonisér.
+
+        VIGTIGT: vi bruger IKKE native:splitwithlines til at node (INPUT=LINES) –
+        den kan udløse en access violation / hård QGIS-crash i GEOS' splitGeometry
+        på visse 3.40/GEOS-builds. unaryUnion noder linjerne (splitter ved alle
+        skæringer) ad en langt mere stabil kodesti."""
+        geoms = [f.geometry() for f in line_layer.getFeatures()
+                 if f.geometry() and not f.geometry().isEmpty()]
+        if not geoms:
+            return []
+        try:
+            noded = QgsGeometry.unaryUnion(geoms)
+        except Exception as e:
+            QgsMessageLog.logMessage(f'SoilSurvey: unaryUnion fejlede: {e}', 'SoilSurvey')
+            return []
+        if noded is None or noded.isEmpty():
+            return []
+        noded_layer = QgsVectorLayer(
+            f'MultiLineString?crs={crs.authid()}', 'noded', 'memory')
+        feat = QgsFeature()
+        feat.setGeometry(noded)
+        noded_layer.dataProvider().addFeatures([feat])
+        noded_layer.updateExtents()
+        polys = processing.run('native:polygonize',
+                               {'INPUT': noded_layer, 'KEEP_FIELDS': False,
+                                'OUTPUT': 'memory:'})['OUTPUT']
+        return [QgsGeometry(f.geometry()) for f in polys.getFeatures()
+                if not f.geometry().isEmpty() and f.geometry().area() >= 1]
 
     def _polygonize_coverage(self, parcels):
         """Byg en REN topologisk dækning (ingen overlap, snappede hjørner) ved at
@@ -273,12 +294,7 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         layer = self._build_layer(parcels)
         lines = processing.run('native:polygonstolines',
                                {'INPUT': layer, 'OUTPUT': 'memory:'})['OUTPUT']
-        noded = processing.run('native:splitwithlines',
-                               {'INPUT': lines, 'LINES': lines, 'OUTPUT': 'memory:'})['OUTPUT']
-        polys = processing.run('native:polygonize',
-                               {'INPUT': noded, 'KEEP_FIELDS': False, 'OUTPUT': 'memory:'})['OUTPUT']
-        result = [QgsGeometry(f.geometry()) for f in polys.getFeatures()
-                  if not f.geometry().isEmpty() and f.geometry().area() >= 1]
+        result = self._node_and_polygonize(lines, layer.crs())
         return result if result else parcels
 
     def _split_thin_parts(self, parcels, min_width):
@@ -357,12 +373,7 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         merged = processing.run('native:mergevectorlayers', {
             'LAYERS': [lines, stream_layer], 'CRS': layer.crs(), 'OUTPUT': 'memory:'
         })['OUTPUT']
-        noded = processing.run('native:splitwithlines',
-                               {'INPUT': merged, 'LINES': merged, 'OUTPUT': 'memory:'})['OUTPUT']
-        polys = processing.run('native:polygonize',
-                               {'INPUT': noded, 'KEEP_FIELDS': False, 'OUTPUT': 'memory:'})['OUTPUT']
-        regions = [QgsGeometry(f.geometry()) for f in polys.getFeatures()
-                   if not f.geometry().isEmpty() and f.geometry().area() >= 1]
+        regions = self._node_and_polygonize(merged, layer.crs())
         QgsMessageLog.logMessage(
             f'SoilSurvey: {len(regions)} vandløbs-regioner', 'SoilSurvey')
         return regions
