@@ -5,8 +5,9 @@ grid over alt og bagefter rydde slivers op, RESPEKTERER vi markerne som de er og
 laver kun kunstig opdeling hvor en mark ikke allerede passer til målstørrelsen.
 
 Proces (jf. brugerens beslutningstræ):
-  1. Skær marker langs streams + roades (robust unaryUnion-nodning, ingen
-     splitwithlines → undgår QGIS-crash på visse GEOS-builds).
+  1. Hent marker fra markkortet. Streams + roades er allerede klippet ind som
+     markgrænser i forbehandlingen, så vi bruger markerne direkte (ingen
+     barrier-skæring ved kørsel).
   Klassificér hver mark efter areal vs. gennemsnit (±20% = passer):
   2. Marker der passer direkte → grid som de er.
   4-5. For SMÅ marker (under avg·0.8): smelt med 1 (trin 4) eller 2 (trin 5)
@@ -24,25 +25,51 @@ Fallback: den gamle pipeline ligger urørt i lav_grid_dialog_old.py.
 
 import math
 import os
-import processing
+import shutil
+import tempfile
+import urllib.request
+import zipfile
 from qgis.PyQt import uic, QtWidgets
 from qgis.PyQt.QtCore import QVariant
-from qgis.PyQt.QtWidgets import QMessageBox
+from qgis.PyQt.QtWidgets import QMessageBox, QApplication, QProgressDialog
+from qgis.PyQt.QtCore import Qt
 from qgis.core import (
     QgsProject, QgsVectorLayer, QgsFeature, QgsGeometry,
     QgsField, QgsPointXY, QgsWkbTypes,
     QgsCoordinateReferenceSystem, QgsCoordinateTransform,
     QgsCoordinateTransformContext, QgsFeatureRequest, QgsMessageLog,
     QgsSpatialIndex, QgsFillSymbol,
-    QgsRuleBasedRenderer,
+    QgsRuleBasedRenderer, QgsApplication,
 )
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), 'lav_grid_dialog.ui'))
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), 'Data')
-MARKKORT_PATH = os.path.join(DATA_DIR, 'Markkort', 'Markkort_V3_snap.shp')
-STREAMS_DIR = os.path.join(DATA_DIR, 'Streams')
-ROADES_DIR = os.path.join(DATA_DIR, 'Roades')
+# ------------------------------------------------------------------ #
+#  Markkort-data: downloades fra en GitHub release og caches lokalt. #
+# ------------------------------------------------------------------ #
+# Markkortet (landsdækkende, ~175 MB) er for stort til at distribuere i selve
+# plugin-zippen (GitHub Pages-grænse 100 MB). Det ligger i stedet som et
+# release-asset og hentes første gang værktøjet bruges. Streams + roades er
+# allerede klippet ind som markgrænser i forbehandlingen, så markerne bruges
+# direkte (ingen barrier-skæring ved kørsel).
+MARKKORT_VERSION = 'markkort-v1'   # = release-tag; bump for at tvinge ny download
+MARKKORT_ZIP_NAME = 'Markkort_grid.zip'
+MARKKORT_SHP_NAME = 'Markkort_grid.shp'
+MARKKORT_URL = (
+    'https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins'
+    f'/releases/download/{MARKKORT_VERSION}/{MARKKORT_ZIP_NAME}'
+)
+
+
+def _markkort_cache_dir():
+    """Cache i QGIS-profilens mappe, så den overlever plugin-opdateringer
+    (downloades kun igen når MARKKORT_VERSION bumpes)."""
+    base = os.path.join(QgsApplication.qgisSettingsDirPath(),
+                        'Limf_SoilSurvey', MARKKORT_VERSION)
+    return base
+
+
+MARKKORT_PATH = os.path.join(_markkort_cache_dir(), MARKKORT_SHP_NAME)
 
 WORK_CRS = 'EPSG:25832'
 TOL_FRAC = 0.20          # ±20% af gennemsnit = "passer"
@@ -105,6 +132,10 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             QMessageBox.warning(self, 'Fejl', 'Gennemsnitsstørrelse må ikke være større end max størrelse.')
             return
 
+        # Sørg for at markkortet er hentet (downloades fra release ved første brug).
+        if not self._ensure_markkort():
+            return
+
         work_crs = QgsCoordinateReferenceSystem(WORK_CRS)
         union_geom = self._union_of_layer(grense_layer, work_crs)
         if union_geom is None:
@@ -114,13 +145,12 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         lo, hi = avg_ha * (1 - TOL_FRAC), avg_ha * (1 + TOL_FRAC)
         counts = {'ok': 0, 'delt': 0, 'smeltet': 0, 'kunstig': 0, 'rest': 0}
 
-        # ---- Trin 1: hent marker og skær langs streams + roades ----
-        raw = self._load_markkort_parcels(union_geom, work_crs)
-        log(f'trin1: {len(raw)} marker fra markkort')
-        cut_lines, n_streams, n_roades = self._barrier_lines(union_geom, work_crs)
-        parcels = self._cut_by_barriers(raw, cut_lines, work_crs)
-        log(f'trin1: {len(parcels)} marker efter skæring (streams={n_streams}, roades={n_roades})')
-
+        # ---- Trin 1: hent marker fra markkortet ----
+        # Markkortet er forbehandlet, så streams + roades allerede er klippet ind
+        # som markgrænser. Vi bruger derfor markerne direkte – ingen barrier-
+        # indlæsning eller -skæring (det skete i preprocessing).
+        parcels = self._load_markkort_parcels(union_geom, work_crs)
+        log(f'trin1: {len(parcels)} marker fra markkort')
         parcels = [Parcel(g) for g in parcels]
 
         # ---- Klassificér + trin 2 (passer direkte) ----
@@ -176,13 +206,89 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             f'Trin 3 – delt (store):      {counts["delt"]}\n'
             f'Trin 4-5 – smeltet (små):   {counts["smeltet"]}\n'
             f'Trin 6 – kunstig opdeling:  {counts["kunstig"]}\n'
-            f'Trin 7 – rest (RØD):        {counts["rest"]}\n\n'
-            f'Vandløb: {n_streams} · Veje: {n_roades}'
+            f'Trin 7 – rest (RØD):        {counts["rest"]}'
         )
         self.accept()
 
     # ------------------------------------------------------------------ #
-    #  Trin 1: indlæs + skær                                              #
+    #  Markkort-download (release-asset, cachet i QGIS-profil)            #
+    # ------------------------------------------------------------------ #
+    def _ensure_markkort(self):
+        """Sørg for at markkort-shapefilen findes i cachen. Hentes fra GitHub
+        release og pakkes ud første gang (eller når MARKKORT_VERSION er bumpet).
+        Returnerer True hvis filen er klar, ellers False (og viser fejl)."""
+        if os.path.exists(MARKKORT_PATH):
+            return True
+
+        cache_dir = _markkort_cache_dir()
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Question)
+        msg.setWindowTitle('Hent markkort')
+        msg.setText(
+            'Markkortet skal hentes første gang (ca. 100 MB).\n'
+            'Det gemmes lokalt, så det kun hentes én gang.\n\nHent nu?')
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        if msg.exec_() != QMessageBox.Yes:
+            return False
+
+        progress = QProgressDialog('Henter markkort…', 'Annullér', 0, 100, self)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        QApplication.processEvents()
+
+        tmp_zip = None
+        try:
+            os.makedirs(cache_dir, exist_ok=True)
+            fd, tmp_zip = tempfile.mkstemp(suffix='.zip')
+            os.close(fd)
+
+            def _hook(block_num, block_size, total_size):
+                if progress.wasCanceled():
+                    raise InterruptedError('Download annulleret')
+                if total_size > 0:
+                    pct = min(100, int(block_num * block_size * 100 / total_size))
+                    progress.setValue(pct)
+                    QApplication.processEvents()
+
+            urllib.request.urlretrieve(MARKKORT_URL, tmp_zip, _hook)
+
+            progress.setLabelText('Pakker markkort ud…')
+            progress.setValue(100)
+            QApplication.processEvents()
+            with zipfile.ZipFile(tmp_zip) as zf:
+                zf.extractall(cache_dir)
+
+            progress.close()
+            if not os.path.exists(MARKKORT_PATH):
+                QMessageBox.warning(
+                    self, 'Fejl',
+                    'Markkortet blev hentet, men forventede fil mangler:\n'
+                    f'{MARKKORT_SHP_NAME}')
+                return False
+            log(f'markkort hentet og udpakket til {cache_dir}')
+            return True
+
+        except InterruptedError:
+            progress.close()
+            shutil.rmtree(cache_dir, ignore_errors=True)
+            return False
+        except Exception as e:
+            progress.close()
+            shutil.rmtree(cache_dir, ignore_errors=True)
+            QMessageBox.critical(
+                self, 'Fejl ved download',
+                f'Kunne ikke hente markkortet:\n{e}\n\nURL:\n{MARKKORT_URL}')
+            return False
+        finally:
+            if tmp_zip and os.path.exists(tmp_zip):
+                try:
+                    os.remove(tmp_zip)
+                except OSError:
+                    pass
+
+    # ------------------------------------------------------------------ #
+    #  Trin 1: indlæs marker                                              #
     # ------------------------------------------------------------------ #
     def _union_of_layer(self, layer, work_crs):
         src_crs = layer.crs()
@@ -200,99 +306,6 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         if u is None or u.isNull() or u.isEmpty():
             return None
         return u
-
-    def _barrier_lines(self, union_geom, work_crs):
-        """Saml streams + roades som ét nodet linjelag, klippet til området.
-        Returnerer (line_layer | None, n_streams, n_roades)."""
-        streams = self._load_line_dir(STREAMS_DIR, union_geom, work_crs)
-        roades = self._load_line_dir(ROADES_DIR, union_geom, work_crs)
-        n_s = streams.featureCount() if streams else 0
-        n_r = roades.featureCount() if roades else 0
-        layers = [l for l in (streams, roades) if l is not None]
-        if not layers:
-            return None, 0, 0
-        merged = processing.run('native:mergevectorlayers', {
-            'LAYERS': layers, 'CRS': work_crs, 'OUTPUT': 'memory:'})['OUTPUT']
-        return merged, n_s, n_r
-
-    def _load_line_dir(self, directory, union_geom, work_crs):
-        """Indlæs alle .shp i en mappe, reproject, klip til området, eksploder
-        til single LineStrings. Returnerer et memory-lag eller None."""
-        if not os.path.isdir(directory):
-            return None
-        to_merge = []
-        for fname in sorted(os.listdir(directory)):
-            if not fname.lower().endswith('.shp'):
-                continue
-            lyr = QgsVectorLayer(os.path.join(directory, fname), 'lines', 'ogr')
-            if not lyr.isValid():
-                log(f'kan ikke åbne {fname}')
-                continue
-            if lyr.crs() != work_crs:
-                lyr = processing.run('native:reprojectlayer', {
-                    'INPUT': lyr, 'TARGET_CRS': work_crs, 'OUTPUT': 'memory:'})['OUTPUT']
-            to_merge.append(lyr)
-        if not to_merge:
-            return None
-        merged = processing.run('native:mergevectorlayers', {
-            'LAYERS': to_merge, 'CRS': work_crs, 'OUTPUT': 'memory:'})['OUTPUT']
-        clipped = processing.run('native:extractbylocation', {
-            'INPUT': merged, 'PREDICATE': [0],  # intersects
-            'INTERSECT': self._geom_to_layer([union_geom], work_crs),
-            'OUTPUT': 'memory:'})['OUTPUT']
-        single = processing.run('native:multiparttosingleparts', {
-            'INPUT': clipped, 'OUTPUT': 'memory:'})['OUTPUT']
-        return single if single.featureCount() > 0 else None
-
-    def _cut_by_barriers(self, geoms, cut_lines, work_crs):
-        """Skær markerne langs barrier-linjerne ved at polygonisere et nodet net
-        af markgrænser + barrierer (robust; ingen splitwithlines)."""
-        if cut_lines is None or not geoms:
-            return geoms
-        parcel_layer = self._geom_to_layer(geoms, work_crs)
-        grid_lines = processing.run('native:polygonstolines',
-                                    {'INPUT': parcel_layer, 'OUTPUT': 'memory:'})['OUTPUT']
-        # Densificér feltgrænser så snap kan trække lange lige segmenter ind på
-        # de bugtede barrierer (snapgeometries flytter kun eksisterende vertices).
-        for dalg in ('native:densifygeometriesgivenaninterval',
-                     'qgis:densifygeometriesgivenaninterval'):
-            try:
-                grid_lines = processing.run(dalg, {
-                    'INPUT': grid_lines, 'INTERVAL': 2.0, 'OUTPUT': 'memory:'})['OUTPUT']
-                break
-            except Exception:
-                continue
-        merged = processing.run('native:mergevectorlayers', {
-            'LAYERS': [grid_lines, cut_lines], 'CRS': work_crs, 'OUTPUT': 'memory:'})['OUTPUT']
-        result = self._node_and_polygonize(merged, work_crs)
-        return result if result else geoms
-
-    def _node_and_polygonize(self, line_layer, work_crs):
-        """Nod linjer via GEOS unaryUnion (stabil) og polygonisér.
-
-        Vi bruger BEVIDST ikke native:splitwithlines til nodning – den kan udløse
-        en hård access-violation-crash i GEOS på visse 3.40-builds."""
-        geoms = [f.geometry() for f in line_layer.getFeatures()
-                 if f.geometry() and not f.geometry().isEmpty()]
-        if not geoms:
-            return []
-        try:
-            noded = QgsGeometry.unaryUnion(geoms)
-        except Exception as e:
-            log(f'unaryUnion fejlede: {e}')
-            return []
-        if noded is None or noded.isEmpty():
-            return []
-        crs = QgsCoordinateReferenceSystem(work_crs) if isinstance(work_crs, str) else work_crs
-        nl = QgsVectorLayer(f'MultiLineString?crs={crs.authid()}', 'noded', 'memory')
-        feat = QgsFeature()
-        feat.setGeometry(noded)
-        nl.dataProvider().addFeatures([feat])
-        nl.updateExtents()
-        polys = processing.run('native:polygonize',
-                               {'INPUT': nl, 'KEEP_FIELDS': False, 'OUTPUT': 'memory:'})['OUTPUT']
-        return [QgsGeometry(f.geometry()) for f in polys.getFeatures()
-                if not f.geometry().isEmpty() and f.geometry().area() >= 1]
 
     # ------------------------------------------------------------------ #
     #  Trin 4-5: smelt små marker (nabo-graf, greedy)                     #
@@ -635,25 +648,6 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
     # ------------------------------------------------------------------ #
     #  Hjælpere                                                           #
     # ------------------------------------------------------------------ #
-    def _geom_to_layer(self, geoms, work_crs):
-        crs = work_crs.authid() if not isinstance(work_crs, str) else work_crs
-        layer = QgsVectorLayer(f'Polygon?crs={crs}', 'tmp', 'memory')
-        prov = layer.dataProvider()
-        prov.addAttributes([QgsField('id', QVariant.Int)])
-        layer.updateFields()
-        feats = []
-        for i, g in enumerate(geoms, 1):
-            for part in self._single_parts(g):
-                if part.area() < 1:
-                    continue
-                f = QgsFeature()
-                f.setGeometry(part)
-                f.setAttributes([i])
-                feats.append(f)
-        prov.addFeatures(feats)
-        layer.updateExtents()
-        return layer
-
     def _cleanup(self, geom):
         if geom is None or geom.isNull() or geom.isEmpty():
             return geom

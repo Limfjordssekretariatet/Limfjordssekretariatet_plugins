@@ -1,4 +1,0 @@
-Gennemsnitsstørrelse størrelse på grid (ha): default 5 ha
-Absolut max størrelse på grid (ha): default 7,5 ha
-Min størrelse på grid (ha): default 1 ha
-
