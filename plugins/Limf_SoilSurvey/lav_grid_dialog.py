@@ -586,7 +586,7 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             if not cb or cb.isNull() or cb.isEmpty():
                 continue
             for sub in self._single_parts(cb):
-                if sub.area() < 100:
+                if sub.area() < 10:   # kun nul-areal-splinter fra intersection fjernes
                     continue
                 parcels.append(sub)
                 mk_cov = QgsGeometry(sub) if mk_cov is None else mk_cov.combine(sub)
@@ -596,7 +596,7 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             if uncovered and not uncovered.isNull() and not uncovered.isEmpty():
                 for part in uncovered.asGeometryCollection():
                     if (QgsWkbTypes.geometryType(part.wkbType()) == QgsWkbTypes.PolygonGeometry
-                            and part.area() > 100):
+                            and part.area() > 10):
                         parcels.append(part)
         return parcels if parcels else [QgsGeometry(union_geom)]
 
