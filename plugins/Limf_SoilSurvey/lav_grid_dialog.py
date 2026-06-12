@@ -10,8 +10,11 @@ Proces (jf. brugerens beslutningstræ):
      barrier-skæring ved kørsel).
   Klassificér hver mark efter areal vs. gennemsnit (±20% = passer):
   2. Marker der passer direkte → grid som de er.
-  4-5. For SMÅ marker (under avg·0.8): smelt med 1 (trin 4) eller 2 (trin 5)
-       naboer hvis summen rammer ±20%. Greedy via ægte nabo-graf.
+  4-5. For SMÅ marker (under avg·0.8): lad hver vokse ved at sluge naboer (så
+       mange som nødvendigt) indtil arealet rammer ±20%. Greedy via ægte nabo-
+       graf; delvis smeltning beholdes hvis målet ikke kan rammes præcist.
+       Isolerede små marker (uden lille nabo) smeltes til sidst ind i deres
+       mindste nabo, så de ikke trækker gennemsnittet ned.
   3. For STORE marker (over avg·1.2): del i 2/3/4/5 lige dele hvis hver del
      rammer ±20% og holder min/max.
   6. Store marker der ikke kan deles pænt: kunstig grid-opdeling (MBR-celler)
@@ -74,7 +77,6 @@ MARKKORT_PATH = os.path.join(_markkort_cache_dir(), MARKKORT_SHP_NAME)
 WORK_CRS = 'EPSG:25832'
 TOL_FRAC = 0.20          # ±20% af gennemsnit = "passer"
 MAX_SPLIT_PARTS = 5      # del en stor mark i op til 5 lige dele (trin 3)
-MAX_MERGE_NEIGHBORS = 2  # smelt med op til 2 naboer (trin 4 = 1, trin 5 = 2)
 MIN_SHARED_EDGE_M = 1.0  # to marker er naboer hvis de deler mindst så lang en kant
 
 
@@ -168,14 +170,18 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
 
         result = list(ok)
 
-        # ---- Trin 4-5: smelt små marker (små først) ----
+        # ---- Trin 4-5: smelt små marker indbyrdes (små først) ----
         merged, leftover_small = self._merge_small(small, avg_ha, lo, hi, min_ha)
         result.extend(merged)
-        result.extend(leftover_small)
 
         # ---- Trin 3 + 6: del store marker (store først) ----
         for p in large:
             result.extend(self._split_large(p, avg_ha, lo, hi, min_ha, max_ha))
+
+        # ---- Oprydning: isolerede små marker (ingen lille nabo) smeltes ind i
+        # deres mindste nabo i det færdige resultat, så de ikke trækker
+        # gennemsnittet ned. Resten lægges tilbage som de er.
+        result = self._absorb_leftovers(leftover_small, result)
 
         # ---- Trin 7: markér røde (bryder hårde grænser) ----
         for p in result:
@@ -311,11 +317,12 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
     #  Trin 4-5: smelt små marker (nabo-graf, greedy)                     #
     # ------------------------------------------------------------------ #
     def _merge_small(self, smalls, avg_ha, lo, hi, min_ha):
-        """Smelt små marker med 1-2 naboer så summen rammer ±20%.
+        """Smelt små marker sammen så de rammer målstørrelsen (±20%).
 
-        Greedy: tag den mindste ubehandlede lille mark, find den nabo-kombination
-        (op til MAX_MERGE_NEIGHBORS naboer) hvis sum er tættest på avg OG inden for
-        ±20%. Smelt og gentag. Naboer findes via ægte nabo-graf (delt kant)."""
+        Greedy: tag den mindste ubehandlede lille mark og lad den vokse ved at
+        sluge naboer (delt kant), så mange som nødvendigt, indtil arealet er i
+        [lo, hi]. Gentag. Naboer findes via ægte nabo-graf. Se _grow_region for
+        detaljer om delvis smeltning når målet ikke kan rammes præcist."""
         if not smalls:
             return [], []
 
@@ -339,19 +346,15 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             base = nodes[i]
             if base.area_ha >= lo:   # er allerede blevet stor nok (efter tidligere flet)
                 continue
-            chosen = self._best_merge_combo(i, nodes, index, consumed, avg_ha, lo, hi)
+            geom, chosen = self._grow_region(i, nodes, index, consumed, avg_ha, lo, hi)
             if not chosen:
-                continue
-            # smelt base + valgte naboer
-            geom = QgsGeometry(base.geom)
+                continue   # ingen naboer overhovedet – lades til leftover
             for j in chosen:
-                geom = geom.combine(nodes[j].geom)
                 consumed.add(j)
-            geom = self._cleanup(geom)
-            base.geom = geom
+            consumed.add(i)
+            base.geom = self._cleanup(geom)
             base.status = 'smeltet'
             merged_out.append(base)
-            consumed.add(i)
 
         leftover = []
         for i in active:
@@ -366,43 +369,51 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         log(f'trin4-5: {len(smalls)} små → {len(merged_out)} smeltede + {len(leftover)} rest/små')
         return merged_out, leftover
 
-    def _best_merge_combo(self, i, nodes, index, consumed, avg_ha, lo, hi):
-        """Find bedste sæt på 1..MAX_MERGE_NEIGHBORS naboer til node i, hvis den
-        samlede sum lander i [lo, hi]. Returnerer liste af indekser eller None.
-        Greedy add: tilføj den nabo der bringer summen tættest på avg, indtil vi
-        rammer intervallet eller løber tør for naboer."""
-        base = nodes[i]
+    def _grow_region(self, i, nodes, index, consumed, avg_ha, lo, hi):
+        """Lad en lille mark vokse ved at sluge naboer (delt kant) indtil arealet
+        rammer [lo, hi] – eller indtil ingen naboer er tilbage. Returnerer
+        (samlet_geom, liste_af_slugte_naboer).
+
+        Tilføjer i hvert skridt den nabo der bringer summen tættest på avg.
+        Til forskel fra den gamle 'alt-eller-intet': der er INGEN øvre grænse på
+        antal naboer (en mark der er 1/7 af avg skal kunne sluge 6 naboer), og en
+        DELVIS smeltning beholdes hvis vi ikke kan ramme [lo,hi] præcist – det er
+        bedre at efterlade én mark på 1,4 ha end syv marker på 0,2 ha (som ellers
+        trækker gennemsnittet langt under mål)."""
         used = set(consumed)
         used.add(i)
         chosen = []
-        cur_sum = base.area_ha
-        cur_geom = base.geom
+        cur_sum = nodes[i].area_ha
+        cur_geom = QgsGeometry(nodes[i].geom)
 
-        for _ in range(MAX_MERGE_NEIGHBORS):
+        # vokser indtil vi rammer intervallet eller løber tør for naboer
+        for _ in range(len(nodes)):
+            if lo <= cur_sum <= hi:
+                break
             cands = self._neighbors(cur_geom, index, nodes, used)
             if not cands:
                 break
-            # vælg den nabo der bringer summen tættest på avg
-            best_j, best_diff, best_sum = None, None, None
+            # vælg den nabo der bringer summen tættest på avg uden at skyde over hi
+            best_j, best_diff = None, None
             for j in cands:
                 s = cur_sum + nodes[j].area_ha
-                diff = abs(s - avg_ha)
+                # straf overskridelse af hi hårdere, så vi helst lander i intervallet
+                diff = abs(s - avg_ha) + (max(0.0, s - hi) * 10.0)
                 if best_diff is None or diff < best_diff:
-                    best_j, best_diff, best_sum = j, diff, s
+                    best_j, best_diff = j, diff
             if best_j is None:
+                break
+            new_sum = cur_sum + nodes[best_j].area_ha
+            # hvis vi allerede er i intervallet og næste nabo ville skyde forbi hi,
+            # så stop – vi har en god gruppe
+            if cur_sum >= lo and new_sum > hi:
                 break
             chosen.append(best_j)
             used.add(best_j)
-            cur_sum = best_sum
+            cur_sum = new_sum
             cur_geom = cur_geom.combine(nodes[best_j].geom)
-            if lo <= cur_sum <= hi:
-                return chosen
-            if cur_sum > hi:
-                # vi er skudt over – sidste tilføjelse var for meget; drop den
-                chosen.pop()
-                return chosen if chosen and lo <= (cur_sum - nodes[best_j].area_ha) <= hi else None
-        # nåede aldrig intervallet
-        return None
+
+        return cur_geom, chosen
 
     def _neighbors(self, geom, index, nodes, used):
         """Indekser på node der deler en reel kant (≥ MIN_SHARED_EDGE_M) med geom."""
@@ -422,6 +433,45 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             if inter.length() >= MIN_SHARED_EDGE_M:
                 out.append(cid)
         return out
+
+    def _absorb_leftovers(self, leftovers, result):
+        """Smelt hver isoleret lille mark (uden lille nabo) ind i sin MINDSTE
+        nabo blandt result-markerne, så den ikke trækker gennemsnittet ned.
+
+        Naboen vælges som den mindste der deler en kant – så den vokser mindst
+        muligt. En leftover uden NOGEN nabo i result lægges tilbage som den er
+        (kan ikke smeltes; håndteres af min/max-tjek i trin 7)."""
+        if not leftovers:
+            return result
+
+        # Spatial index over result-markerne (modtagerne)
+        index = QgsSpatialIndex()
+        for i, p in enumerate(result):
+            f = QgsFeature(i)
+            f.setGeometry(p.geom)
+            index.addFeature(f)
+
+        n_absorbed = 0
+        unmerged = []
+        for lp in leftovers:
+            cands = self._neighbors(lp.geom, index, result, set())
+            if not cands:
+                unmerged.append(lp)
+                continue
+            # mindste nabo (vokser mindst)
+            j = min(cands, key=lambda k: result[k].area_ha)
+            host = result[j]
+            host.geom = self._cleanup(host.geom.combine(lp.geom))
+            if host.status == 'ok':
+                host.status = 'smeltet'
+            n_absorbed += 1
+
+        log(f'absorber: {len(leftovers)} isolerede små → {n_absorbed} smeltet '
+            f'ind i nabo, {len(unmerged)} uden nabo')
+        # de umuligt-smeltbare lægges tilbage (accepteres/rød via trin 7)
+        for lp in unmerged:
+            lp.status = 'ok'
+        return result + unmerged
 
     # ------------------------------------------------------------------ #
     #  Trin 3 + 6: del store marker                                       #
