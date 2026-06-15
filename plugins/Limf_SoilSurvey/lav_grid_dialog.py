@@ -8,8 +8,9 @@ Proces (jf. brugerens beslutningstræ):
   1. Hent marker fra markkortet. Streams + roades er allerede klippet ind som
      markgrænser i forbehandlingen, så vi bruger markerne direkte (ingen
      barrier-skæring ved kørsel).
-  1b. Fjern tynde spyd/haler (slivers, dangles, haletudser): skær tynde dele af
-     hver mark via morfologisk åbning og smelt dem ind i naboen de løber langs.
+  1b. Fjern nålespidser (spikes) vertex-baseret: drop vertices der danner en
+     tynd ud-og-tilbage-tunge. Bevarer ægte hjørner skarpe (ingen buffer →
+     ingen runde hjørner). Hele tynde slivers smeltes ind i nabo til sidst.
   Klassificér hver mark efter areal vs. gennemsnit (±20% = passer):
   2. Marker der passer direkte → grid som de er.
   4-5. For SMÅ marker (under avg·0.8): lad hver vokse ved at sluge naboer (så
@@ -80,7 +81,8 @@ WORK_CRS = 'EPSG:25832'
 TOL_FRAC = 0.20          # ±20% af gennemsnit = "passer"
 MAX_SPLIT_PARTS = 5      # del en stor mark i op til 5 lige dele (trin 3)
 MIN_SHARED_EDGE_M = 1.0  # to marker er naboer hvis de deler mindst så lang en kant
-THIN_WIDTH_M = 20.0      # spyd/haler smallere end dette skæres fra og smeltes ind i nabo
+THIN_WIDTH_M = 20.0      # hele polygoner smallere end dette smeltes ind i nabo (sliver)
+SPIKE_ANGLE_DEG = 8.0    # vertex med spidsere vinkel end dette = nålespids → fjernes
 
 
 def log(msg):
@@ -157,13 +159,13 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         parcels = self._load_markkort_parcels(union_geom, work_crs)
         log(f'trin1: {len(parcels)} marker fra markkort')
 
-        # ---- Trin 1b: fjern tynde spyd/haler (slivers/dangles) ----
-        # Markkortet har tynde kiler hvor markgrænser løber næsten parallelt.
-        # De giver "haletudser": en tyk kerne med lange tynde spyd. Skær spydene
-        # fra og smelt hvert ind i den nabo det løber langs, så de ikke ender som
-        # mærkelige takkede polygoner.
-        parcels = self._remove_thin_spikes(parcels, THIN_WIDTH_M)
-        log(f'trin1b: {len(parcels)} marker efter fjernelse af tynde spyd')
+        # ---- Trin 1b: fjern spids-vinkel-spikes (vertex-baseret) ----
+        # Markkortet har tynde spyd hvor markgrænser mødes i en meget spids
+        # vinkel. De fjernes ved at droppe netop de vertices der danner en
+        # nålespids – ALLE andre hjørner bevares skarpe (ingen buffer → ingen
+        # runde hjørner).
+        parcels = [self._despike(g) for g in parcels]
+        parcels = [g for g in parcels if g and not g.isEmpty()]
 
         parcels = [Parcel(g) for g in parcels]
 
@@ -195,12 +197,10 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         # gennemsnittet ned. Resten lægges tilbage som de er.
         result = self._absorb_leftovers(leftover_small, result)
 
-        # ---- Slut-oprydning A: trim tynde SPYD af cellerne. Et spyd er en del
-        # af en ellers stor/tyk celles omrids (opstår når en celle-grænse skærer
-        # en markgrænse i spids vinkel under subdivision). Det fanges IKKE af
-        # sliver-fjernelsen (cellen er tyk), så vi skærer spyddene af og smelter
-        # dem ind i nabocellen de peger ind i.
-        result = self._trim_spikes(result, THIN_WIDTH_M)
+        # ---- Slut-oprydning A: fjern spids-vinkel-spikes på de færdige celler.
+        # Subdivision/smeltning kan have skabt nye nålespidser; despike fjerner
+        # dem vertex-baseret uden at runde hjørner.
+        result = [p for p in (self._despike_parcel(p) for p in result) if p]
 
         # ---- Slut-oprydning B: fjern tynde slivers (hele tynde polygoner) fra
         # det FÆRDIGE grid. Hver smeltes ind i naboen med størst kontakt (buffer-
@@ -338,165 +338,130 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         return u
 
     # ------------------------------------------------------------------ #
-    #  Trin 1b: fjern tynde spyd/haler (slivers, dangles, haletudser)     #
+    #  Spike-fjernelse (vertex-baseret – runder IKKE hjørner)            #
     # ------------------------------------------------------------------ #
-    def _remove_thin_spikes(self, geoms, min_width):
-        """Skær tynde spyd/haler fra hver mark og smelt dem ind i naboen de
-        løber langs.
+    def _despike(self, geom):
+        """Fjern nålespidser (spikes) fra en polygon uden at runde hjørner.
 
-        For hver mark findes den tykke KERNE ved morfologisk åbning
-        (erode min_width/2 → dilate tilbage, miter-hjørner). Original − kerne =
-        de tynde HALER (spyd). Halerne smeltes derefter ind i den kerne de deler
-        længst kant med – så en haletudses spyd havner i den brune nabo det
-        ligger op ad, i stedet for at hænge på sin egen klump som et takket spyd.
-
-        Helt små marker (helt under min_width) er selv slivers; de smeltes også
-        ind i deres bredeste nabo."""
-        r = min_width / 2.0
-        cores = []          # (geom) tykke kerner – modtagere
-        tails = []          # (geom) tynde haler/slivers – skal absorberes
-
-        for g in geoms:
-            if g is None or g.isEmpty():
+        En spike er en vertex B (mellem A og C) hvor de to kanter går næsten ud
+        og direkte tilbage – dvs. vinklen ABC er meget spids (< SPIKE_ANGLE_DEG)
+        OG den smalleste "bredde" af spidsen er lille: nabopunktet C (eller A)
+        ligger tæt på den modsatte kant. Det adskiller en tynd ud-og-tilbage-
+        tunge fra et ægte, bredt spidst hjørne (hvor A og C er vidt forskellige
+        retninger og hele formen er bred). Alle ægte hjørner bevares skarpe."""
+        if geom is None or geom.isNull() or geom.isEmpty():
+            return geom
+        out_parts = []
+        changed = False
+        for part in self._single_parts(geom):
+            poly = part.asPolygon()
+            if not poly:
+                out_parts.append(part)
                 continue
-            g = self._cleanup(g)
-            try:
-                opened = g.buffer(-r, 4).buffer(r, 4)
-            except Exception:
-                opened = None
-            if opened is None or opened.isEmpty():
-                # hele marken er tynd → ren sliver, absorbér den
-                tails.append(g)
-                continue
-            # kernen begrænses til marken selv (åbning kan bule en anelse ud)
-            core = opened.intersection(g)
-            if core is None or core.isEmpty() or core.area() < 1:
-                tails.append(g)
-                continue
-            # haler = original − kerne
-            tail = g.difference(core)
-            for part in self._single_parts(core):
-                if part.area() >= 1:
-                    cores.append(QgsGeometry(part))
-            if tail is not None and not tail.isEmpty():
-                for part in self._single_parts(tail):
-                    if part.area() >= 1:
-                        tails.append(QgsGeometry(part))
-
-        if not tails:
-            return cores if cores else geoms
-        if not cores:
-            return geoms
-
-        # Absorbér hver hale ind i den kerne den deler LÆNGST kant med.
-        index = QgsSpatialIndex()
-        for i, c in enumerate(cores):
-            f = QgsFeature(i)
-            f.setGeometry(c)
-            index.addFeature(f)
-
-        n_abs = 0
-        for tail in tails:
-            best_j, best_len = None, 0.0
-            bbox = tail.boundingBox()
-            bbox.grow(1.0)
-            for cid in index.intersects(bbox):
-                c = cores[cid]
-                if not tail.intersects(c):
-                    continue
-                inter = tail.intersection(c)
-                if inter is None or inter.isEmpty():
-                    continue
-                ln = inter.length()
-                if ln > best_len:
-                    best_j, best_len = cid, ln
-            if best_j is not None and best_len >= MIN_SHARED_EDGE_M:
-                cores[best_j] = self._cleanup(cores[best_j].combine(tail))
-                n_abs += 1
+            new_rings = []
+            for ring in poly:
+                nr, ch = self._despike_ring(ring)
+                new_rings.append(nr)
+                changed = changed or ch
+            if new_rings and len(new_rings[0]) >= 4:
+                ng = QgsGeometry.fromPolygonXY(new_rings)
+                if ng and not ng.isEmpty():
+                    ng = self._cleanup(ng)
+                    out_parts.append(ng)
+                else:
+                    out_parts.append(part)
             else:
-                # ingen kerne-nabo (isoleret sliver) – behold som selvstændig mark
-                cores.append(tail)
+                out_parts.append(part)
+        if not out_parts:
+            return geom
+        result = out_parts[0]
+        for p in out_parts[1:]:
+            result = result.combine(p)
+        return result if changed else geom
 
-        log(f'trin1b: {len(cores)} kerner, {len(tails)} haler → {n_abs} absorberet')
-        return cores
+    def _despike_ring(self, ring):
+        """Returnér (renset_ring, ændret?). Fjerner spids-vinkel-vertices
+        iterativt indtil ingen tilbage. ring er en lukket liste af QgsPointXY."""
+        if len(ring) < 4:
+            return ring, False
+        pts = ring[:-1] if ring[0] == ring[-1] else list(ring)
+        changed = False
+        i = 0
+        guard = 0
+        while len(pts) > 3 and guard < len(pts) * 4:
+            guard += 1
+            n = len(pts)
+            a = pts[(i - 1) % n]
+            b = pts[i % n]
+            c = pts[(i + 1) % n]
+            # spike = spids vinkel ved B OG spidsen er tynd: afstanden fra det
+            # nærmeste nabopunkt til den modsatte kant er lille (en nålespids,
+            # ikke et bredt spidst hjørne).
+            if (self._spike_angle(a, b, c) < SPIKE_ANGLE_DEG
+                    and self._spike_width(a, b, c) < THIN_WIDTH_M):
+                del pts[i % n]
+                changed = True
+                # bliv på samme indeks (nu peger det på næste punkt)
+                if i >= len(pts):
+                    i = 0
+            else:
+                i += 1
+                if i >= len(pts):
+                    break
+        pts.append(pts[0])   # luk ringen igen
+        return pts, changed
+
+    def _spike_angle(self, a, b, c):
+        """Vinkel ABC i grader (0-180). Lille vinkel = spids nålespids."""
+        v1x, v1y = a.x() - b.x(), a.y() - b.y()
+        v2x, v2y = c.x() - b.x(), c.y() - b.y()
+        n1 = math.hypot(v1x, v1y)
+        n2 = math.hypot(v2x, v2y)
+        if n1 < 1e-9 or n2 < 1e-9:
+            return 180.0
+        cosang = (v1x * v2x + v1y * v2y) / (n1 * n2)
+        cosang = max(-1.0, min(1.0, cosang))
+        return math.degrees(math.acos(cosang))
+
+    def _spike_width(self, a, b, c):
+        """Tyndhedsmål for spidsen ved B: afstanden fra det nærmeste nabopunkt
+        (A eller C) vinkelret ind på den modsatte kant.
+
+        For en nålespids (lang tynd tunge) er denne afstand lille uanset hvor
+        lang tungen er. For et bredt spidst hjørne er den stor. Det adskiller en
+        spike fra et ægte skarpt hjørne."""
+        # afstand fra A til linjen B–C, og fra C til linjen B–A; tag den mindste
+        d1 = self._point_seg_dist(a, b, c)
+        d2 = self._point_seg_dist(c, b, a)
+        return min(d1, d2)
+
+    def _point_seg_dist(self, p, s1, s2):
+        """Vinkelret afstand fra punkt p til den uendelige linje gennem s1–s2."""
+        dx, dy = s2.x() - s1.x(), s2.y() - s1.y()
+        seg = math.hypot(dx, dy)
+        if seg < 1e-9:
+            return math.hypot(p.x() - s1.x(), p.y() - s1.y())
+        # |kryds-produkt| / |segment|
+        cross = abs((p.x() - s1.x()) * dy - (p.y() - s1.y()) * dx)
+        return cross / seg
+
+    def _despike_parcel(self, parcel):
+        """Despike en Parcel in-place; returnér den (eller None hvis tom)."""
+        g = self._despike(parcel.geom)
+        if g is None or g.isEmpty() or g.area() < 1:
+            return None
+        parcel.geom = g
+        return parcel
 
     def _is_thin(self, geom, min_width):
         """True hvis polygonen er tyndere end min_width OVERALT (forsvinder ved
-        erosion med min_width/2). Fanger lige + buede strimler, ikke jaggede tykke
-        celler. Ren QgsGeometry – ingen processing."""
+        erosion med min_width/2). Bruges KUN til detektion (læser geometrien,
+        ændrer den ikke), så ingen runde-hjørne-bivirkning. Ren QgsGeometry."""
         try:
             eroded = geom.buffer(-min_width / 2.0, 4)
             return eroded is None or eroded.isEmpty()
         except Exception:
             return False
-
-    def _trim_spikes(self, parcels, min_width):
-        """Skær tynde SPYD af ellers tykke celler og smelt dem ind i nabocellen.
-
-        Et spyd er en del af en stor celles omrids (cellen er tyk → ses ikke som
-        sliver), typisk fra subdivision der skærer en markgrænse i spids vinkel.
-        For hver celle: kerne = morfologisk åbning. Hvis kernen er væsentligt
-        mindre end cellen, er resten spyd – de skæres af cellen og smeltes ind i
-        nabocellen med størst buffer-kontakt. Bevarer cellens status."""
-        if not parcels:
-            return parcels
-        r = min_width / 2.0
-
-        index = QgsSpatialIndex()
-        for i, p in enumerate(parcels):
-            f = QgsFeature(i)
-            f.setGeometry(p.geom)
-            index.addFeature(f)
-
-        n_trim = 0
-        for i, p in enumerate(parcels):
-            g = p.geom
-            if self._is_thin(g, min_width):
-                continue   # hele cellen er tynd → håndteres af _absorb_slivers
-            try:
-                core = g.buffer(-r, 4).buffer(r, 4).intersection(g)
-            except Exception:
-                continue
-            if core is None or core.isEmpty() or core.area() < 1:
-                continue
-            # er der spyd? (kerne mærkbart mindre end cellen)
-            if core.area() >= g.area() - 1:
-                continue
-            spikes = g.difference(core)
-            if spikes is None or spikes.isEmpty():
-                continue
-
-            # smelt hvert spyd-stykke ind i nabocellen med størst buffer-kontakt
-            moved_any = False
-            for spike in self._single_parts(spikes):
-                if spike.area() < 1:
-                    continue
-                probe = spike.buffer(1.0, 4)
-                bbox = probe.boundingBox()
-                best_j, best_overlap = None, 0.0
-                for cid in index.intersects(bbox):
-                    if cid == i:
-                        continue
-                    other = parcels[cid].geom
-                    if not probe.intersects(other):
-                        continue
-                    inter = probe.intersection(other)
-                    if inter is None or inter.isEmpty():
-                        continue
-                    ov = inter.area()
-                    if ov > best_overlap:
-                        best_j, best_overlap = cid, ov
-                if best_j is not None and best_overlap > 0:
-                    parcels[best_j].geom = self._cleanup(
-                        parcels[best_j].geom.combine(spike))
-                    moved_any = True
-                    n_trim += 1
-            if moved_any:
-                # cellen reduceres til sin kerne (spyddene er flyttet væk)
-                p.geom = self._cleanup(core)
-
-        log(f'trim-spikes: {n_trim} spyd skåret af og smeltet ind i nabo')
-        return parcels
 
     def _absorb_slivers(self, parcels, min_width, min_ha):
         """Smelt tynde slivers ind i naboen med STØRST kontakt (buffer-baseret).
