@@ -195,9 +195,15 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         # gennemsnittet ned. Resten lægges tilbage som de er.
         result = self._absorb_leftovers(leftover_small, result)
 
-        # ---- Slut-oprydning: fjern tynde slivers fra det FÆRDIGE grid. Slivers
-        # kan opstå undervejs (subdivision, smeltning) og fanges ikke alle af
-        # trin 1b. Hver sliver smeltes ind i naboen med størst kontakt (buffer-
+        # ---- Slut-oprydning A: trim tynde SPYD af cellerne. Et spyd er en del
+        # af en ellers stor/tyk celles omrids (opstår når en celle-grænse skærer
+        # en markgrænse i spids vinkel under subdivision). Det fanges IKKE af
+        # sliver-fjernelsen (cellen er tyk), så vi skærer spyddene af og smelter
+        # dem ind i nabocellen de peger ind i.
+        result = self._trim_spikes(result, THIN_WIDTH_M)
+
+        # ---- Slut-oprydning B: fjern tynde slivers (hele tynde polygoner) fra
+        # det FÆRDIGE grid. Hver smeltes ind i naboen med størst kontakt (buffer-
         # baseret, robust mod non-noded geometri). Umulige beholdes som røde.
         result = self._absorb_slivers(result, THIN_WIDTH_M, min_ha)
 
@@ -423,6 +429,74 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             return eroded is None or eroded.isEmpty()
         except Exception:
             return False
+
+    def _trim_spikes(self, parcels, min_width):
+        """Skær tynde SPYD af ellers tykke celler og smelt dem ind i nabocellen.
+
+        Et spyd er en del af en stor celles omrids (cellen er tyk → ses ikke som
+        sliver), typisk fra subdivision der skærer en markgrænse i spids vinkel.
+        For hver celle: kerne = morfologisk åbning. Hvis kernen er væsentligt
+        mindre end cellen, er resten spyd – de skæres af cellen og smeltes ind i
+        nabocellen med størst buffer-kontakt. Bevarer cellens status."""
+        if not parcels:
+            return parcels
+        r = min_width / 2.0
+
+        index = QgsSpatialIndex()
+        for i, p in enumerate(parcels):
+            f = QgsFeature(i)
+            f.setGeometry(p.geom)
+            index.addFeature(f)
+
+        n_trim = 0
+        for i, p in enumerate(parcels):
+            g = p.geom
+            if self._is_thin(g, min_width):
+                continue   # hele cellen er tynd → håndteres af _absorb_slivers
+            try:
+                core = g.buffer(-r, 4).buffer(r, 4).intersection(g)
+            except Exception:
+                continue
+            if core is None or core.isEmpty() or core.area() < 1:
+                continue
+            # er der spyd? (kerne mærkbart mindre end cellen)
+            if core.area() >= g.area() - 1:
+                continue
+            spikes = g.difference(core)
+            if spikes is None or spikes.isEmpty():
+                continue
+
+            # smelt hvert spyd-stykke ind i nabocellen med størst buffer-kontakt
+            moved_any = False
+            for spike in self._single_parts(spikes):
+                if spike.area() < 1:
+                    continue
+                probe = spike.buffer(1.0, 4)
+                bbox = probe.boundingBox()
+                best_j, best_overlap = None, 0.0
+                for cid in index.intersects(bbox):
+                    if cid == i:
+                        continue
+                    other = parcels[cid].geom
+                    if not probe.intersects(other):
+                        continue
+                    inter = probe.intersection(other)
+                    if inter is None or inter.isEmpty():
+                        continue
+                    ov = inter.area()
+                    if ov > best_overlap:
+                        best_j, best_overlap = cid, ov
+                if best_j is not None and best_overlap > 0:
+                    parcels[best_j].geom = self._cleanup(
+                        parcels[best_j].geom.combine(spike))
+                    moved_any = True
+                    n_trim += 1
+            if moved_any:
+                # cellen reduceres til sin kerne (spyddene er flyttet væk)
+                p.geom = self._cleanup(core)
+
+        log(f'trim-spikes: {n_trim} spyd skåret af og smeltet ind i nabo')
+        return parcels
 
     def _absorb_slivers(self, parcels, min_width, min_ha):
         """Smelt tynde slivers ind i naboen med STØRST kontakt (buffer-baseret).
