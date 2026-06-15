@@ -195,6 +195,12 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         # gennemsnittet ned. Resten lægges tilbage som de er.
         result = self._absorb_leftovers(leftover_small, result)
 
+        # ---- Slut-oprydning: fjern tynde slivers fra det FÆRDIGE grid. Slivers
+        # kan opstå undervejs (subdivision, smeltning) og fanges ikke alle af
+        # trin 1b. Hver sliver smeltes ind i naboen med størst kontakt (buffer-
+        # baseret, robust mod non-noded geometri). Umulige beholdes som røde.
+        result = self._absorb_slivers(result, THIN_WIDTH_M, min_ha)
+
         # ---- Trin 7: markér røde (bryder hårde grænser) ----
         for p in result:
             a = p.area_ha
@@ -407,6 +413,75 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
 
         log(f'trin1b: {len(cores)} kerner, {len(tails)} haler → {n_abs} absorberet')
         return cores
+
+    def _is_thin(self, geom, min_width):
+        """True hvis polygonen er tyndere end min_width OVERALT (forsvinder ved
+        erosion med min_width/2). Fanger lige + buede strimler, ikke jaggede tykke
+        celler. Ren QgsGeometry – ingen processing."""
+        try:
+            eroded = geom.buffer(-min_width / 2.0, 4)
+            return eroded is None or eroded.isEmpty()
+        except Exception:
+            return False
+
+    def _absorb_slivers(self, parcels, min_width, min_ha):
+        """Smelt tynde slivers ind i naboen med STØRST kontakt (buffer-baseret).
+
+        En sliver = en polygon der er tynd overalt (erosion-test) ELLER under
+        min areal. Kontakt måles ved at buffere sliveren en smule og se hvor
+        meget af hver nabo den overlapper – robust mod non-noded geometri hvor
+        eksakt delt-kant-længde er upålidelig. Sliveren smeltes ind i naboen med
+        størst overlap. Slivers uden brugbar nabo beholdes (markeres rød i trin 7)."""
+        if not parcels:
+            return parcels
+        min_area = min_ha * 10000
+
+        # find sliver-indekser
+        sliver_ids = [i for i, p in enumerate(parcels)
+                      if self._is_thin(p.geom, min_width) or p.geom.area() < min_area]
+        if not sliver_ids:
+            return parcels
+        sliver_set = set(sliver_ids)
+
+        index = QgsSpatialIndex()
+        for i, p in enumerate(parcels):
+            f = QgsFeature(i)
+            f.setGeometry(p.geom)
+            index.addFeature(f)
+
+        absorbed = set()    # slivers smeltet væk
+        n_abs = 0
+        # mindste først, så en lille sliver ikke æder en anden
+        for i in sorted(sliver_ids, key=lambda k: parcels[k].geom.area()):
+            if i in absorbed:
+                continue
+            sliver = parcels[i].geom
+            probe = sliver.buffer(1.0, 4)   # lille bufferzone til kontaktmåling
+            bbox = probe.boundingBox()
+            best_j, best_overlap = None, 0.0
+            for cid in index.intersects(bbox):
+                if cid == i or cid in absorbed or cid in sliver_set:
+                    continue   # smelt kun ind i en RIGTIG (ikke-sliver) nabo
+                other = parcels[cid].geom
+                if not probe.intersects(other):
+                    continue
+                inter = probe.intersection(other)
+                if inter is None or inter.isEmpty():
+                    continue
+                ov = inter.area()
+                if ov > best_overlap:
+                    best_j, best_overlap = cid, ov
+            if best_j is not None and best_overlap > 0:
+                host = parcels[best_j]
+                host.geom = self._cleanup(host.geom.combine(sliver))
+                if host.status == 'ok':
+                    host.status = 'smeltet'
+                absorbed.add(i)
+                n_abs += 1
+
+        log(f'slivers: {len(sliver_ids)} fundet → {n_abs} absorberet, '
+            f'{len(sliver_ids) - n_abs} tilbage (rød)')
+        return [p for k, p in enumerate(parcels) if k not in absorbed]
 
     # ------------------------------------------------------------------ #
     #  Trin 4-5: smelt små marker (nabo-graf, greedy)                     #
