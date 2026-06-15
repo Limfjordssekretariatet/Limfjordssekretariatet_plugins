@@ -493,8 +493,13 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         def is_sliver(p):
             return self._is_thin(p.geom, min_width) or p.geom.area() < min_area
 
+        # probe-buffer: bredt nok til at bygge bro over små non-noded gaps mellem
+        # markkortets polygoner (de rører ikke altid eksakt).
+        probe_dist = max(2.0, min_width / 4.0)
+
         max_rounds = 8
         total_abs = 0
+        no_neighbor = 0
         for _ in range(max_rounds):
             sliver_ids = [i for i, p in enumerate(parcels) if is_sliver(p)]
             if not sliver_ids:
@@ -509,12 +514,13 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
 
             absorbed = set()
             n_abs = 0
+            no_neighbor = 0
             # mindste først, så en lille sliver ikke æder en større
             for i in sorted(sliver_ids, key=lambda k: parcels[k].geom.area()):
                 if i in absorbed:
                     continue
                 sliver = parcels[i].geom
-                probe = sliver.buffer(1.0, 4)
+                probe = sliver.buffer(probe_dist, 4)
                 bbox = probe.boundingBox()
                 best_j, best_score = None, 0.0
                 for cid in index.intersects(bbox):
@@ -537,6 +543,8 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
                         host.status = 'smeltet'
                     absorbed.add(i)
                     n_abs += 1
+                else:
+                    no_neighbor += 1
 
             if absorbed:
                 parcels = [p for k, p in enumerate(parcels) if k not in absorbed]
@@ -545,7 +553,8 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
                 break   # ingen fremgang – resten har ingen brugbar nabo
 
         remaining = sum(1 for p in parcels if is_sliver(p))
-        log(f'slivers: {total_abs} absorberet, {remaining} tilbage (rød)')
+        log(f'slivers: {total_abs} absorberet, {remaining} tilbage '
+            f'(heraf {no_neighbor} uden nabo, probe={probe_dist:.0f}m)')
         return parcels
 
     # ------------------------------------------------------------------ #
