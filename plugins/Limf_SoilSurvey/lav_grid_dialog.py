@@ -454,73 +454,99 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         return parcel
 
     def _is_thin(self, geom, min_width):
-        """True hvis polygonen er tyndere end min_width OVERALT (forsvinder ved
-        erosion med min_width/2). Bruges KUN til detektion (læser geometrien,
-        ændrer den ikke), så ingen runde-hjørne-bivirkning. Ren QgsGeometry."""
+        """True hvis polygonen er en sliver: tynd OVERALT (forsvinder ved erosion
+        med min_width/2) ELLER dens MBR er smal (bredde < min_width) og tydeligt
+        aflang (længde/bredde > 3). Andet kriterium fanger korridorer der buler
+        en anelse ud ét sted, så erosionen efterlader en bittesmå kerne. Bruges
+        KUN til detektion – ændrer ikke geometrien. Ren QgsGeometry."""
         try:
             eroded = geom.buffer(-min_width / 2.0, 4)
-            return eroded is None or eroded.isEmpty()
+            if eroded is None or eroded.isEmpty():
+                return True
         except Exception:
-            return False
+            pass
+        # backup: smal + aflang MBR
+        try:
+            _, _, _, length, width = self._get_mbr_params(geom)
+            if width < min_width and length > 3 * max(width, 0.01):
+                return True
+        except Exception:
+            pass
+        return False
 
     def _absorb_slivers(self, parcels, min_width, min_ha):
         """Smelt tynde slivers ind i naboen med STØRST kontakt (buffer-baseret).
 
         En sliver = en polygon der er tynd overalt (erosion-test) ELLER under
-        min areal. Kontakt måles ved at buffere sliveren en smule og se hvor
-        meget af hver nabo den overlapper – robust mod non-noded geometri hvor
-        eksakt delt-kant-længde er upålidelig. Sliveren smeltes ind i naboen med
-        størst overlap. Slivers uden brugbar nabo beholdes (markeres rød i trin 7)."""
+        min areal. Kontakt måles ved at buffere sliveren en smule og måle
+        overlaps-areal med hver nabo – robust mod non-noded geometri.
+
+        Sliveren smeltes ind i naboen med størst overlap. En sliver må gerne
+        smeltes ind i en ANDEN sliver, men en ikke-sliver nabo foretrækkes (den
+        får et bonus-vægt). Processen KØRER ITERATIVT: når en sliver-nabo selv er
+        blevet smeltet ind i en rigtig celle, kan en korridor der kun rørte
+        slivers nu nå en rigtig nabo. Slivers uden nogen nabo beholdes (rød)."""
         if not parcels:
             return parcels
         min_area = min_ha * 10000
 
-        # find sliver-indekser
-        sliver_ids = [i for i, p in enumerate(parcels)
-                      if self._is_thin(p.geom, min_width) or p.geom.area() < min_area]
-        if not sliver_ids:
-            return parcels
-        sliver_set = set(sliver_ids)
+        def is_sliver(p):
+            return self._is_thin(p.geom, min_width) or p.geom.area() < min_area
 
-        index = QgsSpatialIndex()
-        for i, p in enumerate(parcels):
-            f = QgsFeature(i)
-            f.setGeometry(p.geom)
-            index.addFeature(f)
+        max_rounds = 8
+        total_abs = 0
+        for _ in range(max_rounds):
+            sliver_ids = [i for i, p in enumerate(parcels) if is_sliver(p)]
+            if not sliver_ids:
+                break
+            sliver_set = set(sliver_ids)
 
-        absorbed = set()    # slivers smeltet væk
-        n_abs = 0
-        # mindste først, så en lille sliver ikke æder en anden
-        for i in sorted(sliver_ids, key=lambda k: parcels[k].geom.area()):
-            if i in absorbed:
-                continue
-            sliver = parcels[i].geom
-            probe = sliver.buffer(1.0, 4)   # lille bufferzone til kontaktmåling
-            bbox = probe.boundingBox()
-            best_j, best_overlap = None, 0.0
-            for cid in index.intersects(bbox):
-                if cid == i or cid in absorbed or cid in sliver_set:
-                    continue   # smelt kun ind i en RIGTIG (ikke-sliver) nabo
-                other = parcels[cid].geom
-                if not probe.intersects(other):
+            index = QgsSpatialIndex()
+            for i, p in enumerate(parcels):
+                f = QgsFeature(i)
+                f.setGeometry(p.geom)
+                index.addFeature(f)
+
+            absorbed = set()
+            n_abs = 0
+            # mindste først, så en lille sliver ikke æder en større
+            for i in sorted(sliver_ids, key=lambda k: parcels[k].geom.area()):
+                if i in absorbed:
                     continue
-                inter = probe.intersection(other)
-                if inter is None or inter.isEmpty():
-                    continue
-                ov = inter.area()
-                if ov > best_overlap:
-                    best_j, best_overlap = cid, ov
-            if best_j is not None and best_overlap > 0:
-                host = parcels[best_j]
-                host.geom = self._cleanup(host.geom.combine(sliver))
-                if host.status == 'ok':
-                    host.status = 'smeltet'
-                absorbed.add(i)
-                n_abs += 1
+                sliver = parcels[i].geom
+                probe = sliver.buffer(1.0, 4)
+                bbox = probe.boundingBox()
+                best_j, best_score = None, 0.0
+                for cid in index.intersects(bbox):
+                    if cid == i or cid in absorbed:
+                        continue
+                    other = parcels[cid].geom
+                    if not probe.intersects(other):
+                        continue
+                    inter = probe.intersection(other)
+                    if inter is None or inter.isEmpty():
+                        continue
+                    # foretræk en RIGTIG (ikke-sliver) nabo: dobbel vægt
+                    score = inter.area() * (1.0 if cid in sliver_set else 2.0)
+                    if score > best_score:
+                        best_j, best_score = cid, score
+                if best_j is not None and best_score > 0:
+                    host = parcels[best_j]
+                    host.geom = self._cleanup(host.geom.combine(sliver))
+                    if host.status == 'ok':
+                        host.status = 'smeltet'
+                    absorbed.add(i)
+                    n_abs += 1
 
-        log(f'slivers: {len(sliver_ids)} fundet → {n_abs} absorberet, '
-            f'{len(sliver_ids) - n_abs} tilbage (rød)')
-        return [p for k, p in enumerate(parcels) if k not in absorbed]
+            if absorbed:
+                parcels = [p for k, p in enumerate(parcels) if k not in absorbed]
+                total_abs += n_abs
+            if n_abs == 0:
+                break   # ingen fremgang – resten har ingen brugbar nabo
+
+        remaining = sum(1 for p in parcels if is_sliver(p))
+        log(f'slivers: {total_abs} absorberet, {remaining} tilbage (rød)')
+        return parcels
 
     # ------------------------------------------------------------------ #
     #  Trin 4-5: smelt små marker (nabo-graf, greedy)                     #
