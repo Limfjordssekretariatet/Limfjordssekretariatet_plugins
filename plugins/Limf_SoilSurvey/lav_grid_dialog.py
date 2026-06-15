@@ -8,6 +8,8 @@ Proces (jf. brugerens beslutningstræ):
   1. Hent marker fra markkortet. Streams + roades er allerede klippet ind som
      markgrænser i forbehandlingen, så vi bruger markerne direkte (ingen
      barrier-skæring ved kørsel).
+  1b. Fjern tynde spyd/haler (slivers, dangles, haletudser): skær tynde dele af
+     hver mark via morfologisk åbning og smelt dem ind i naboen de løber langs.
   Klassificér hver mark efter areal vs. gennemsnit (±20% = passer):
   2. Marker der passer direkte → grid som de er.
   4-5. For SMÅ marker (under avg·0.8): lad hver vokse ved at sluge naboer (så
@@ -78,6 +80,7 @@ WORK_CRS = 'EPSG:25832'
 TOL_FRAC = 0.20          # ±20% af gennemsnit = "passer"
 MAX_SPLIT_PARTS = 5      # del en stor mark i op til 5 lige dele (trin 3)
 MIN_SHARED_EDGE_M = 1.0  # to marker er naboer hvis de deler mindst så lang en kant
+THIN_WIDTH_M = 20.0      # spyd/haler smallere end dette skæres fra og smeltes ind i nabo
 
 
 def log(msg):
@@ -153,6 +156,15 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         # indlæsning eller -skæring (det skete i preprocessing).
         parcels = self._load_markkort_parcels(union_geom, work_crs)
         log(f'trin1: {len(parcels)} marker fra markkort')
+
+        # ---- Trin 1b: fjern tynde spyd/haler (slivers/dangles) ----
+        # Markkortet har tynde kiler hvor markgrænser løber næsten parallelt.
+        # De giver "haletudser": en tyk kerne med lange tynde spyd. Skær spydene
+        # fra og smelt hvert ind i den nabo det løber langs, så de ikke ender som
+        # mærkelige takkede polygoner.
+        parcels = self._remove_thin_spikes(parcels, THIN_WIDTH_M)
+        log(f'trin1b: {len(parcels)} marker efter fjernelse af tynde spyd')
+
         parcels = [Parcel(g) for g in parcels]
 
         # ---- Klassificér + trin 2 (passer direkte) ----
@@ -312,6 +324,89 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         if u is None or u.isNull() or u.isEmpty():
             return None
         return u
+
+    # ------------------------------------------------------------------ #
+    #  Trin 1b: fjern tynde spyd/haler (slivers, dangles, haletudser)     #
+    # ------------------------------------------------------------------ #
+    def _remove_thin_spikes(self, geoms, min_width):
+        """Skær tynde spyd/haler fra hver mark og smelt dem ind i naboen de
+        løber langs.
+
+        For hver mark findes den tykke KERNE ved morfologisk åbning
+        (erode min_width/2 → dilate tilbage, miter-hjørner). Original − kerne =
+        de tynde HALER (spyd). Halerne smeltes derefter ind i den kerne de deler
+        længst kant med – så en haletudses spyd havner i den brune nabo det
+        ligger op ad, i stedet for at hænge på sin egen klump som et takket spyd.
+
+        Helt små marker (helt under min_width) er selv slivers; de smeltes også
+        ind i deres bredeste nabo."""
+        r = min_width / 2.0
+        cores = []          # (geom) tykke kerner – modtagere
+        tails = []          # (geom) tynde haler/slivers – skal absorberes
+
+        for g in geoms:
+            if g is None or g.isEmpty():
+                continue
+            g = self._cleanup(g)
+            try:
+                opened = g.buffer(-r, 4).buffer(r, 4)
+            except Exception:
+                opened = None
+            if opened is None or opened.isEmpty():
+                # hele marken er tynd → ren sliver, absorbér den
+                tails.append(g)
+                continue
+            # kernen begrænses til marken selv (åbning kan bule en anelse ud)
+            core = opened.intersection(g)
+            if core is None or core.isEmpty() or core.area() < 1:
+                tails.append(g)
+                continue
+            # haler = original − kerne
+            tail = g.difference(core)
+            for part in self._single_parts(core):
+                if part.area() >= 1:
+                    cores.append(QgsGeometry(part))
+            if tail is not None and not tail.isEmpty():
+                for part in self._single_parts(tail):
+                    if part.area() >= 1:
+                        tails.append(QgsGeometry(part))
+
+        if not tails:
+            return cores if cores else geoms
+        if not cores:
+            return geoms
+
+        # Absorbér hver hale ind i den kerne den deler LÆNGST kant med.
+        index = QgsSpatialIndex()
+        for i, c in enumerate(cores):
+            f = QgsFeature(i)
+            f.setGeometry(c)
+            index.addFeature(f)
+
+        n_abs = 0
+        for tail in tails:
+            best_j, best_len = None, 0.0
+            bbox = tail.boundingBox()
+            bbox.grow(1.0)
+            for cid in index.intersects(bbox):
+                c = cores[cid]
+                if not tail.intersects(c):
+                    continue
+                inter = tail.intersection(c)
+                if inter is None or inter.isEmpty():
+                    continue
+                ln = inter.length()
+                if ln > best_len:
+                    best_j, best_len = cid, ln
+            if best_j is not None and best_len >= MIN_SHARED_EDGE_M:
+                cores[best_j] = self._cleanup(cores[best_j].combine(tail))
+                n_abs += 1
+            else:
+                # ingen kerne-nabo (isoleret sliver) – behold som selvstændig mark
+                cores.append(tail)
+
+        log(f'trin1b: {len(cores)} kerner, {len(tails)} haler → {n_abs} absorberet')
+        return cores
 
     # ------------------------------------------------------------------ #
     #  Trin 4-5: smelt små marker (nabo-graf, greedy)                     #
