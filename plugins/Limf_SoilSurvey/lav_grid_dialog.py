@@ -208,6 +208,13 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         # baseret, robust mod non-noded geometri). Umulige beholdes som røde.
         result = self._absorb_slivers(result, THIN_WIDTH_M, min_ha)
 
+        # ---- Slut-oprydning C: sikr REN DÆKNING (ingen overlap). Smelte-trinnene
+        # bruger combine() og kan efterlade celler der overlapper. Træk allerede-
+        # placerede cellers areal fra hver celle, så to celler aldrig dækker
+        # samme sted. Derefter despike igen (difference kan skabe nye spidser).
+        result = self._resolve_overlaps(result)
+        result = [p for p in (self._despike_parcel(p) for p in result) if p]
+
         # ---- Trin 7: markér røde (bryder hårde grænser) ----
         for p in result:
             a = p.area_ha
@@ -557,6 +564,58 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         log(f'slivers: {total_abs} absorberet, {remaining} tilbage '
             f'(heraf {no_neighbor} uden nabo, probe={probe_dist:.0f}m)')
         return parcels
+
+    def _resolve_overlaps(self, parcels):
+        """Sikr at ingen to celler overlapper (ren dækning).
+
+        combine() i smelte-trinnene kan efterlade celler der dækker samme areal.
+        Vi placerer cellerne STØRST FØRST og trækker de allerede-placerede cellers
+        areal fra hver ny celle (difference). En celle der bliver helt opslugt
+        droppes. Spatial index gør det hurtigt – kun reelt overlappende naboer
+        trækkes fra."""
+        if not parcels:
+            return parcels
+        order = sorted(range(len(parcels)),
+                       key=lambda i: parcels[i].geom.area(), reverse=True)
+        placed_index = QgsSpatialIndex()
+        placed = []          # liste af (geom) allerede placerede
+        out = []
+        n_clipped = 0
+        for i in order:
+            p = parcels[i]
+            g = p.geom
+            if g is None or g.isEmpty():
+                continue
+            bbox = g.boundingBox()
+            # find allerede-placerede celler der overlapper
+            overlap_geoms = []
+            for pid in placed_index.intersects(bbox):
+                pg = placed[pid]
+                if g.intersects(pg):
+                    overlap_geoms.append(pg)
+            if overlap_geoms:
+                cover = QgsGeometry.unaryUnion(overlap_geoms)
+                if cover and not cover.isEmpty() and g.intersects(cover):
+                    g2 = g.difference(cover)
+                    if g2 is None or g2.isEmpty():
+                        continue   # cellen er helt dækket – drop den
+                    if g2.area() < g.area() - 1:
+                        n_clipped += 1
+                    g = self._cleanup(g2)
+            # gem hver enkelt-del som placeret
+            for part in self._single_parts(g):
+                if part.area() < 1:
+                    continue
+                pid = len(placed)
+                placed.append(part)
+                f = QgsFeature(pid)
+                f.setGeometry(part)
+                placed_index.addFeature(f)
+            p.geom = g
+            out.append(p)
+        log(f'overlap: {n_clipped} celler klippet for overlap, '
+            f'{len(parcels)} → {len(out)} celler')
+        return out
 
     # ------------------------------------------------------------------ #
     #  Trin 4-5: smelt små marker (nabo-graf, greedy)                     #
