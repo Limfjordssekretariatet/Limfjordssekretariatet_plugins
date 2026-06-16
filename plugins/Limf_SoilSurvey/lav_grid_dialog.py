@@ -58,7 +58,8 @@ FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), 'lav_grid
 # release-asset og hentes første gang værktøjet bruges. Streams + roades er
 # allerede klippet ind som markgrænser i forbehandlingen, så markerne bruges
 # direkte (ingen barrier-skæring ved kørsel).
-MARKKORT_VERSION = 'markkort-v1'   # = release-tag; bump for at tvinge ny download
+MARKKORT_VERSION = 'markkort-v2'   # = release-tag; bump for at tvinge ny download
+# v2: slivers/gaps renset (snap 15 m + eliminate) – 55.728 → 19 slivers.
 MARKKORT_ZIP_NAME = 'Markkort_grid.zip'
 MARKKORT_SHP_NAME = 'Markkort_grid.shp'
 MARKKORT_URL = (
