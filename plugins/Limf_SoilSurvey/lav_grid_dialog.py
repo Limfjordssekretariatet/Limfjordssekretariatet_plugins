@@ -847,7 +847,11 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         else:
             rect = union_geom.boundingBox()
 
-        raw = []
+        # Bevar HVER mark individuelt – markskellene er grid-grænser. Markkortet
+        # (v2) er renset til ren topologi, så vi må IKKE unionere markerne sammen
+        # (det ville slette skellene og smelte naboer til klatter). Hver polygon
+        # klippes til studieområdet og bliver sit eget parcel.
+        parcels = []
         for feat in mk_layer.getFeatures(QgsFeatureRequest().setFilterRect(rect)):
             g = feat.geometry()
             if not g or g.isNull() or g.isEmpty():
@@ -860,40 +864,26 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             clipped = g.intersection(union_geom)
             if not clipped or clipped.isNull() or clipped.isEmpty():
                 continue
-            clipped = self._extract_polygons(clipped)
-            if clipped is None or clipped.area() < 1:
-                continue
-            raw.append(clipped)
-
-        if not raw:
-            return [QgsGeometry(union_geom)]
-
-        dissolved = QgsGeometry.unaryUnion(raw)
-        if not dissolved or dissolved.isNull() or dissolved.isEmpty():
-            return [QgsGeometry(union_geom)]
-
-        parcels = []
-        mk_cov = None
-        for part in dissolved.asGeometryCollection():
-            if QgsWkbTypes.geometryType(part.wkbType()) != QgsWkbTypes.PolygonGeometry:
-                continue
-            cb = part.intersection(union_geom)
-            if not cb or cb.isNull() or cb.isEmpty():
-                continue
-            for sub in self._single_parts(cb):
-                if sub.area() < 10:   # kun nul-areal-splinter fra intersection fjernes
+            for sub in self._single_parts(clipped):
+                if sub.area() < 10:   # kun nul-areal-splinter fra clip fjernes
                     continue
                 parcels.append(sub)
-                mk_cov = QgsGeometry(sub) if mk_cov is None else mk_cov.combine(sub)
 
-        if mk_cov is not None:
+        if not parcels:
+            return [QgsGeometry(union_geom)]
+
+        # Medtag areal i studieområdet der IKKE er dækket af markkortet, så hele
+        # området stadig får grid (huller mellem/uden for marker). Union'er alle
+        # marker ÉN gang (ikke iterativt) for at finde det udækkede areal.
+        mk_cov = QgsGeometry.unaryUnion(parcels)
+        if mk_cov and not mk_cov.isNull() and not mk_cov.isEmpty():
             uncovered = union_geom.difference(mk_cov)
             if uncovered and not uncovered.isNull() and not uncovered.isEmpty():
                 for part in uncovered.asGeometryCollection():
                     if (QgsWkbTypes.geometryType(part.wkbType()) == QgsWkbTypes.PolygonGeometry
                             and part.area() > 10):
                         parcels.append(part)
-        return parcels if parcels else [QgsGeometry(union_geom)]
+        return parcels
 
     # ------------------------------------------------------------------ #
     #  Output-lag + renderer (trin 4 + 7)                                 #
