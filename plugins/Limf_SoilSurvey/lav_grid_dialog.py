@@ -204,22 +204,21 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         # dem vertex-baseret uden at runde hjørner.
         result = [p for p in (self._despike_parcel(p) for p in result) if p]
 
-        # ---- Slut-oprydning B: fjern tynde slivers (hele tynde polygoner) fra
-        # det FÆRDIGE grid. Hver smeltes ind i naboen med størst kontakt (buffer-
-        # baseret, robust mod non-noded geometri). Umulige beholdes som røde.
-        result = self._absorb_slivers(result, THIN_WIDTH_M, min_ha)
-
-        # ---- Slut-oprydning C: sikr REN DÆKNING (ingen overlap). Smelte-trinnene
-        # bruger combine() og kan efterlade celler der overlapper. Træk allerede-
-        # placerede cellers areal fra hver celle, så to celler aldrig dækker
-        # samme sted. Derefter despike igen (difference kan skabe nye spidser).
+        # ---- Slut-oprydning B: sikr REN DÆKNING (ingen overlap). Smelte-trinnene
+        # bruger combine() og kan efterlade celler der overlapper. Konservativt:
+        # klip kun reelt overlap af den mindste celle, drop aldrig en hel mark.
+        # Derefter despike (difference kan skabe nye spidser).
         result = self._resolve_overlaps(result)
         result = [p for p in (self._despike_parcel(p) for p in result) if p]
 
-        # ---- Slut-oprydning D: drop degenererede celler (collapsed polygoner =
-        # næsten-linjer med ~nul areal pr. omkredsmeter). De viser sig som
-        # løsrevne linjestykker man ikke kan klikke på.
+        # ---- Slut-oprydning C: drop KUN ekstreme collapsed-linjer (løsrevne
+        # linjestykker). Meget konservativ – rammer aldrig en mark med areal.
         result = self._drop_degenerate(result)
+
+        # ---- Slut-oprydning D: smelt tynde slivers OG under-min celler ind i
+        # nabo. Køres SIDST, så celler der blev små af overlap-klip også samles
+        # op i stedet for at ende som under-min normale celler. Umulige → rød.
+        result = self._absorb_slivers(result, THIN_WIDTH_M, min_ha)
 
         # ---- Trin 7: markér røde (bryder hårde grænser) ----
         for p in result:
@@ -570,22 +569,35 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             if g is None or g.isEmpty():
                 continue
             bbox = g.boundingBox()
-            # find allerede-placerede celler der overlapper
+            # find allerede-placerede celler der REELT overlapper (areal, ikke
+            # bare berører langs en kant)
             overlap_geoms = []
             for pid in placed_index.intersects(bbox):
                 pg = placed[pid]
-                if g.intersects(pg):
+                if not g.intersects(pg):
+                    continue
+                inter = g.intersection(pg)
+                if inter and not inter.isEmpty() and inter.area() > 1.0:
                     overlap_geoms.append(pg)
             if overlap_geoms:
                 cover = QgsGeometry.unaryUnion(overlap_geoms)
-                if cover and not cover.isEmpty() and g.intersects(cover):
+                if cover and not cover.isEmpty():
                     g2 = g.difference(cover)
-                    if g2 is None or g2.isEmpty():
-                        continue   # cellen er helt dækket – drop den
-                    if g2.area() < g.area() - 1:
-                        n_clipped += 1
-                    g = self._cleanup(g2)
-            # gem hver enkelt-del som placeret
+                    # KONSERVATIVT: drop aldrig en hel celle. Hvis difference
+                    # giver tomt/ugyldigt, behold cellen urørt (hellere et lille
+                    # overlap end en forsvundet mark).
+                    if g2 is not None and not g2.isEmpty():
+                        # hvis difference splittede cellen i flere stykker,
+                        # behold kun det STØRSTE (ingen løsrevne småstykker).
+                        biggest = None
+                        for part in self._single_parts(g2):
+                            if biggest is None or part.area() > biggest.area():
+                                biggest = part
+                        if biggest is not None and biggest.area() >= 1:
+                            if biggest.area() < g.area() - 1:
+                                n_clipped += 1
+                            g = self._cleanup(biggest)
+            # gem som placeret
             for part in self._single_parts(g):
                 if part.area() < 1:
                     continue
@@ -601,12 +613,13 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         return out
 
     def _drop_degenerate(self, parcels):
-        """Fjern degenererede celler: collapsed polygoner der reelt er en linje
-        (næsten nul areal ift. omkreds). De kan ikke klikkes på og er artefakter
-        fra difference/smeltning. Kompakthed = 4π·areal/omkreds²; en linje → 0,
-        en cirkel → 1. Vi dropper celler under en meget lav tærskel ELLER med
-        areal under min-grid-areal (1 m²) – men kun hvis de er linje-agtige, så
-        ægte (men aflange) marker bevares hvis de har reelt areal."""
+        """Fjern KUN helt ekstreme collapsed polygoner: en polygon der reelt er
+        en linje (forsvindende lille areal pr. omkredsmeter). De viser sig som
+        løsrevne linjestykker man ikke kan klikke på.
+
+        Meget konservativ: kræver BÅDE forsvindende halvbredde (areal/omkreds
+        < 0,3 m) OG lille absolut areal (< 50 m²). En ægte mark – selv en smal
+        eller aflang – har en halvbredde langt over 0,3 m og rammes aldrig."""
         out = []
         n_drop = 0
         for p in parcels:
@@ -619,12 +632,8 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             if per <= 0:
                 n_drop += 1
                 continue
-            compact = 4.0 * math.pi * a / (per * per)
-            # linje-agtig: ekstrem lav kompakthed OG smal (areal/omkreds = halv
-            # bredde er meget lille). Tærskel sat lavt så kun reelle collapsed
-            # polygoner rammes, ikke aflange-men-ægte marker.
-            half_width = a / per
-            if compact < 0.02 and half_width < 1.0:
+            half_width = a / per   # ~ halv bredde for et langt smalt bånd
+            if half_width < 0.3 and a < 50.0:
                 n_drop += 1
                 continue
             out.append(p)
