@@ -906,7 +906,55 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
                 result.extend(self._subdivide(piece, avg_ha, max_ha, min_ha, depth + 1))
             else:
                 result.append(piece)
-        return result if result else [geom]
+        if not result:
+            return [geom]
+        # Smelt under-min rester (skrå hjørne-trekanter fra MBR-snittet mod en
+        # uregelmæssig markkant) ind i deres største nabo-celle INDEN FOR samme
+        # mark – så de ikke ender som bittesmå selvstændige celler.
+        return self._merge_small_pieces(result, min_ha)
+
+    def _merge_small_pieces(self, pieces, min_ha):
+        """Smelt celler under min_ha ind i deres største nabo-celle (delt kant).
+        Bruges KUN på celler fra én mark (subdivide-output), hvor naboskab er
+        rent. Gentager til ingen under-min med nabo er tilbage."""
+        min_area = min_ha * 10000
+        if len(pieces) < 2:
+            return pieces
+        geoms = [QgsGeometry(g) for g in pieces]
+        for _ in range(len(geoms)):
+            # mindste under-min celle først
+            small_ids = sorted(
+                (i for i, g in enumerate(geoms)
+                 if g is not None and not g.isEmpty() and g.area() < min_area),
+                key=lambda i: geoms[i].area())
+            if not small_ids:
+                break
+            changed = False
+            for i in small_ids:
+                gi = geoms[i]
+                if gi is None or gi.isEmpty():
+                    continue
+                # find nabo med længst fælles kant
+                best_j, best_len = None, 0.0
+                for j, gj in enumerate(geoms):
+                    if j == i or gj is None or gj.isEmpty():
+                        continue
+                    if not gi.intersects(gj):
+                        continue
+                    inter = gi.intersection(gj)
+                    if inter is None or inter.isEmpty():
+                        continue
+                    ln = inter.length()
+                    if ln > best_len:
+                        best_j, best_len = j, ln
+                if best_j is not None and best_len >= MIN_SHARED_EDGE_M:
+                    geoms[best_j] = self._cleanup(geoms[best_j].combine(gi))
+                    geoms[i] = None
+                    changed = True
+            if not changed:
+                break
+        return [g for g in geoms if g is not None and not g.isEmpty()
+                and g.area() > 1]
 
     # ------------------------------------------------------------------ #
     #  Markkort-indlæsning (uændret fra v2.x – velafprøvet)               #
