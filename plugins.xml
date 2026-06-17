@@ -11,23 +11,23 @@
     <icon>icon.png</icon>
     <author_name>Limfjordssekretariatet</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_DrainOutletAnalysis.zip</download_url>
-    <update_date>2026-06-16T13:57:15Z</update_date>
+    <update_date>2026-06-17T06:42:59Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
     <repository>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins</repository>
   </pyqgis_plugin>
-  <pyqgis_plugin name="Limf_SoilSurvey" version="3.2.2">
+  <pyqgis_plugin name="Limf_SoilSurvey" version="3.2.3">
     <description>Plugin til håndtering af jordprøver</description>
     <about>Plugin med værktøjer til grid (Markkort-baseret), centerpunkter, QField-klargøring og rapporteksport.</about>
-    <version>3.2.2</version>
+    <version>3.2.3</version>
     <qgis_minimum_version>3.0</qgis_minimum_version>
     <homepage>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins</homepage>
     <file_name>Limf_SoilSurvey.zip</file_name>
     <icon>icon.png</icon>
     <author_name>Limfjordssekretariatet</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_SoilSurvey.zip</download_url>
-    <update_date>2026-06-16T13:57:15Z</update_date>
+    <update_date>2026-06-17T06:42:59Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
@@ -43,7 +43,7 @@
     <icon>icon.png</icon>
     <author_name>Limfjordssekretariatet</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_WetlandTools.zip</download_url>
-    <update_date>2026-06-16T13:57:15Z</update_date>
+    <update_date>2026-06-17T06:42:59Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
