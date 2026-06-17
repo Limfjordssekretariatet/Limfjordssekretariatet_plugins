@@ -83,7 +83,8 @@ TOL_FRAC = 0.20          # ±20% af gennemsnit = "passer"
 MAX_SPLIT_PARTS = 5      # del en stor mark i op til 5 lige dele (trin 3)
 MIN_SHARED_EDGE_M = 1.0  # to marker er naboer hvis de deler mindst så lang en kant
 THIN_WIDTH_M = 20.0      # hele polygoner smallere end dette smeltes ind i nabo (sliver)
-SPIKE_ANGLE_DEG = 8.0    # vertex med spidsere vinkel end dette = nålespids → fjernes
+SPIKE_ANGLE_DEG = 12.0   # vertex med spidsere vinkel end dette = nålespids → fjernes
+                         # (ægte markhjørner er sjældent spidsere end ~20°)
 
 
 def log(msg):
@@ -214,6 +215,11 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         # samme sted. Derefter despike igen (difference kan skabe nye spidser).
         result = self._resolve_overlaps(result)
         result = [p for p in (self._despike_parcel(p) for p in result) if p]
+
+        # ---- Slut-oprydning D: drop degenererede celler (collapsed polygoner =
+        # næsten-linjer med ~nul areal pr. omkredsmeter). De viser sig som
+        # løsrevne linjestykker man ikke kan klikke på.
+        result = self._drop_degenerate(result)
 
         # ---- Trin 7: markér røde (bryder hårde grænser) ----
         for p in result:
@@ -402,11 +408,10 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             a = pts[(i - 1) % n]
             b = pts[i % n]
             c = pts[(i + 1) % n]
-            # spike = spids vinkel ved B OG spidsen er tynd: afstanden fra det
-            # nærmeste nabopunkt til den modsatte kant er lille (en nålespids,
-            # ikke et bredt spidst hjørne).
-            if (self._spike_angle(a, b, c) < SPIKE_ANGLE_DEG
-                    and self._spike_width(a, b, c) < THIN_WIDTH_M):
+            # spike = meget spids vinkel ved B. Bredde-kravet er droppet: en LANG
+            # needle har A/C langt væk, så et bredde-mål fejler. Ægte markhjørner
+            # er sjældent spidsere end SPIKE_ANGLE_DEG, så vinklen alene er nok.
+            if self._spike_angle(a, b, c) < SPIKE_ANGLE_DEG:
                 del pts[i % n]
                 changed = True
                 # bliv på samme indeks (nu peger det på næste punkt)
@@ -430,28 +435,6 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         cosang = (v1x * v2x + v1y * v2y) / (n1 * n2)
         cosang = max(-1.0, min(1.0, cosang))
         return math.degrees(math.acos(cosang))
-
-    def _spike_width(self, a, b, c):
-        """Tyndhedsmål for spidsen ved B: afstanden fra det nærmeste nabopunkt
-        (A eller C) vinkelret ind på den modsatte kant.
-
-        For en nålespids (lang tynd tunge) er denne afstand lille uanset hvor
-        lang tungen er. For et bredt spidst hjørne er den stor. Det adskiller en
-        spike fra et ægte skarpt hjørne."""
-        # afstand fra A til linjen B–C, og fra C til linjen B–A; tag den mindste
-        d1 = self._point_seg_dist(a, b, c)
-        d2 = self._point_seg_dist(c, b, a)
-        return min(d1, d2)
-
-    def _point_seg_dist(self, p, s1, s2):
-        """Vinkelret afstand fra punkt p til den uendelige linje gennem s1–s2."""
-        dx, dy = s2.x() - s1.x(), s2.y() - s1.y()
-        seg = math.hypot(dx, dy)
-        if seg < 1e-9:
-            return math.hypot(p.x() - s1.x(), p.y() - s1.y())
-        # |kryds-produkt| / |segment|
-        cross = abs((p.x() - s1.x()) * dy - (p.y() - s1.y()) * dx)
-        return cross / seg
 
     def _despike_parcel(self, parcel):
         """Despike en Parcel in-place; returnér den (eller None hvis tom)."""
@@ -615,6 +598,38 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
             out.append(p)
         log(f'overlap: {n_clipped} celler klippet for overlap, '
             f'{len(parcels)} → {len(out)} celler')
+        return out
+
+    def _drop_degenerate(self, parcels):
+        """Fjern degenererede celler: collapsed polygoner der reelt er en linje
+        (næsten nul areal ift. omkreds). De kan ikke klikkes på og er artefakter
+        fra difference/smeltning. Kompakthed = 4π·areal/omkreds²; en linje → 0,
+        en cirkel → 1. Vi dropper celler under en meget lav tærskel ELLER med
+        areal under min-grid-areal (1 m²) – men kun hvis de er linje-agtige, så
+        ægte (men aflange) marker bevares hvis de har reelt areal."""
+        out = []
+        n_drop = 0
+        for p in parcels:
+            g = p.geom
+            if g is None or g.isEmpty():
+                n_drop += 1
+                continue
+            a = g.area()
+            per = g.length()  # omkreds
+            if per <= 0:
+                n_drop += 1
+                continue
+            compact = 4.0 * math.pi * a / (per * per)
+            # linje-agtig: ekstrem lav kompakthed OG smal (areal/omkreds = halv
+            # bredde er meget lille). Tærskel sat lavt så kun reelle collapsed
+            # polygoner rammes, ikke aflange-men-ægte marker.
+            half_width = a / per
+            if compact < 0.02 and half_width < 1.0:
+                n_drop += 1
+                continue
+            out.append(p)
+        if n_drop:
+            log(f'degenererede celler droppet: {n_drop}')
         return out
 
     # ------------------------------------------------------------------ #
