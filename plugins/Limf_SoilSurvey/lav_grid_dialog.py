@@ -220,6 +220,12 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         # op i stedet for at ende som under-min normale celler. Umulige → rød.
         result = self._absorb_slivers(result, THIN_WIDTH_M, min_ha)
 
+        # ---- Slut-oprydning E: FYLD HULLER. Despike/overlap/degenerate fjerner
+        # areal (ikke bare flytter det) → huller i dækningen, især mod kanten.
+        # Find alt udækket areal i studieområdet og giv hvert hul-stykke til
+        # nabocellen med længst fælles kant → fuld dækning, ingen huller.
+        result = self._fill_gaps(result, union_geom)
+
         # ---- Trin 7: markér røde (bryder hårde grænser) ----
         for p in result:
             a = p.area_ha
@@ -640,6 +646,63 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
         if n_drop:
             log(f'degenererede celler droppet: {n_drop}')
         return out
+
+    def _fill_gaps(self, parcels, union_geom):
+        """Sikr FULD DÆKNING: giv alt udækket areal i studieområdet til en celle.
+
+        Oprydningstrinene (despike/overlap/degenerate) fjerner areal i stedet for
+        at flytte det → huller, især mod kanten. Vi beregner union_geom minus
+        cellernes dækning og smelter hvert hul-stykke ind i nabocellen med længst
+        fælles kant. Et hul uden nabocelle bliver sin egen celle (status 'rest')."""
+        if not parcels:
+            return parcels
+        cells = [p.geom for p in parcels if p.geom and not p.geom.isEmpty()]
+        if not cells:
+            return parcels
+        cover = QgsGeometry.unaryUnion(cells)
+        if cover is None or cover.isEmpty():
+            return parcels
+        gaps = union_geom.difference(cover)
+        if gaps is None or gaps.isEmpty():
+            return parcels   # allerede fuld dækning
+
+        # spatial index over cellerne (modtagere)
+        index = QgsSpatialIndex()
+        for i, p in enumerate(parcels):
+            f = QgsFeature(i)
+            f.setGeometry(p.geom)
+            index.addFeature(f)
+
+        n_filled = 0
+        new_cells = []
+        for gap in self._single_parts(gaps):
+            if gap.area() < 1:
+                continue
+            probe = gap.buffer(1.0, 4)
+            bbox = probe.boundingBox()
+            best_j, best_len = None, 0.0
+            for cid in index.intersects(bbox):
+                other = parcels[cid].geom
+                if other is None or other.isEmpty() or not gap.intersects(other):
+                    continue
+                inter = gap.intersection(other)
+                if inter is None or inter.isEmpty():
+                    continue
+                # længst berøring (linje-længde langs fælles kant)
+                ln = inter.length()
+                if ln > best_len:
+                    best_j, best_len = cid, ln
+            if best_j is not None:
+                parcels[best_j].geom = self._cleanup(
+                    parcels[best_j].geom.combine(gap))
+                n_filled += 1
+            else:
+                # intet nabo – behold hullet som egen celle (rest)
+                new_cells.append(Parcel(QgsGeometry(gap), 'rest'))
+
+        log(f'fyld-huller: {n_filled} hul-stykker smeltet ind i nabo, '
+            f'{len(new_cells)} uden nabo (rest)')
+        return parcels + new_cells
 
     # ------------------------------------------------------------------ #
     #  Trin 4-5: smelt små marker (nabo-graf, greedy)                     #
