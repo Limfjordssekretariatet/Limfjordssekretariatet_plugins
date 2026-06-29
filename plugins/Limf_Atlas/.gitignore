@@ -1,0 +1,14 @@
+# Referencekort-data distribueres via GitHub release (for stort til plugin-zip),
+# downloades + caches af pluginnet ved første brug. Hold det ude af git.
+Data/
+
+# Eksempel-/testdata (kun til udvikling, ikke distribution)
+Example_data/
+
+# Claude / udvikling
+CLAUDE.md
+.claude/
+
+# Python
+__pycache__/
+*.pyc

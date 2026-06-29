@@ -1,0 +1,19 @@
+# Credentials
+keys
+
+# Claude
+CLAUDE.md
+.claude/
+test_ejf.py
+memory/
+
+# Build/script-artefakter
+opret_opgave.ps1
+
+# Data (store ikke lokale datafiler i repo)
+data/ejf/
+data/matrikler/
+
+# Python
+__pycache__/
+*.pyc
