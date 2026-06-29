@@ -1,10 +1,10 @@
 [general]
-name=Limf_DrainOutletAnalysis
+name=LIMF - Dræn
 qgisMinimumVersion=3.0
 description=Find drænudløbspunkter baseret på fald og DEM
-version=0.2.8
+version=0.2.9
 author=Henrik Rosenskjold
-email=henrikrosenskjold@gmail.com
+email=henrik.rosenskjold@aalborg.dk
 homepage=
 tracker=
 repository=

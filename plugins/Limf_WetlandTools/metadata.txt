@@ -3,10 +3,10 @@
 # This file should be included when you package your plugin.# Mandatory items:
 
 [general]
-name=Limf_WetlandTools
+name=LIMF - Vådområdeværktøjer
 qgisMinimumVersion=3.0
 description=Limfjordssekretariatet forskellige tools
-version=4.0.10
+version=4.0.11
 author=Henrik Rosenskjold, Limfjordssekretariatet
 email=henrik.rosenskjold@aalborg.dk
 
