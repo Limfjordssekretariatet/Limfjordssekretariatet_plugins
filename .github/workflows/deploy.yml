@@ -37,6 +37,11 @@ jobs:
             DESCRIPTION=$(grep '^description=' "$META" | cut -d'=' -f2)
             ABOUT=$(grep '^about='        "$META" | cut -d'=' -f2)
             QGIS_MIN=$(grep '^qgisMinimumVersion=' "$META" | cut -d'=' -f2)
+            # Vist navn = name= fra metadata.txt (falder tilbage til mappenavnet).
+            # Mappenavnet ($NAME) bruges fortsat til zip/id, så download-URL og
+            # opdateringer ikke knækker.
+            DISPLAY_NAME=$(grep '^name=' "$META" | cut -d'=' -f2-)
+            [ -z "$DISPLAY_NAME" ] && DISPLAY_NAME="$NAME"
 
             OWNER="${{ github.repository_owner }}"
             REPO="${{ github.event.repository.name }}"
@@ -53,7 +58,7 @@ jobs:
             rm -rf dist_tmp
 
             XML_ENTRIES="${XML_ENTRIES}
-            <pyqgis_plugin name=\"${NAME}\" version=\"${VERSION}\">
+            <pyqgis_plugin name=\"${DISPLAY_NAME}\" version=\"${VERSION}\">
               <description>${DESCRIPTION}</description>
               <about>${ABOUT}</about>
               <version>${VERSION}</version>
@@ -91,7 +96,9 @@ jobs:
           for PLUGIN_DIR in plugins/*/; do
             NAME=$(basename "$PLUGIN_DIR")
             VERSION=$(grep '^version=' "$PLUGIN_DIR/metadata.txt" 2>/dev/null | cut -d'=' -f2)
-            PLUGIN_LIST="${PLUGIN_LIST}<li><strong>${NAME}</strong> v${VERSION} &mdash; <a href=\"${NAME}.zip\">download</a></li>"
+            DISPLAY_NAME=$(grep '^name=' "$PLUGIN_DIR/metadata.txt" 2>/dev/null | cut -d'=' -f2-)
+            [ -z "$DISPLAY_NAME" ] && DISPLAY_NAME="$NAME"
+            PLUGIN_LIST="${PLUGIN_LIST}<li><strong>${DISPLAY_NAME}</strong> v${VERSION} &mdash; <a href=\"${NAME}.zip\">download</a></li>"
           done
 
           cat > dist/index.html << EOF
