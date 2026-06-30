@@ -11,6 +11,7 @@ Fælles plugin-repository med værktøjer udviklet af Limfjordssekretariatet til
 | **LIMF - Dræn** | 0.2.9 | Find drænudløbspunkter baseret på fald og DEM |
 | **LIMF - Lodsejer Atlas Mapbook** | 0.2.1 | Genererer et lodsejer-atlas (mapbook) ud fra en layout-skabelon med auto-mapping af felter |
 | **LIMF - Lodsejerudtræk** | 0.1 | Henter matrikler og ejeroplysninger for et valgt polygon via Datafordeleren/CVR |
+| **LIMF - VASP** | 1.0.1 | Integration mellem VASP Access-database og QGIS – henter terræn-/profildata ind som lag |
 
 ---
 
@@ -52,6 +53,10 @@ plugin-opdateringer). Kræver internetadgang ved første kørsel.
 **LIMF - Lodsejerudtræk** henter i stedet matrikler og ejeroplysninger *live*
 fra Datafordeleren ved hver forespørgsel. Det kræver en personlig
 Datafordeler-API-nøgle, som hver bruger selv skal konfigurere (distribueres ikke).
+
+**LIMF - VASP** læser fra en lokal GeoPackage, som pluginnet selv genopbygger ud
+fra din VASP Access-database (.mdb) første gang du vælger en database (og via
+"Genindlæs database"). Databasen distribueres ikke – hver bruger peger på sin egen.
 
 ---
 

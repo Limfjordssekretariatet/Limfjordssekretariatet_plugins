@@ -1,0 +1,27 @@
+# Lokal data-cache: GeoPackagen genopbygges fra brugerens Access-database
+# (tools/rebuild_gpkg.ps1) ved første databasevalg / "Genindlæs". Distribueres
+# derfor ikke – hver bruger genererer sin egen.
+vasp_data.gpkg
+
+# Access-database + eksport-mellemfiler (lokale)
+*.mdb
+*.accdb
+*.ldb
+_profiles.tsv
+_points.tsv
+_lines.tsv
+_gislinjer.tsv
+
+# Database-backup før tilbageskrivning
+backups/
+
+# Gamle plugin-versioner (udvikling)
+_versions/
+
+# Claude / udvikling
+CLAUDE.md
+.claude/
+
+# Python
+__pycache__/
+*.pyc
