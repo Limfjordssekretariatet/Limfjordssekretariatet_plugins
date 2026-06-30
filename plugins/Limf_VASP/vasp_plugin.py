@@ -11,6 +11,7 @@ import subprocess
 from qgis.PyQt.QtWidgets import (
     QAction, QMessageBox, QApplication, QFileDialog)
 from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtGui import QIcon
 from qgis.core import QgsProject, QgsApplication
 
 from . import config
@@ -40,7 +41,9 @@ class VaspPlugin:
         Én knap "VASP-integration" åbner en dialog med de enkelte
         handlinger som knapper.
         """
-        action = QAction("VASP-integration", self.iface.mainWindow())
+        icon_path = os.path.join(config.PLUGIN_DIR, "icon.png")
+        icon = QIcon(icon_path) if os.path.exists(icon_path) else QIcon()
+        action = QAction(icon, "VASP-integration", self.iface.mainWindow())
         action.triggered.connect(self.open_main_dialog)
         self.iface.addPluginToMenu(self.menu, action)
         self.iface.addToolBarIcon(action)
