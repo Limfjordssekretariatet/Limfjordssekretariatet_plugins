@@ -25,9 +25,10 @@ def _open_layer(table):
     layer = QgsVectorLayer(uri, table, "ogr")
     if not layer.isValid():
         raise VaspDbError(
-            "Kunne ikke åbne '%s' i datafilen:\n%s\n\n"
-            "Er GeoPackagen bygget? Kør tools/dump_access.ps1 (32-bit) og "
-            "tools/build_gpkg.py." % (table, config.DEFAULT_GPKG_PATH)
+            "Datafilen er ikke bygget endnu.\n\n"
+            "Vælg din VASP-database via knappen \"Vælg database …\" i "
+            "VASP-integration-dialogen. Datafilen bygges automatisk, og "
+            "handlingerne låses op."
         )
     return layer
 

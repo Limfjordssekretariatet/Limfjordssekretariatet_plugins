@@ -67,8 +67,14 @@ class VaspPlugin:
             on_opdater=self.run_opdater_data,
             on_vaelg_database=self.vaelg_database,
             get_db_path=config.db_path,
+            data_ready=self._data_ready,
             parent=self.iface.mainWindow())
         dialog.exec_()
+
+    def _data_ready(self):
+        """True hvis datafilen (GeoPackagen) findes – dvs. en database er valgt
+        og bygget. Styrer om handlings-knapperne er aktive."""
+        return os.path.exists(config.DEFAULT_GPKG_PATH)
 
     def vaelg_database(self):
         """Lad brugeren vælge en VASP-database og husk valget.
@@ -92,16 +98,10 @@ class VaspPlugin:
         self.iface.messageBar().pushInfo(
             "VASP", "Aktiv database: %s" % path)
 
-        # Profillisten kommer fra GeoPackagen, som skal genopbygges fra den
-        # nye database for at passe. Tilbyd det med det samme.
-        svar = QMessageBox.question(
-            win, "VASP — genopbyg data",
-            "Databasen er ændret. Genopbyg datafilen (profiler m.m.) fra den "
-            "nye database nu, så listen passer?\n\n"
-            "Det kan tage et øjeblik.",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
-        if svar == QMessageBox.Yes:
-            self._rebuild_gpkg(db_path=path)
+        # Datafilen (GeoPackagen) bygges ALTID automatisk fra den valgte
+        # database – uden den kan ingen handlinger køre. Ingen frivillig
+        # ja/nej: at vælge database = bygge datafilen.
+        self._rebuild_gpkg(db_path=path)
         return True
 
     def _profiles_or_warn(self):
