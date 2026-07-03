@@ -9,8 +9,8 @@ import os
 import subprocess
 
 from qgis.PyQt.QtWidgets import (
-    QAction, QMessageBox, QApplication, QFileDialog)
-from qgis.PyQt.QtCore import Qt
+    QAction, QMessageBox, QFileDialog, QProgressDialog)
+from qgis.PyQt.QtCore import Qt, QThread, pyqtSignal, QEventLoop
 from qgis.PyQt.QtGui import QIcon
 from qgis.core import QgsProject, QgsApplication
 
@@ -25,6 +25,27 @@ from .terrain_task import TerrainTask
 from .geo import layer_builder
 from .geo import offset
 from .geo import ber
+
+
+class _BuildWorker(QThread):
+    """Kører genopbygnings-scriptet i en baggrundstråd, så UI'en (og
+    'arbejder'-dialogens animation) forbliver responsiv under den lange build."""
+
+    done = pyqtSignal(int, str)   # (returncode, output-hale)
+
+    def __init__(self, cmd):
+        super().__init__()
+        self._cmd = cmd
+
+    def run(self):
+        try:
+            result = subprocess.run(
+                self._cmd, capture_output=True, text=True,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            tail = (result.stderr or result.stdout or "").strip()[-1500:]
+            self.done.emit(result.returncode, tail)
+        except OSError as exc:
+            self.done.emit(-1, str(exc))
 
 
 class VaspPlugin:
@@ -93,9 +114,15 @@ class VaspPlugin:
             "Access-database (*.mdb *.accdb);;Alle filer (*.*)")
         if not path:
             return False
-        if os.path.normcase(os.path.abspath(path)) == \
-                os.path.normcase(os.path.abspath(current)):
-            return False  # samme database; intet ændret
+
+        samme_db = (os.path.normcase(os.path.abspath(path)) ==
+                    os.path.normcase(os.path.abspath(current)))
+        gpkg_findes = os.path.exists(config.DEFAULT_GPKG_PATH)
+        # Spring KUN build over hvis det er samme database OG datafilen allerede
+        # er bygget. Ellers (ny database, ELLER gpkg mangler/fejlede sidst) skal
+        # vi bygge – så man altid kan prøve igen med samme fil.
+        if samme_db and gpkg_findes:
+            return False
 
         config.set_db_path(path)
         self.iface.messageBar().pushInfo(
@@ -104,8 +131,7 @@ class VaspPlugin:
         # Datafilen (GeoPackagen) bygges ALTID automatisk fra den valgte
         # database – uden den kan ingen handlinger køre. Ingen frivillig
         # ja/nej: at vælge database = bygge datafilen.
-        self._rebuild_gpkg(db_path=path)
-        return True
+        return self._rebuild_gpkg(db_path=path)
 
     def _profiles_or_warn(self):
         """Hent profil-listen; vis fejl/tom-besked og returnér None hvis ingen."""
@@ -397,23 +423,42 @@ class VaspPlugin:
                 "Kunne ikke finde powershell.exe på systemet.")
             return False
 
-        QApplication.setOverrideCursor(Qt.WaitCursor)
-        try:
-            result = subprocess.run(
-                [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass",
-                 "-File", script, "-Mdb", db_path],
-                capture_output=True, text=True,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        except OSError as exc:
-            QApplication.restoreOverrideCursor()
-            QMessageBox.critical(
-                win, "VASP", "Kunne ikke starte opdateringen:\n%s" % exc)
-            return False
-        finally:
-            QApplication.restoreOverrideCursor()
+        # Byg-scriptet kan tage flere minutter (Access-dump + GeoPackage-bygning).
+        # Kør det i en baggrundstråd, så en flydende "arbejder"-dialog viser at
+        # der sker noget, uden at UI'en fryser.
+        progress = QProgressDialog(
+            "Bygger datafil fra VASP-databasen …\n"
+            "Dette kan tage nogle minutter.", None, 0, 0, win)
+        progress.setWindowTitle("VASP")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setCancelButton(None)   # kan ikke annulleres midt i byg
+        progress.show()
 
-        if result.returncode != 0:
-            tail = (result.stderr or result.stdout or "").strip()[-1500:]
+        worker = _BuildWorker(
+            [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass",
+             "-File", script, "-Mdb", db_path])
+        loop = QEventLoop()
+        outcome = {}
+
+        def _on_done(code, tail):
+            outcome["code"] = code
+            outcome["tail"] = tail
+            loop.quit()
+
+        worker.done.connect(_on_done)
+        worker.start()
+        loop.exec_()          # holder UI'en i live indtil tråden er færdig
+        worker.wait()
+        progress.close()
+
+        code = outcome.get("code", -1)
+        tail = outcome.get("tail", "")
+        if code == -1 and not os.path.exists(config.DEFAULT_GPKG_PATH):
+            QMessageBox.critical(
+                win, "VASP", "Kunne ikke starte opdateringen:\n%s" % tail)
+            return False
+        if code != 0:
             QMessageBox.critical(
                 win, "VASP — opdatering fejlede",
                 "Genopbygningen fejlede.\n\n%s" % tail)
