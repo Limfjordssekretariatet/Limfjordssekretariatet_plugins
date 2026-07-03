@@ -3,6 +3,10 @@ __pycache__/
 .claude/
 dist/
 
+# Windows-artefakter
+Thumbs.db
+Desktop.ini
+
 # Markkort-data distribueres via GitHub release (for stort til plugin-zip),
 # downloades + caches af pluginnet ved første brug. Hold det ude af git.
 plugins/Limf_SoilSurvey/Data/

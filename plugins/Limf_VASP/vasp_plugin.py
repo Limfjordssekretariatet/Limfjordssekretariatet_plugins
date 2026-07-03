@@ -19,10 +19,12 @@ from . import dbaccess
 from . import writeback
 from .profile_dialog import ProfileDialog
 from .gisline_dialog import GisLineDialog
+from .vsp_dialog import VspDialog
 from .main_dialog import MainDialog
 from .terrain_task import TerrainTask
 from .geo import layer_builder
 from .geo import offset
+from .geo import ber
 
 
 class VaspPlugin:
@@ -64,6 +66,7 @@ class VaspPlugin:
             on_terraen=self.run_terraen_paa_profil,
             on_importer=self.run_importer_laengdeprofil,
             on_importer_linje=self.run_importer_vandloebslinje,
+            on_importer_vsp=self.run_importer_vandspejl,
             on_opdater=self.run_opdater_data,
             on_vaelg_database=self.vaelg_database,
             get_db_path=config.db_path,
@@ -203,6 +206,153 @@ class VaspPlugin:
         self.iface.messageBar().pushSuccess(
             "VASP", "Indlæste vandløbslinje '%s' (%d punkter)."
             % (navn, len(points)))
+
+    def run_importer_vandspejl(self):
+        """Importer en vandspejlsberegning (fra .ber-fil) til GIS."""
+        win = self.iface.mainWindow()
+        try:
+            calcs = dbaccess.list_vsp_calcs()
+        except dbaccess.VaspDbError as exc:
+            QMessageBox.critical(win, "VASP — databasefejl", str(exc))
+            return
+        if not calcs:
+            QMessageBox.information(
+                win, "VASP", "Der blev ikke fundet nogen vandspejlsberegninger.")
+            return
+
+        dialog = VspDialog(calcs, win)
+        if dialog.exec_() != VspDialog.Accepted:
+            return
+        calc = dialog.selected_calc()
+        if not calc:
+            return
+
+        # Bruger ikke os.path.exists som forhåndstjek: det er upålideligt for
+        # UNC-netværksstier i QGIS. Forsøg i stedet at læse filen direkte og
+        # fang OSError med en tydelig besked.
+        path = config.ber_path(
+            calc["projektid"], calc["berid"], multi=calc["multi"])
+        if calc["multi"]:
+            self._load_vsp_multi(calc, path)
+        else:
+            self._load_vsp_simpel(calc, path)
+
+    def _vsp_read_error(self, path, exc):
+        """Vis en hjælpsom fejl når en .ber-fil ikke kunne læses."""
+        QMessageBox.critical(
+            self.iface.mainWindow(), "VASP — kunne ikke læse beregning",
+            "Kunne ikke læse beregningsfilen:\n%s\n\n"
+            "Fejl: %s\n\n"
+            "Vandspejlsberegninger ligger i en PRJDATA-mappe sammen med "
+            "VASP-databasen. Vælg den rigtige database (fx på netværket) "
+            "under 'Vælg database …', så findes filerne automatisk."
+            % (path, exc))
+
+    def _load_vsp_simpel(self, calc, path):
+        """Indlæs en simpel vandspejlsberegning som PointZ-lag."""
+        win = self.iface.mainWindow()
+        try:
+            points = ber.decode_simpel(path)
+        except (OSError, ValueError) as exc:
+            self._vsp_read_error(path, exc)
+            return
+        if not points:
+            QMessageBox.information(
+                win, "VASP", "Beregningen indeholdt ingen punkter.")
+            return
+
+        fields_spec = [
+            ("station", "station"), ("vsp", "vsp"), ("bund", "bund"),
+            ("energi", "energi"), ("vnf", "vnf"), ("manning", "manning"),
+            ("bredde", "bredde"), ("areal", "areal"), ("radius", "radius"),
+        ]
+        layer_name = "VASP vandspejl: %s" % calc["navn"]
+        layer = layer_builder.build_vsp_layer(
+            layer_name, points, calc["koordsysid"], fields_spec)
+        self._add_vsp_layer(layer, calc, len(points))
+
+    def _load_vsp_multi(self, calc, path):
+        """Indlæs en multivandspejlsberegning: alle scenarier samlet.
+
+        Hvert scenarie er en record-blok i .ber-filen. Punkterne har samme
+        X/Y på tværs af scenarier, så vi samler dem til ét lag med ét
+        vsp-felt pr. scenarie (vsp1, vsp2, …) og vsp fra første scenarie som Z.
+        """
+        win = self.iface.mainWindow()
+        try:
+            scenarier = ber.decode_multi(path)
+        except (OSError, ValueError) as exc:
+            self._vsp_read_error(path, exc)
+            return
+        if not scenarier:
+            QMessageBox.information(
+                win, "VASP", "Beregningen indeholdt ingen scenarier.")
+            return
+
+        # Saml scenarierne pr. punkt (samme rækkefølge/X-Y på tværs).
+        # Ét felt pr. scenarie, navngivet efter scenariet (fx 'MedMin').
+        keys = self._scenario_field_keys(scenarier)
+        base = scenarier[0]["points"]
+        merged = []
+        for i, bp in enumerate(base):
+            row = {"x": bp["x"], "y": bp["y"], "vsp": bp.get("vsp"),
+                   "bund": bp.get("bund")}
+            for s, scen in enumerate(scenarier):
+                pts = scen["points"]
+                row[keys[s]] = pts[i]["vsp"] if i < len(pts) else None
+            merged.append(row)
+
+        fields_spec = [("bund", "bund")]
+        for s in range(len(scenarier)):
+            fields_spec.append((keys[s], keys[s]))
+
+        layer_name = "VASP multivandspejl: %s" % calc["navn"]
+        layer = layer_builder.build_vsp_layer(
+            layer_name, merged, calc["koordsysid"], fields_spec)
+        self._add_vsp_layer(layer, calc, len(merged),
+                            "%d scenarier" % len(scenarier))
+
+    def _scenario_field_keys(self, scenarier):
+        """Lav gyldige, unikke feltnavne ud fra scenariernes navne.
+
+        Fx 'Sommer Middel' -> 'Sommer_Middel'. Sikrer entydighed hvis to
+        scenarier har samme navn, og falder tilbage til 'vsp<N>' hvis et
+        navn mangler.
+        """
+        import re
+        keys = []
+        seen = {}
+        for i, scen in enumerate(scenarier):
+            navn = (scen.get("navn") or "").strip()
+            if navn:
+                key = re.sub(r"[^0-9A-Za-zÆØÅæøå]+", "_", navn).strip("_")
+            else:
+                key = ""
+            if not key:
+                key = "vsp%d" % (i + 1)
+            # Entydiggør dubletter.
+            if key in seen:
+                seen[key] += 1
+                key = "%s_%d" % (key, seen[key])
+            else:
+                seen[key] = 1
+            keys.append(key)
+        return keys
+
+    def _add_vsp_layer(self, layer, calc, n_points, ekstra=""):
+        """Tilføj et vandspejls-lag til QGIS og meld resultat."""
+        win = self.iface.mainWindow()
+        if not layer.isValid():
+            QMessageBox.critical(
+                win, "VASP", "Kunne ikke oprette vandspejls-laget i QGIS.")
+            return
+        QgsProject.instance().addMapLayer(layer)
+        self.iface.setActiveLayer(layer)
+        self.iface.zoomToActiveLayer()
+        besked = "Indlæste vandspejl '%s' (%d punkter" % (
+            calc["navn"], n_points)
+        besked += (", %s)." % ekstra) if ekstra else ")."
+        self.iface.messageBar().pushSuccess("VASP", besked)
 
     def run_opdater_data(self):
         """Genopbyg GeoPackagen fra den aktive Access-database.

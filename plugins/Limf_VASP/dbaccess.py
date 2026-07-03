@@ -193,3 +193,45 @@ def read_gisline_points(gisdataid):
         })
     points.sort(key=lambda p: (p["seq"] is None, p["seq"]))
     return points
+
+
+def list_vsp_calcs():
+    """Returnér vandspejlsberegninger (simpel + multi) til GUI-valg.
+
+    Selve punkterne ligger i .ber-filer; her returneres kun de headers
+    brugeren skal kunne søge og vælge imellem. Hver post: dict med berid,
+    multi (0/1), navn, projektid, prjnavn, koordsysid, stmin, stmax.
+    Sorteret efter projekt og navn.
+    """
+    layer = _open_layer("vsp_calcs")
+    calcs = []
+    for feat in layer.getFeatures():
+        calcs.append({
+            "berid": feat["berid"],
+            "multi": bool(feat["multi"]),
+            "navn": feat["navn"] or "(uden navn)",
+            "projektid": feat["projektid"],
+            "prjnavn": feat["prjnavn"] or "",
+            "koordsysid": feat["koordsysid"],
+            "stmin": feat["stmin"],
+            "stmax": feat["stmax"],
+        })
+    calcs.sort(key=lambda c: ((c["prjnavn"] or "").lower(),
+                              (c["navn"] or "").lower()))
+    return calcs
+
+
+def dbini_binpath():
+    """Returnér DBINI.BINPATH (mappen hvor VASP gemmer .ber-filerne).
+
+    Returnerer None hvis dbini-tabellen mangler eller BINPATH ikke er sat.
+    """
+    try:
+        layer = _open_layer("dbini")
+    except VaspDbError:
+        return None
+    for feat in layer.getFeatures():
+        if (feat["aentry"] or "").strip().upper() == "BINPATH":
+            val = (feat["value"] or "").strip()
+            return val or None
+    return None

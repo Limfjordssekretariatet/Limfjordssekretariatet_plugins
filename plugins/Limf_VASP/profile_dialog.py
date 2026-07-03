@@ -54,7 +54,7 @@ class ProfileDialog(QDialog):
         search_row = QHBoxLayout()
         search_row.addWidget(QLabel("Søg:"))
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Filtrér på navn …")
+        self._search.setPlaceholderText("Filtrér på navn, projekt eller LGDID …")
         self._search.textChanged.connect(self._apply_filter)
         search_row.addWidget(self._search)
         layout.addLayout(search_row)
@@ -122,8 +122,13 @@ class ProfileDialog(QDialog):
         if not text:
             filtered = self._profiles
         else:
+            # Søg bredt: profil-navn, projekt og LGDID – så man kan finde en
+            # profil via sit projekt (samme mønster som vandløbssøgningen).
             filtered = [
-                p for p in self._profiles if text in p["navn"].lower()
+                p for p in self._profiles
+                if text in (p.get("navn") or "").lower()
+                or text in str(p.get("projektid") or "").lower()
+                or text in str(p.get("lgdid") or "").lower()
             ]
         self._populate(filtered)
 

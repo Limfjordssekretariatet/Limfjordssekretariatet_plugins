@@ -74,6 +74,41 @@ def build_gisline_layer(layer_name, points, koordsysid):
     return layer
 
 
+def build_vsp_layer(layer_name, points, koordsysid, fields_spec):
+    """Lav et punktlag for vandspejlsberegningspunkter (fra .ber).
+
+    points:      liste af dicts med 'x', 'y' + de felter der er i fields_spec.
+    fields_spec: liste af (feltnavn, dict-nøgle) — attributterne der skrives.
+                 Simpel: station, vsp, bund, energi, vnf, manning, bredde …
+                 Multi:  ét vsp-felt pr. scenarie (fx vsp_MedMin, vsp_Sommer).
+    Punkternes vandspejl (vsp) lægges også som geometrisk Z (PointZ).
+    """
+    epsg = epsg_for(koordsysid)
+    layer = QgsVectorLayer(
+        "PointZ?crs=EPSG:%d" % epsg, layer_name, "memory")
+    provider = layer.dataProvider()
+
+    fields = QgsFields()
+    for fname, _ in fields_spec:
+        fields.append(QgsField(fname, QVariant.Double))
+    provider.addAttributes(fields)
+    layer.updateFields()
+
+    features = []
+    for p in points:
+        # Z = vandspejlskoten hvis den findes, ellers 0.
+        z = p.get("vsp")
+        feat = QgsFeature(layer.fields())
+        feat.setGeometry(QgsGeometry(QgsPoint(
+            p["x"], p["y"], z if z is not None else 0.0)))
+        feat.setAttributes([p.get(key) for _, key in fields_spec])
+        features.append(feat)
+
+    provider.addFeatures(features)
+    layer.updateExtents()
+    return layer
+
+
 def build_terrain_layer(layer_name, points, koordsysid):
     """Lav et PointZ-lag hvor punktets Z er terrænkoten fra DHM.
 

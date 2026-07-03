@@ -24,6 +24,9 @@ PROFILES_TSV = os.path.join(PLUGIN_DIR, "_profiles.tsv")
 POINTS_TSV = os.path.join(PLUGIN_DIR, "_points.tsv")
 LINES_TSV = os.path.join(PLUGIN_DIR, "_lines.tsv")
 GISLINJER_TSV = os.path.join(PLUGIN_DIR, "_gislinjer.tsv")
+VSP_SIMPEL_TSV = os.path.join(PLUGIN_DIR, "_vsp_simpel.tsv")
+VSP_MULTI_TSV = os.path.join(PLUGIN_DIR, "_vsp_multi.tsv")
+DBINI_TSV = os.path.join(PLUGIN_DIR, "_dbini.tsv")
 
 EPSG = 25832
 
@@ -154,8 +157,67 @@ def main():
     # --- gislinjer (metadata-tabel til GUI-valg) -------------------------
     _build_gislinjer_table(ds)
 
+    # --- vsp_calcs (vandspejlsberegninger til GUI-valg) ------------------
+    _build_vsp_calcs_table(ds)
+
+    # --- dbini (databasekonfiguration, bl.a. BINPATH til .ber-filer) -----
+    _build_dbini_table(ds)
+
     ds = None
     print("Færdig: %s" % GPKG)
+
+
+def _build_dbini_table(ds):
+    """Byg dbini-tabellen: databasens DBINI-konfiguration (asection/aentry/value)."""
+    if not os.path.exists(DBINI_TSV):
+        print("dbini: _dbini.tsv mangler (springer over)")
+        return
+    layer = ds.CreateLayer("dbini", None, ogr.wkbNone)
+    layer.CreateField(ogr.FieldDefn("asection", ogr.OFTString))
+    layer.CreateField(ogr.FieldDefn("aentry", ogr.OFTString))
+    layer.CreateField(ogr.FieldDefn("value", ogr.OFTString))
+    layer.StartTransaction()
+    n = 0
+    with open(DBINI_TSV, encoding="utf-8-sig") as f:
+        for row in csv.DictReader(f, delimiter="\t"):
+            feat = ogr.Feature(layer.GetLayerDefn())
+            feat.SetField("asection", row["asection"])
+            feat.SetField("aentry", row["aentry"])
+            feat.SetField("value", row["value"])
+            layer.CreateFeature(feat)
+            n += 1
+    layer.CommitTransaction()
+    print("dbini: %d rækker" % n)
+
+
+def _build_vsp_calcs_table(ds):
+    """Byg vsp_calcs-tabellen: vandspejlsberegninger (simpel + multi) til GUI."""
+    layer = ds.CreateLayer("vsp_calcs", None, ogr.wkbNone)
+    for fld, typ in [("berid", ogr.OFTInteger), ("multi", ogr.OFTInteger),
+                     ("navn", ogr.OFTString), ("projektid", ogr.OFTInteger),
+                     ("koordsysid", ogr.OFTInteger), ("stmin", ogr.OFTReal),
+                     ("stmax", ogr.OFTReal), ("prjnavn", ogr.OFTString)]:
+        layer.CreateField(ogr.FieldDefn(fld, typ))
+    total = 0
+    for tsv in (VSP_SIMPEL_TSV, VSP_MULTI_TSV):
+        if not os.path.exists(tsv):
+            continue
+        layer.StartTransaction()
+        with open(tsv, encoding="utf-8-sig") as f:
+            for row in csv.DictReader(f, delimiter="\t"):
+                feat = ogr.Feature(layer.GetLayerDefn())
+                feat.SetField("berid", _to_int(row["berid"]))
+                feat.SetField("multi", _to_int(row["multi"]))
+                feat.SetField("navn", row["navn"])
+                feat.SetField("projektid", _to_int(row["projektid"]))
+                feat.SetField("koordsysid", _to_int(row["koordsysid"]))
+                feat.SetField("stmin", _to_float(row["stmin"]))
+                feat.SetField("stmax", _to_float(row["stmax"]))
+                feat.SetField("prjnavn", row["prjnavn"])
+                layer.CreateFeature(feat)
+                total += 1
+        layer.CommitTransaction()
+    print("vsp_calcs: %d beregninger" % total)
 
 
 def _build_gis_lines(ds, srs):

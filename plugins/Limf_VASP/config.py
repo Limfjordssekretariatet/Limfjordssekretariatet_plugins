@@ -35,6 +35,32 @@ def set_db_path(path):
     from qgis.core import QgsSettings
     QgsSettings().setValue(_DB_SETTING_KEY, path)
 
+
+# Vandspejlsberegninger gemmes som .ber-filer under en PRJDATA-mappe. Hvor den
+# ligger, fortæller databasen selv via DBINI.BINPATH (mappen der indeholder
+# PRJDATA). Falder tilbage til 'PRJDATA ved siden af .mdb-filen', hvis BINPATH
+# ikke er sat/tilgængelig. Brugeren skal kun vælge databasen.
+def prjdata_path():
+    """Returnér PRJDATA-mappen (PRJ<id>-undermapper med .ber-filer).
+
+    1) DBINI.BINPATH fra databasen + 'PRJDATA' (den autoritative kilde).
+    2) Fallback: 'PRJDATA' i samme mappe som .mdb-filen.
+    """
+    try:
+        from . import dbaccess
+        binpath = dbaccess.dbini_binpath()
+    except Exception:
+        binpath = None
+    if binpath:
+        return os.path.join(binpath, "PRJDATA")
+    return os.path.join(os.path.dirname(db_path()), "PRJDATA")
+
+
+def ber_path(projektid, ber_id, multi=False):
+    """Byg stien til en .ber-fil: PRJDATA\\PRJ<projektid>\\BER\\[MUL]BER<id>.ber."""
+    navn = ("MULBER%d.ber" % ber_id) if multi else ("BER%d.ber" % ber_id)
+    return os.path.join(prjdata_path(), "PRJ%d" % projektid, "BER", navn)
+
 # Oversættelse fra VASP's koordinatsystem-id (KOORDSYSKODER.DDHKOORDSYSID /
 # LGDPROFHEADER.KOORDSYSID) til EPSG-kode.
 #   0 = Ikke oplyst, 1 = UTM32 (ED50), 2 = UTM32 (EUREF89)

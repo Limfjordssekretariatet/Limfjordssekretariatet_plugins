@@ -1,9 +1,9 @@
 [general]
 name=LIMF - VASP
 qgisMinimumVersion=3.0
-description=Integration mellem VASP Access-database og QGIS. Henter terræn-/profildata ind som lag.
-about=Læser profil- og terrændata fra en VASP Access-database (.mdb) og indlæser dem som lag i QGIS. Knappen "Terræn på profil" lader brugeren vælge et profil-datalag og henter dets terrænpunkter ind på kortet.
-version=1.0.3
+description=Integration mellem VASP Access-database og QGIS. Henter terræn-, profil- og vandspejlsdata ind som lag.
+about=Læser profil-, terræn- og vandspejlsdata fra en VASP Access-database (.mdb) og indlæser dem som lag i QGIS: længdeprofiler, vandløbslinjer, terræn på profil (fra DHM) og vandspejlsberegninger (simpel + multi) fra VASP's .ber-filer.
+version=1.1.0
 author=VASP
 email=henrikrosenskjold@gmail.com
 tracker=https://example.invalid/issues

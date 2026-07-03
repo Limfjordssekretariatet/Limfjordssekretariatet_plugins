@@ -54,5 +54,8 @@ Remove-Item (Join-Path $pluginDir "_profiles.tsv")  -Force -ErrorAction Silently
 Remove-Item (Join-Path $pluginDir "_points.tsv")    -Force -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $pluginDir "_lines.tsv")     -Force -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $pluginDir "_gislinjer.tsv") -Force -ErrorAction SilentlyContinue
+Remove-Item (Join-Path $pluginDir "_vsp_simpel.tsv") -Force -ErrorAction SilentlyContinue
+Remove-Item (Join-Path $pluginDir "_vsp_multi.tsv")  -Force -ErrorAction SilentlyContinue
+Remove-Item (Join-Path $pluginDir "_dbini.tsv")      -Force -ErrorAction SilentlyContinue
 
 Write-Host "=== Færdig. vasp_data.gpkg er opdateret. ==="

@@ -7,10 +7,15 @@ vasp_data.gpkg
 *.mdb
 *.accdb
 *.ldb
-_profiles.tsv
-_points.tsv
-_lines.tsv
-_gislinjer.tsv
+_*.tsv
+
+# Vandspejlsberegninger + projektdata (lokale, ligger hos VASP-databasen)
+PRJDATA/
+*.ber
+
+# Eksempel-/testdata (kun til udvikling)
+Eksempel/
+tools/_movetest.py
 
 # Database-backup før tilbageskrivning
 backups/

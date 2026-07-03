@@ -93,5 +93,32 @@ ORDER BY v.NAVN, g.NAVN
 Export-Query $glCmd.CommandText (Join-Path $OutDir "_gislinjer.tsv") "gisdataid`tnavn`tlaengde`tkoordsysid`tvlbnavn"
 Write-Host "Skrev _gislinjer.tsv"
 
+# --- Vandspejlsberegninger (headers til GUI-valg) --------------------------
+# Selve punkterne ligger i .ber-filer (ikke i databasen); her dumpes kun de
+# headers brugeren skal kunne søge og vælge imellem. Simpel = VSPBERHEADER,
+# multi = VSPBERMULHEADER. 'multi'-kolonnen skelner dem, 'berid' er filnr.
+$vspSql = @"
+SELECT h.VSPBERID AS berid, 0 AS multi, h.NAVN AS navn, h.PROJEKTID AS projektid,
+       h.KOORDSYSID AS koordsysid, h.CALCSTMIN AS stmin, h.CALCSTMAX AS stmax,
+       p.NAVN AS prjnavn
+FROM VSPBERHEADER AS h LEFT JOIN PROJEKTER AS p ON p.PROJEKTID = h.PROJEKTID
+WHERE h.CALCSTATUS > 0
+"@
+Export-Query $vspSql (Join-Path $OutDir "_vsp_simpel.tsv") "berid`tmulti`tnavn`tprojektid`tkoordsysid`tstmin`tstmax`tprjnavn"
+Write-Host "Skrev _vsp_simpel.tsv"
+
+$mulSql = @"
+SELECT m.DSID AS berid, 1 AS multi, m.NAVN AS navn, m.PRJID AS projektid,
+       0 AS koordsysid, m.STMIN AS stmin, m.STMAX AS stmax, p.NAVN AS prjnavn
+FROM VSPBERMULHEADER AS m LEFT JOIN PROJEKTER AS p ON p.PROJEKTID = m.PRJID
+"@
+Export-Query $mulSql (Join-Path $OutDir "_vsp_multi.tsv") "berid`tmulti`tnavn`tprojektid`tkoordsysid`tstmin`tstmax`tprjnavn"
+Write-Host "Skrev _vsp_multi.tsv"
+
+# --- DBINI (konfiguration, bl.a. BINPATH hvor .ber-filerne ligger) ---------
+$dbiniSql = "SELECT ASECTION, AENTRY, ARTN FROM DBINI"
+Export-Query $dbiniSql (Join-Path $OutDir "_dbini.tsv") "asection`taentry`tvalue"
+Write-Host "Skrev _dbini.tsv"
+
 $conn.Close()
 Write-Host "Dump færdig."

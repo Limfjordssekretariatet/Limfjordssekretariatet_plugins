@@ -21,8 +21,8 @@ class MainDialog(QDialog):
     """Lille menu-dialog med knapper til VASP-handlingerne."""
 
     def __init__(self, on_terraen, on_importer, on_importer_linje,
-                 on_opdater, on_vaelg_database, get_db_path, data_ready,
-                 parent=None):
+                 on_importer_vsp, on_opdater, on_vaelg_database, get_db_path,
+                 data_ready, parent=None):
         super().__init__(parent)
         self.setWindowTitle("VASP-integration")
         self.setMinimumWidth(420)
@@ -73,6 +73,11 @@ class MainDialog(QDialog):
             lambda: self._run(on_importer_linje))
         layout.addWidget(btn_importer_linje)
         self._action_buttons.append(btn_importer_linje)
+
+        btn_importer_vsp = QPushButton("Importer vandspejlsberegning til GIS")
+        btn_importer_vsp.clicked.connect(lambda: self._run(on_importer_vsp))
+        layout.addWidget(btn_importer_vsp)
+        self._action_buttons.append(btn_importer_vsp)
 
         btn_terraen = QPushButton("Terræn på profil")
         btn_terraen.clicked.connect(lambda: self._run(on_terraen))
