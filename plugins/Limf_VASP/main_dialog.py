@@ -89,21 +89,20 @@ class MainDialog(QDialog):
         layout.addWidget(btn_opdater)
         self._action_buttons.append(btn_opdater)
 
-        # --- værktøjer uden databaseadgang ------------------------------------
-        # Nedbrænding arbejder på filer (MIKE-eksport, DHM) og har hverken brug
-        # for VASP-databasen eller datafilen — knappen gråtones derfor ikke.
+        # --- terrænbearbejdning -----------------------------------------------
         if on_braend_vandloeb is not None:
             line2 = QFrame()
             line2.setFrameShape(QFrame.HLine)
             line2.setFrameShadow(QFrame.Sunken)
             layout.addWidget(line2)
 
-            btn_braend = QPushButton("Brænd vandløb i terræn (MIKE → DHM) …")
+            btn_braend = QPushButton("Brænd vandløb i terræn …")
             btn_braend.setToolTip(
-                "Testudgave: brænder MIKE-tværprofiler ned i en terrænmodel. "
-                "Kræver ikke VASP-databasen.")
+                "Brænder tværprofilerne fra et VASP-profil (eller en "
+                "MIKE-eksport) ned i en terrænmodel.")
             btn_braend.clicked.connect(lambda: self._run(on_braend_vandloeb))
             layout.addWidget(btn_braend)
+            self._action_buttons.append(btn_braend)
 
         btn_luk = QPushButton("Luk")
         btn_luk.clicked.connect(self.reject)

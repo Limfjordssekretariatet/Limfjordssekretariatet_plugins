@@ -20,6 +20,7 @@ from . import writeback
 from .profile_dialog import ProfileDialog
 from .gisline_dialog import GisLineDialog
 from .vsp_dialog import VspDialog
+from .tvp_dialog import TvpDialog
 from .main_dialog import MainDialog
 from .terrain_task import TerrainTask
 from .geo import layer_builder
@@ -97,16 +98,78 @@ class VaspPlugin:
         dialog.exec_()
 
     def run_braend_vandloeb(self):
-        """Åbn Processing-dialogen for nedbrænding af MIKE-profiler i DHM.
+        """Brænd tværprofiler ned i terrænmodellen.
 
-        Værktøjet er en testudgave af 'Fra MIKE til DHM' fra
-        Limf_WetlandTools, skrevet om efter metoden i Klimadatastyrelsens
-        rivertopo. Det bruger hverken VASP-databasen eller datafilen.
+        Brugeren vælger et profil-datalag i VASP; vandløbslinjen hentes fra
+        den linje profilet er geokodet på, og begge dele sendes videre til
+        Processing-dialogen, hvor terrænmodel og indstillinger vælges.
+        Alternativt kan man vælge en MIKE-eksport i stedet.
         """
+        win = self.iface.mainWindow()
+        try:
+            profiler = dbaccess.list_tvp_profiles()
+        except dbaccess.VaspDbError:
+            QMessageBox.information(
+                win, "VASP — brænd vandløb i terræn",
+                "Datafilen indeholder ikke tværprofiler endnu.\n\n"
+                "Tryk \"Genindlæs database\", så bygges den forfra med "
+                "tværprofilerne. Det tager nogle minutter.")
+            return
+        if not profiler:
+            QMessageBox.information(
+                win, "VASP",
+                "Der blev ikke fundet nogen profiler med tværprofiler i "
+                "databasen.")
+            return
+
+        dialog = TvpDialog(profiler, win)
+        if dialog.exec_() != TvpDialog.Accepted:
+            return
+        if dialog.use_mike():
+            self._braend_dialog({})
+            return
+
+        prof = dialog.selected_profile()
+        if not prof:
+            return
+        if not prof["geocodegdsid"]:
+            QMessageBox.warning(
+                win, "VASP — brænd vandløb i terræn",
+                "Profilet '%s' er ikke geokodet til en vandløbslinje, så "
+                "linjen kan ikke hentes automatisk.\n\nImportér en "
+                "vandløbslinje til GIS og kør værktøjet med MIKE-knappen, "
+                "eller vælg et andet profil." % prof["navn"])
+            return
+
+        try:
+            points = dbaccess.read_gisline_points(prof["geocodegdsid"])
+        except dbaccess.VaspDbError as exc:
+            QMessageBox.critical(win, "VASP — databasefejl", str(exc))
+            return
+        if len(points) < 2:
+            QMessageBox.warning(
+                win, "VASP",
+                "Vandløbslinjen for '%s' har ikke nok punkter." % prof["navn"])
+            return
+
+        navn = "VASP centerlinje: %s" % (prof["vlbnavn"] or prof["navn"])
+        linje = layer_builder.build_gisline_layer(
+            navn, points, prof["koordsysid"])
+        if not linje.isValid():
+            QMessageBox.critical(
+                win, "VASP", "Kunne ikke oprette centerlinjen i QGIS.")
+            return
+        QgsProject.instance().addMapLayer(linje)
+
+        self._braend_dialog({"VASP_LGDID": prof["lgdid"], "CENTERLINE": linje})
+
+    def _braend_dialog(self, parameters):
+        """Åbn Processing-dialogen for nedbrændingen med givne parametre."""
         from qgis import processing
         try:
             from .framike_til_dhm import BraendVandloebITerraenAlgorithm
-            processing.execAlgorithmDialog(BraendVandloebITerraenAlgorithm())
+            processing.execAlgorithmDialog(
+                BraendVandloebITerraenAlgorithm(), parameters)
         except Exception as exc:
             QMessageBox.critical(
                 self.iface.mainWindow(),

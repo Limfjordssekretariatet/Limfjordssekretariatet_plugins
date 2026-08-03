@@ -221,6 +221,117 @@ def list_vsp_calcs():
     return calcs
 
 
+# --- Tværprofiler (til nedbrænding af vandløb i terrænmodellen) -----------
+
+# TVPDATAEXT.TVPTYPEKODE, jf. TVPBASISTYPER i VASP.
+TVP_OPMAALT = 0        # "Tværprofil" — opmålte punkter (PKTDATA-BLOB)
+TVP_SIMPEL = 4         # "Simpel geometri" — bundkote/bundbredde/anlæg
+TVP_SAMMENSAT = 5      # "Sammensat geometri" — med afsats
+
+
+def list_tvp_profiles():
+    """Returnér de profil-datalag der har tværprofiler, til GUI-valg.
+
+    Hver post: dict med lgdid, navn, vlbnavn, projektid, koordsysid,
+    geocodegdsid, antal_tvp (opmålte tværsnit), antal_param (parametriske).
+    Sorteret efter vandløb og profilnavn.
+    """
+    layer = _open_layer("tvp_profiles")
+    profiles = []
+    for feat in layer.getFeatures():
+        gid = feat["geocodegdsid"]
+        profiles.append({
+            "lgdid": feat["lgdid"],
+            "navn": feat["navn"] or "(uden navn)",
+            "vlbnavn": feat["vlbnavn"] or "",
+            "projektid": feat["projektid"],
+            "koordsysid": feat["koordsysid"],
+            "geocodegdsid": None if gid in (None, "") else int(gid),
+            "antal_tvp": feat["antal_tvp"] or 0,
+            "antal_param": feat["antal_param"] or 0,
+        })
+    profiles.sort(key=lambda p: ((p["vlbnavn"] or "").lower(),
+                                 (p["navn"] or "").lower()))
+    return profiles
+
+
+def tvp_profile(lgdid):
+    """Slå ét enkelt tværprofil-datalag op på lgdid. None hvis det ikke findes."""
+    for prof in list_tvp_profiles():
+        if prof["lgdid"] == int(lgdid):
+            return prof
+    return None
+
+
+def read_cross_sections(lgdid):
+    """Hent de opmålte tværprofiler for ét profil-datalag.
+
+    Punkterne samles pr. tværsnit (tvpid). Hver post: dict med tvpid,
+    station, x, y og punkter = liste af (afstand, kote) i profilets egen
+    rækkefølge. Sorteret efter station.
+    """
+    layer = _open_layer("cross_sections")
+    expr = '"lgdid" = %d' % int(lgdid)
+    request = QgsFeatureRequest().setFilterExpression(expr)
+    sektioner = {}
+    for feat in layer.getFeatures(request):
+        tvpid = feat["tvpid"]
+        sekt = sektioner.get(tvpid)
+        if sekt is None:
+            sekt = {
+                "tvpid": tvpid,
+                "station": feat["station"],
+                "x": feat["x"],
+                "y": feat["y"],
+                "punkter": [],
+            }
+            sektioner[tvpid] = sekt
+        sekt["punkter"].append(
+            (feat["seq"], feat["afstand"], feat["kote"]))
+
+    ud = []
+    for sekt in sektioner.values():
+        # Behold profilets egen rækkefølge (seq) og smid punkter uden
+        # brugbare tal væk.
+        sekt["punkter"].sort(key=lambda t: (t[0] is None, t[0]))
+        # Enkelte punkter i VASP's PKTDATA rummer sentinel-/skraldværdier.
+        # De filtreres i eksporten, men gentages her, så et gammelt datafil-
+        # udtræk ikke kan sende koter på 1e306 videre i beregningen.
+        sekt["punkter"] = [
+            (a, k) for _, a, k in sekt["punkter"]
+            if a is not None and k is not None
+            and -1e4 < a < 1e4 and -50.0 <= k <= 300.0]
+        if len(sekt["punkter"]) >= 2:
+            ud.append(sekt)
+    ud.sort(key=lambda s: (s["station"] is None, s["station"]))
+    return ud
+
+
+def read_cross_section_params(lgdid):
+    """Hent de parametriske tværprofiler (simpel/sammensat) for ét datalag.
+
+    Hver post: dict med tvpid, station, x, y, typekode og p0…p7.
+    Sorteret efter station.
+    """
+    layer = _open_layer("cross_section_params")
+    expr = '"lgdid" = %d' % int(lgdid)
+    request = QgsFeatureRequest().setFilterExpression(expr)
+    rows = []
+    for feat in layer.getFeatures(request):
+        row = {
+            "tvpid": feat["tvpid"],
+            "station": feat["station"],
+            "x": feat["x"],
+            "y": feat["y"],
+            "typekode": feat["typekode"],
+        }
+        for i in range(8):
+            row["p%d" % i] = feat["p%d" % i]
+        rows.append(row)
+    rows.sort(key=lambda r: (r["station"] is None, r["station"]))
+    return rows
+
+
 def dbini_binpath():
     """Returnér DBINI.BINPATH (mappen hvor VASP gemmer .ber-filerne).
 

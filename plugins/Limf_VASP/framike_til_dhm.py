@@ -94,6 +94,7 @@ class BraendVandloebITerraenAlgorithm(QgsProcessingAlgorithm):
     """Brænder MIKE-tværprofiler ned i DHM'et og beholder min(DHM, profil)."""
 
     PARAM_MIKE_TXT = "MIKE_TXT"
+    PARAM_LGDID = "VASP_LGDID"
     PARAM_CENTERLINE = "CENTERLINE"
     PARAM_DHM = "DHM"
     PARAM_MAX_SNAP = "MAX_SNAP"
@@ -108,7 +109,7 @@ class BraendVandloebITerraenAlgorithm(QgsProcessingAlgorithm):
         return "vasp_braend_vandloeb"
 
     def displayName(self):
-        return "Brænd vandløb i terræn (MIKE → DHM, v2)"
+        return "Brænd vandløb i terræn (MIKE/VASP → DHM)"
 
     def group(self):
         return "VASP"
@@ -118,8 +119,12 @@ class BraendVandloebITerraenAlgorithm(QgsProcessingAlgorithm):
 
     def shortHelpString(self):
         return (
-            "Læser MIKE-eksportens tværprofiler, placerer dem på en centerlinje "
-            "og brænder dem ned i terrænmodellen. Output er min(DHM, profil).\n\n"
+            "Placerer tværprofiler på en centerlinje og brænder dem ned i "
+            "terrænmodellen. Output er min(DHM, profil).\n\n"
+            "Profilerne kommer enten fra VASP eller fra en MIKE-eksport. "
+            "Startes værktøjet fra VASP-dialogen, er profil og centerlinje "
+            "allerede udfyldt; ellers vælges en MIKE-tekstfil og et linjelag "
+            "manuelt.\n\n"
             "Profilerne forankres i deres dybeste punkt og evalueres på et "
             "fælles offset-gitter, så der interpoleres mellem sammenlignelige "
             "punkter. Resultatet rasteriseres direkte i DHM'ets gitter, så der "
@@ -137,7 +142,17 @@ class BraendVandloebITerraenAlgorithm(QgsProcessingAlgorithm):
     # ------------------------------------------------------------------
     def initAlgorithm(self, config=None):
         self.addParameter(QgsProcessingParameterFile(
-            self.PARAM_MIKE_TXT, "MIKE-eksport (tekstfil)", extension="txt"))
+            self.PARAM_MIKE_TXT, "MIKE-eksport (tekstfil)", extension="txt",
+            optional=True))
+
+        # Udfyldes automatisk når værktøjet startes fra VASP-dialogen. Er den
+        # sat, hentes tværprofilerne fra VASP i stedet for fra en MIKE-fil.
+        param = QgsProcessingParameterNumber(
+            self.PARAM_LGDID,
+            "VASP-profil (LGDID — udfyldes fra VASP-dialogen)",
+            QgsProcessingParameterNumber.Integer,
+            defaultValue=0, minValue=0, optional=True)
+        self.addParameter(param)
 
         self.addParameter(QgsProcessingParameterFeatureSource(
             self.PARAM_CENTERLINE, "Centerlinje (vandløbsmidte)",
@@ -196,6 +211,7 @@ class BraendVandloebITerraenAlgorithm(QgsProcessingAlgorithm):
     def processAlgorithm(self, parameters, context, feedback):
         mike_path = self.parameterAsFile(
             parameters, self.PARAM_MIKE_TXT, context)
+        lgdid = self.parameterAsInt(parameters, self.PARAM_LGDID, context)
         source = self.parameterAsSource(
             parameters, self.PARAM_CENTERLINE, context)
         dhm_layer = self.parameterAsRasterLayer(
@@ -213,8 +229,10 @@ class BraendVandloebITerraenAlgorithm(QgsProcessingAlgorithm):
         out_path = self.parameterAsOutputLayer(
             parameters, self.PARAM_OUTPUT, context)
 
-        if not mike_path:
-            raise QgsProcessingException("Ingen MIKE-tekstfil valgt.")
+        if not mike_path and not lgdid:
+            raise QgsProcessingException(
+                "Vælg enten en MIKE-tekstfil eller start værktøjet fra "
+                "VASP-dialogen, så profilerne hentes fra databasen.")
         if source is None:
             raise QgsProcessingException("Centerlinjelaget kunne ikke læses.")
         if dhm_layer is None or not dhm_layer.isValid():
@@ -227,14 +245,20 @@ class BraendVandloebITerraenAlgorithm(QgsProcessingAlgorithm):
         step = max(pixel * density, 1e-3)
 
         # --- 1) profiler ------------------------------------------------
-        profiles, warnings = mike.parse_mike_file(mike_path)
+        if lgdid:
+            profiles, warnings = self._load_vasp_profiles(lgdid, feedback)
+            kilde = "VASP-profil %d" % lgdid
+        else:
+            profiles, warnings = mike.parse_mike_file(mike_path)
+            kilde = "MIKE-filen"
         for message in warnings:
             _warn(feedback, message)
         if len(profiles) < 2:
             raise QgsProcessingException(
-                "Der blev kun læst %d brugbare profiler i MIKE-filen "
-                "(der skal mindst være 2)." % len(profiles))
-        feedback.pushInfo("Læste %d profiler fra MIKE-filen." % len(profiles))
+                "Der blev kun læst %d brugbare tværprofiler fra %s "
+                "(der skal mindst være 2)." % (len(profiles), kilde))
+        feedback.pushInfo("Læste %d tværprofiler fra %s."
+                          % (len(profiles), kilde))
 
         kinds = {}
         for profile in profiles:
@@ -350,6 +374,87 @@ class BraendVandloebITerraenAlgorithm(QgsProcessingAlgorithm):
     # ------------------------------------------------------------------
     # Delfunktioner
     # ------------------------------------------------------------------
+    def _load_vasp_profiles(self, lgdid, feedback):
+        """Hent tværprofilerne for ét VASP-profil-datalag fra datafilen."""
+        from . import dbaccess
+        try:
+            sections = dbaccess.read_cross_sections(lgdid)
+            params = dbaccess.read_cross_section_params(lgdid)
+        except dbaccess.VaspDbError as exc:
+            raise QgsProcessingException(str(exc))
+
+        profiles, warnings = mike.profiles_from_vasp(sections, params)
+        feedback.pushInfo(
+            "VASP-profil %d: %d opmålte tværsnit, %d parametriske rækker."
+            % (lgdid, len(sections), len(params)))
+        profiles, extra = self._fill_missing_coords(lgdid, profiles)
+        return profiles, warnings + extra
+
+    def _fill_missing_coords(self, lgdid, profiles):
+        """Giv koordinater til de tværsnit der kun har en stationering.
+
+        Godt 60 % af de parametriske tværsnit i VASP har ingen KOORDX/KOORDY.
+        De kan stadig placeres, fordi den geokodede vandløbslinje bærer
+        stationering i hvert knækpunkt — så positionen kan slås op direkte i
+        stationeringen i stedet for at blive snappet.
+        """
+        mangler = [p for p in profiles
+                   if p.base_x is None or p.base_y is None]
+        if not mangler:
+            return profiles, []
+
+        from . import dbaccess
+        prof = dbaccess.tvp_profile(lgdid)
+        gid = prof.get("geocodegdsid") if prof else None
+        linje = dbaccess.read_geocoded_line(gid) if gid else []
+
+        stationer, xs, ys = [], [], []
+        sidste = None
+        for punkt in sorted(
+                (p for p in linje if p["station"] is not None),
+                key=lambda p: p["station"]):
+            if sidste is not None and punkt["station"] <= sidste:
+                continue
+            stationer.append(punkt["station"])
+            xs.append(punkt["x"])
+            ys.append(punkt["y"])
+            sidste = punkt["station"]
+
+        if len(stationer) < 2:
+            uden = {id(p) for p in mangler}
+            beholdt = [p for p in profiles if id(p) not in uden]
+            return beholdt, [
+                "%d tværsnit har hverken koordinater eller en geokodet "
+                "vandløbslinje at slå stationeringen op i, og springes over."
+                % len(mangler)]
+
+        stationer = np.array(stationer)
+        xs = np.array(xs)
+        ys = np.array(ys)
+        udenfor = 0
+        beholdt = []
+        for profile in profiles:
+            if profile.base_x is not None and profile.base_y is not None:
+                beholdt.append(profile)
+                continue
+            if (profile.station is None
+                    or profile.station < stationer[0]
+                    or profile.station > stationer[-1]):
+                udenfor += 1
+                continue
+            profile.base_x = float(np.interp(profile.station, stationer, xs))
+            profile.base_y = float(np.interp(profile.station, stationer, ys))
+            beholdt.append(profile)
+
+        besked = ["%d tværsnit uden koordinater blev placeret ud fra deres "
+                  "stationering på den geokodede vandløbslinje."
+                  % (len(mangler) - udenfor)]
+        if udenfor:
+            besked.append(
+                "%d tværsnit ligger uden for linjens stationering (%.0f–%.0f m) "
+                "og springes over." % (udenfor, stationer[0], stationer[-1]))
+        return beholdt, besked
+
     def _open_dhm(self, dhm_layer):
         """Åbn DHM'et med GDAL og kontrollér at gitteret er nord-op."""
         path = dhm_layer.source().split("|", 1)[0]

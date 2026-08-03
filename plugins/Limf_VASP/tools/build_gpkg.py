@@ -27,6 +27,9 @@ GISLINJER_TSV = os.path.join(PLUGIN_DIR, "_gislinjer.tsv")
 VSP_SIMPEL_TSV = os.path.join(PLUGIN_DIR, "_vsp_simpel.tsv")
 VSP_MULTI_TSV = os.path.join(PLUGIN_DIR, "_vsp_multi.tsv")
 DBINI_TSV = os.path.join(PLUGIN_DIR, "_dbini.tsv")
+TVP_POINTS_TSV = os.path.join(PLUGIN_DIR, "_tvp_points.tsv")
+TVP_PARAMS_TSV = os.path.join(PLUGIN_DIR, "_tvp_params.tsv")
+LGD_HEADERS_TSV = os.path.join(PLUGIN_DIR, "_lgd_headers.tsv")
 
 EPSG = 25832
 
@@ -163,8 +166,188 @@ def main():
     # --- dbini (databasekonfiguration, bl.a. BINPATH til .ber-filer) -----
     _build_dbini_table(ds)
 
+    # --- tværprofiler (til nedbrænding af vandløb i terrænmodellen) ------
+    antal_tvp = _build_cross_sections(ds)
+    antal_param = _build_cross_section_params(ds)
+    _build_tvp_profiles(ds, antal_tvp, antal_param)
+
     ds = None
     print("Færdig: %s" % GPKG)
+
+
+def _index(ds, table, column):
+    """Læg et attribut-indeks på en kolonne, så opslag pr. profil er hurtige.
+
+    Tabellerne har over en million rækker; uden indeks bliver hvert opslag
+    en fuld scanning.
+    """
+    try:
+        ds.ExecuteSQL('CREATE INDEX "idx_%s_%s" ON "%s" ("%s")'
+                      % (table, column, table, column))
+    except RuntimeError as exc:
+        print("  (kunne ikke oprette indeks på %s.%s: %s)"
+              % (table, column, exc))
+
+
+def _build_cross_sections(ds):
+    """Byg cross_sections: punkterne i de opmålte tværprofiler (TVPTYPEKODE 0).
+
+    Ét punkt pr. række. 'afstand' er afstanden langs tværsnittet som den står
+    i VASP (0 i profilets venstre ende), 'kote' er beregnet af nivellementet
+    i dump_access.ps1. De rå nivellementstal er med, så koten kan efterregnes.
+
+    Returnerer {lgdid: antal tværsnit}.
+    """
+    if not os.path.exists(TVP_POINTS_TSV):
+        print("cross_sections: _tvp_points.tsv mangler (springer over)")
+        return {}
+
+    layer = ds.CreateLayer("cross_sections", None, ogr.wkbNone)
+    for fld, typ in [("lgdid", ogr.OFTInteger), ("tvpid", ogr.OFTInteger),
+                     ("station", ogr.OFTReal), ("x", ogr.OFTReal),
+                     ("y", ogr.OFTReal), ("seq", ogr.OFTInteger),
+                     ("afstand", ogr.OFTReal), ("kote", ogr.OFTReal),
+                     ("raavaerdi", ogr.OFTReal), ("sigteplan", ogr.OFTReal),
+                     # Markør-feltet er et rå heltal fra BLOB'en; betydningen
+                     # er ikke afklaret, og enkelte værdier fylder mere end
+                     # 32 bit. Gemmes som 64-bit så de kan tydes senere.
+                     ("markoer", ogr.OFTInteger64),
+                     ("dnnaddent", ogr.OFTReal)]:
+        layer.CreateField(ogr.FieldDefn(fld, typ))
+
+    tvp_pr_profil = {}
+    sete_tvp = set()
+    layer.StartTransaction()
+    n = 0
+    with open(TVP_POINTS_TSV, encoding="utf-8-sig") as f:
+        for row in csv.DictReader(f, delimiter="\t"):
+            lgdid = _to_int(row["lgdid"])
+            tvpid = _to_int(row["tvpid"])
+            feat = ogr.Feature(layer.GetLayerDefn())
+            feat.SetField("lgdid", lgdid)
+            feat.SetField("tvpid", tvpid)
+            feat.SetField("station", _to_float(row["station"]))
+            feat.SetField("x", _to_float(row["x"]))
+            feat.SetField("y", _to_float(row["y"]))
+            feat.SetField("seq", _to_int(row["seq"]))
+            feat.SetField("afstand", _to_float(row["afstand"]))
+            feat.SetField("kote", _to_float(row["kote"]))
+            feat.SetField("raavaerdi", _to_float(row["raavaerdi"]))
+            sig = _to_float(row["sigteplan"])
+            if sig is not None:
+                feat.SetField("sigteplan", sig)
+            feat.SetField("markoer", _to_int(row["markoer"]))
+            feat.SetField("dnnaddent", _to_float(row["dnnaddent"]))
+            layer.CreateFeature(feat)
+            n += 1
+            if (lgdid, tvpid) not in sete_tvp:
+                sete_tvp.add((lgdid, tvpid))
+                tvp_pr_profil[lgdid] = tvp_pr_profil.get(lgdid, 0) + 1
+            if n % 100000 == 0:
+                print("  ... %d tværprofilpunkter" % n)
+    layer.CommitTransaction()
+    _index(ds, "cross_sections", "lgdid")
+    print("cross_sections: %d punkter i %d tværsnit (%d profiler)"
+          % (n, len(sete_tvp), len(tvp_pr_profil)))
+    return tvp_pr_profil
+
+
+def _build_cross_section_params(ds):
+    """Byg cross_section_params: parametriske profiler (TVPTYPEKODE 4 og 5).
+
+    Type 4 (simpel geometri) omsættes til en profilform ved kørsel; type 5
+    (sammensat) gemmes, men bruges ikke endnu — se geo/mike.py.
+
+    Returnerer {lgdid: antal rækker}.
+    """
+    if not os.path.exists(TVP_PARAMS_TSV):
+        print("cross_section_params: _tvp_params.tsv mangler (springer over)")
+        return {}
+
+    layer = ds.CreateLayer("cross_section_params", None, ogr.wkbNone)
+    for fld, typ in [("tvpid", ogr.OFTInteger), ("lgdid", ogr.OFTInteger),
+                     ("station", ogr.OFTReal), ("x", ogr.OFTReal),
+                     ("y", ogr.OFTReal), ("dnnaddent", ogr.OFTReal),
+                     ("typekode", ogr.OFTInteger)]:
+        layer.CreateField(ogr.FieldDefn(fld, typ))
+    for i in range(8):
+        layer.CreateField(ogr.FieldDefn("p%d" % i, ogr.OFTReal))
+
+    pr_profil = {}
+    layer.StartTransaction()
+    n = 0
+    with open(TVP_PARAMS_TSV, encoding="utf-8-sig") as f:
+        for row in csv.DictReader(f, delimiter="\t"):
+            lgdid = _to_int(row["lgdid"])
+            feat = ogr.Feature(layer.GetLayerDefn())
+            feat.SetField("tvpid", _to_int(row["tvpid"]))
+            feat.SetField("lgdid", lgdid)
+            feat.SetField("station", _to_float(row["station"]))
+            x = _to_float(row["x"])
+            y = _to_float(row["y"])
+            if x is not None:
+                feat.SetField("x", x)
+            if y is not None:
+                feat.SetField("y", y)
+            feat.SetField("dnnaddent", _to_float(row["dnnaddent"]))
+            feat.SetField("typekode", _to_int(row["typekode"]))
+            for i in range(8):
+                val = _to_float(row["p%d" % i])
+                if val is not None:
+                    feat.SetField("p%d" % i, val)
+            layer.CreateFeature(feat)
+            n += 1
+            pr_profil[lgdid] = pr_profil.get(lgdid, 0) + 1
+    layer.CommitTransaction()
+    _index(ds, "cross_section_params", "lgdid")
+    print("cross_section_params: %d rækker (%d profiler)" % (n, len(pr_profil)))
+    return pr_profil
+
+
+def _build_tvp_profiles(ds, antal_tvp, antal_param):
+    """Byg tvp_profiles: valglisten over profiler der HAR tværprofiler.
+
+    Slår antallet af tværsnit sammen med profilets navn og vandløbsnavn, så
+    dialogen kan vise "vandløb — profilnavn (N tværsnit)".
+    """
+    if not os.path.exists(LGD_HEADERS_TSV):
+        print("tvp_profiles: _lgd_headers.tsv mangler (springer over)")
+        return
+
+    layer = ds.CreateLayer("tvp_profiles", None, ogr.wkbNone)
+    for fld, typ in [("lgdid", ogr.OFTInteger), ("navn", ogr.OFTString),
+                     ("vlbnavn", ogr.OFTString), ("projektid", ogr.OFTInteger),
+                     ("koordsysid", ogr.OFTInteger),
+                     ("geocodegdsid", ogr.OFTInteger),
+                     ("antal_tvp", ogr.OFTInteger),
+                     ("antal_param", ogr.OFTInteger)]:
+        layer.CreateField(ogr.FieldDefn(fld, typ))
+
+    layer.StartTransaction()
+    n = 0
+    with open(LGD_HEADERS_TSV, encoding="utf-8-sig") as f:
+        for row in csv.DictReader(f, delimiter="\t"):
+            lgdid = _to_int(row["lgdid"])
+            n_tvp = antal_tvp.get(lgdid, 0)
+            n_par = antal_param.get(lgdid, 0)
+            # Kun profiler der faktisk har tværsnit skal kunne vælges.
+            if n_tvp == 0 and n_par == 0:
+                continue
+            feat = ogr.Feature(layer.GetLayerDefn())
+            feat.SetField("lgdid", lgdid)
+            feat.SetField("navn", row["navn"])
+            feat.SetField("vlbnavn", row["vlbnavn"])
+            feat.SetField("projektid", _to_int(row["projektid"]))
+            feat.SetField("koordsysid", _to_int(row["koordsysid"]))
+            gid = _to_int(row["geocodegdsid"])
+            if gid is not None:
+                feat.SetField("geocodegdsid", gid)
+            feat.SetField("antal_tvp", n_tvp)
+            feat.SetField("antal_param", n_par)
+            layer.CreateFeature(feat)
+            n += 1
+    layer.CommitTransaction()
+    print("tvp_profiles: %d profiler med tværsnit" % n)
 
 
 def _build_dbini_table(ds):

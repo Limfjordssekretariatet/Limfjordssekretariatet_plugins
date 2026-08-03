@@ -248,6 +248,120 @@ def _parse_block(block, block_no):
 
 
 # ---------------------------------------------------------------------------
+# Profiler fra VASP-databasen
+# ---------------------------------------------------------------------------
+
+# TVPDATAEXT.TVPTYPEKODE
+VASP_OPMAALT = 0
+VASP_SIMPEL = 4
+VASP_SAMMENSAT = 5
+
+
+def profile_from_survey(section, nr=0):
+    """Byg et profil ud fra ét opmaalt VASP-tvaersnit (TVPTYPEKODE 0).
+
+    ``section`` er en post fra ``dbaccess.read_cross_sections``: afstand langs
+    tvaersnittet og kote pr. punkt. Der er ingen markoerer i VASP-data, saa
+    profilet forankres i sit dybeste punkt.
+    """
+    punkter = section.get("punkter") or []
+    if len(punkter) < 2:
+        return None
+    dist = np.array([p[0] for p in punkter], dtype=float)
+    z = np.array([p[1] for p in punkter], dtype=float)
+    station = section.get("station")
+    navn = ("st. %.1f" % station) if station is not None else ("tvp %s" % nr)
+    return MikeProfile(navn, station, section.get("x"), section.get("y"),
+                       dist, z, np.zeros(len(dist), dtype=int), nr)
+
+
+def profile_from_simple(row, nr=0, height=2.0):
+    """Byg et profil ud fra en simpel geometri (TVPTYPEKODE 4).
+
+    VASP gemmer den som bundkote (``p2``, i cm), bundbredde (``p3``, i m) og
+    anlaeg (``p4``, symmetrisk). Det omsaettes til en trapez der foeres
+    ``height`` meter op over bunden. Hoejden er ligegyldig for resultatet:
+    brinker der ligger over terraenet aendrer alligevel ingenting, fordi der
+    braendes med min(DHM, profil).
+    """
+    bundkote_cm = row.get("p2")
+    bundbredde = row.get("p3")
+    anlaeg = row.get("p4")
+    if bundkote_cm is None:
+        return None
+    bundkote = bundkote_cm / 100.0 + (row.get("dnnaddent") or 0.0)
+    bundbredde = float(bundbredde) if bundbredde else 0.0
+    anlaeg = float(anlaeg) if anlaeg else 0.0
+
+    halv = bundbredde / 2.0
+    top = halv + anlaeg * height
+    if top <= 0:
+        # Hverken bredde eller anlaeg: intet at braende.
+        return None
+    if anlaeg > 0:
+        dist = np.array([0.0, top - halv, top + halv, 2.0 * top])
+        z = np.array([bundkote + height, bundkote, bundkote,
+                      bundkote + height])
+    else:
+        # Lodrette sider: kun bunden er kendt.
+        dist = np.array([0.0, bundbredde])
+        z = np.array([bundkote, bundkote])
+
+    station = row.get("station")
+    navn = ("st. %.1f (simpel)" % station) if station is not None \
+        else ("simpel %s" % nr)
+    return MikeProfile(navn, station, row.get("x"), row.get("y"),
+                       dist, z, np.zeros(len(dist), dtype=int), nr)
+
+
+def profiles_from_vasp(sections, params=None, height=2.0):
+    """Byg profiler ud fra VASP-data.
+
+    Opmaalte tvaersnit (type 0) og simple geometrier (type 4) bruges.
+    Sammensatte geometrier (type 5) springes over: kun 25 raekker i basen, og
+    betydningen af flere af deres PARAM-felter er ikke fastlagt — det er bedre
+    at sige det hoejt end at braende en gaettet form ned i terraenet.
+
+    :return: ``(profiler, advarsler)``
+    """
+    profiles = []
+    warnings = []
+
+    for i, section in enumerate(sections or []):
+        prof = profile_from_survey(section, nr=i)
+        if prof is None:
+            continue
+        profiles.append(prof)
+
+    n_simpel = 0
+    n_sammensat = 0
+    for i, row in enumerate(params or []):
+        kode = row.get("typekode")
+        if kode == VASP_SIMPEL:
+            prof = profile_from_simple(row, nr=i, height=height)
+            if prof is not None:
+                profiles.append(prof)
+                n_simpel += 1
+        elif kode == VASP_SAMMENSAT:
+            n_sammensat += 1
+
+    if n_sammensat:
+        warnings.append(
+            "%d tvaersnit er 'Sammensat geometri' (TVPTYPEKODE 5) og "
+            "springes over — formen af de felter er ikke fastlagt."
+            % n_sammensat)
+    if n_simpel:
+        warnings.append(
+            "%d tvaersnit er 'Simpel geometri' og er omsat til en trapez "
+            "(bundkote, bundbredde, anlaeg) foert %.1f m op over bunden."
+            % (n_simpel, height))
+
+    # Profiler uden koordinater kan ikke placeres ved snapping; de faar
+    # koordinater fra stationeringen af kalderen.
+    return profiles, warnings
+
+
+# ---------------------------------------------------------------------------
 # Centerlinje: snapping og stationering
 # ---------------------------------------------------------------------------
 
