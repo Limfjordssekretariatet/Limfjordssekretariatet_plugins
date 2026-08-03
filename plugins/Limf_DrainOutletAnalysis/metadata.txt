@@ -2,7 +2,7 @@
 name=LIMF - Dræn
 qgisMinimumVersion=3.0
 description=Find drænudløbspunkter baseret på fald og DEM
-version=0.2.9
+version=0.2.10
 author=Henrik Rosenskjold
 email=henrik.rosenskjold@aalborg.dk
 homepage=
