@@ -1,0 +1,440 @@
+# -*- coding: utf-8 -*-
+"""Indlæsning og geometri for MIKE-tværprofiler.
+
+Indeholder al beregning der ikke kræver QGIS: parsning af MIKE-eksporten,
+forankring af profilerne, snapping til en centerlinje og opbygning af den
+korridor (stationer x offsets) der skal brændes ned i terraenmodellen.
+
+Metoden foelger principperne fra Klimadatastyrelsens rivertopo
+(https://github.com/Klimadatastyrelsen/rivertopo):
+
+* et profil behandles som en funktion z(offset) der evalueres paa et fast
+  offset-gitter -- ikke som en punktsky med profil-afhaengig punktafstand.
+  Dermed svarer punkt nr. i i to naboprofiler til samme fysiske afstand fra
+  vandloebets bund, og der interpoleres ikke mellem en brink og en bund.
+* offset maales fra profilets dybeste punkt (thalweg) eller fra MIKE's
+  markoer 2, ikke fra bredde-midten. Ellers vandrer den indbraendte kanal
+  sidelaens fra profil til profil.
+* placeringen paa centerlinjen findes ved vektorprojektion paa hvert segment,
+  saa baade stationering og vinkelret afstand er kendt og kan valideres.
+"""
+
+import re
+from bisect import bisect_right
+from collections import namedtuple
+
+import numpy as np
+
+# MIKE-markoer 2 er konventionelt profilets laveste punkt (bundpunkt).
+MARKER_BOTTOM = 2
+
+ANCHOR_AUTO = "auto"
+ANCHOR_THALWEG = "thalweg"
+ANCHOR_MARKER = "marker"
+ANCHOR_MIDDLE = "midte"
+
+_MARKER_RE = re.compile(r"<[^>]*?(\d+)[^>]*>")
+_TAG_RE = re.compile(r"<[^>]*>")
+
+
+def _to_float(token):
+    """Konvertér et tal-token til float. Returnerer None hvis det ikke er et tal.
+
+    Accepterer komma som decimalseparator, da nogle MIKE-eksporter er skrevet
+    med dansk locale.
+    """
+    try:
+        return float(token)
+    except ValueError:
+        pass
+    try:
+        return float(token.replace(",", "."))
+    except ValueError:
+        return None
+
+
+def _floats(line):
+    """Alle tal paa en linje, i raekkefoelge."""
+    out = []
+    for token in line.split():
+        value = _to_float(token)
+        if value is not None:
+            out.append(value)
+    return out
+
+
+class MikeProfile:
+    """Ét tvaerprofil fra MIKE-eksporten.
+
+    ``dist`` er raa afstand langs profilet som den staar i filen (0 i profilets
+    venstre ende), ``offsets`` er den samme akse flyttet saa 0 ligger i
+    profilets nulpunkt (se :meth:`set_anchor`).
+    """
+
+    def __init__(self, name, station, base_x, base_y, dist, z, markers,
+                 block_no):
+        order = np.argsort(dist, kind="stable")
+        self.name = name
+        self.station = station
+        self.base_x = base_x
+        self.base_y = base_y
+        self.dist = np.asarray(dist, dtype=float)[order]
+        self.z = np.asarray(z, dtype=float)[order]
+        self.markers = np.asarray(markers, dtype=int)[order]
+        self.block_no = block_no
+        self.anchor = 0.0
+        self.anchor_kind = None
+        self.offsets = self.dist.copy()
+        # Udfyldes af kalderen naar profilet er snappet til centerlinjen.
+        self.chainage = None
+        self.snap_dist = None
+        self.snap_offset = None
+        self.part = None
+
+    # --- forankring -------------------------------------------------------
+
+    def thalweg(self):
+        """Position (paa dist-aksen) af profilets dybeste punkt.
+
+        Ligger flere punkter lige lavt, bruges deres midte -- som i rivertopo's
+        OpmaaltProfil.
+        """
+        lowest = self.dist[self.z == self.z.min()]
+        return float(np.mean(lowest))
+
+    def marker_pos(self, marker=MARKER_BOTTOM):
+        """Position af en MIKE-markoer, eller None hvis den ikke findes."""
+        hit = self.dist[self.markers == marker]
+        if hit.size == 0:
+            return None
+        return float(np.mean(hit))
+
+    def middle(self):
+        """Bredde-midten -- den gamle metode, medtaget til sammenligning."""
+        return float((self.dist[0] + self.dist[-1]) / 2.0)
+
+    def set_anchor(self, mode):
+        """Vaelg profilets nulpunkt og beregn ``offsets``."""
+        if mode == ANCHOR_MIDDLE:
+            anchor, kind = self.middle(), ANCHOR_MIDDLE
+        elif mode == ANCHOR_MARKER:
+            pos = self.marker_pos()
+            anchor, kind = ((pos, ANCHOR_MARKER) if pos is not None
+                            else (self.thalweg(), ANCHOR_THALWEG))
+        elif mode == ANCHOR_AUTO:
+            pos = self.marker_pos()
+            anchor, kind = ((pos, ANCHOR_MARKER) if pos is not None
+                            else (self.thalweg(), ANCHOR_THALWEG))
+        else:
+            anchor, kind = self.thalweg(), ANCHOR_THALWEG
+        self.anchor = anchor
+        self.anchor_kind = kind
+        self.offsets = self.dist - anchor
+        return kind
+
+    # --- opslag -----------------------------------------------------------
+
+    def interp(self, offsets):
+        """Profilets kote i de oenskede offsets.
+
+        Uden for profilets egen bredde returneres NaN -- der gaettes altsaa
+        ikke terraen hvor profilet ikke naaer hen (samme valg som rivertopo).
+        """
+        return np.interp(offsets, self.offsets, self.z,
+                         left=np.nan, right=np.nan)
+
+
+# ---------------------------------------------------------------------------
+# Parsning af MIKE-eksporten
+# ---------------------------------------------------------------------------
+
+def parse_mike_file(path, encoding="latin-1"):
+    """Læs en MIKE-tekstfil med tvaerprofiler.
+
+    Parseren er noegleord-styret (COORDINATES / PROFILE / ****) i stedet for at
+    taelle linjer. En blok med en ekstra eller manglende linje forskyder derfor
+    ikke resten af filen, og en blok der ikke kan laeses giver en advarsel i
+    stedet for at desynkronisere laesningen.
+
+    :return: ``(profiler, advarsler)``
+    """
+    with open(path, "r", encoding=encoding, errors="replace") as handle:
+        lines = handle.read().splitlines()
+
+    blocks = []
+    current = []
+    for line in lines:
+        if "****" in line:
+            blocks.append(current)
+            current = []
+        else:
+            current.append(line)
+    if current:
+        blocks.append(current)
+
+    profiles = []
+    warnings = []
+    for block_no, block in enumerate(blocks, start=1):
+        if not [ln for ln in block if ln.strip()]:
+            continue
+        profile, problem = _parse_block(block, block_no)
+        if profile is None:
+            if problem:
+                warnings.append(problem)
+            continue
+        profiles.append(profile)
+    return profiles, warnings
+
+
+def _parse_block(block, block_no):
+    """Læs én profilblok. Returnerer ``(MikeProfile | None, advarsel | None)``."""
+    stripped = [ln.strip() for ln in block if ln.strip()]
+
+    idx_coord = None
+    idx_profile = None
+    for i, line in enumerate(stripped):
+        upper = line.upper()
+        if idx_coord is None and upper.startswith("COORDINATES"):
+            idx_coord = i
+        elif idx_profile is None and upper.startswith("PROFILE"):
+            idx_profile = i
+
+    if idx_coord is None:
+        return None, ("Blok %d springes over: ingen COORDINATES-linje."
+                      % block_no)
+
+    coords = _floats(stripped[idx_coord])
+    if len(coords) < 2:
+        return None, ("Blok %d springes over: COORDINATES-linjen indeholder "
+                      "ikke to koordinater (%s)."
+                      % (block_no, stripped[idx_coord]))
+    base_x, base_y = coords[0], coords[1]
+
+    header = stripped[:idx_coord]
+    name = header[0] if header else "profil %d" % block_no
+    station = None
+    for line in header[1:]:
+        values = _floats(line)
+        if len(values) == 1:
+            station = values[0]
+            break
+    if station is None and header:
+        # Navnet kan i nogle eksporter selv indeholde stationeringen.
+        values = _floats(header[0])
+        if len(values) == 1:
+            station = values[0]
+
+    # Data starter efter PROFILE-linjen; mangler den, tages alle talraekker
+    # efter COORDINATES.
+    start = (idx_profile + 1) if idx_profile is not None else (idx_coord + 1)
+    dist, z, markers = [], [], []
+    for line in stripped[start:]:
+        marker_hit = _MARKER_RE.search(line)
+        marker = int(marker_hit.group(1)) if marker_hit else 0
+        values = _floats(_TAG_RE.sub(" ", line))
+        if len(values) < 2:
+            continue
+        dist.append(values[0])
+        z.append(values[1])
+        markers.append(marker)
+
+    if len(dist) < 2:
+        return None, ("Profil '%s' (blok %d) springes over: kun %d punkter."
+                      % (name, block_no, len(dist)))
+
+    return MikeProfile(name, station, base_x, base_y,
+                       np.array(dist), np.array(z), np.array(markers),
+                       block_no), None
+
+
+# ---------------------------------------------------------------------------
+# Centerlinje: snapping og stationering
+# ---------------------------------------------------------------------------
+
+Snap = namedtuple("Snap", ["part", "chainage", "offset", "dist"])
+
+
+def cumulative_length(points):
+    """Kumuleret laengde til hvert knaekpunkt paa en polylinje."""
+    seg = np.diff(points, axis=0)
+    return np.concatenate([[0.0], np.cumsum(np.hypot(seg[:, 0], seg[:, 1]))])
+
+
+def snap_point(x, y, parts):
+    """Find det naermeste punkt paa en samling polylinjer.
+
+    ``parts`` er en liste af ``(navn, punkter Nx2, kumuleret laengde)``.
+    Beregningen er en ren vektorprojektion paa hvert linjesegment (som
+    rivertopo's snapping.py), saa vi faar baade stationeringen langs linjen og
+    den vinkelrette, fortegnsbestemte afstand ud. Afstanden bruges til at
+    afvise profiler der slet ikke hoerer til linjen.
+
+    Fortegn paa offset: positiv = hoejre side set i linjens retning.
+    """
+    best = None
+    for part_index, (_, points, cum) in enumerate(parts):
+        if len(points) < 2:
+            continue
+        start = points[:-1]
+        vec = np.diff(points, axis=0)
+        seg_len2 = (vec ** 2).sum(axis=1)
+        safe = np.where(seg_len2 > 0.0, seg_len2, 1.0)
+
+        rel = np.array([x, y], dtype=float) - start
+        param = np.clip((rel * vec).sum(axis=1) / safe, 0.0, 1.0)
+        param = np.where(seg_len2 > 0.0, param, 0.0)
+
+        proj = start + param[:, None] * vec
+        dists = np.hypot(proj[:, 0] - x, proj[:, 1] - y)
+        k = int(np.argmin(dists))
+
+        if best is not None and dists[k] >= best.dist:
+            continue
+
+        chainage = cum[k] + param[k] * np.sqrt(seg_len2[k])
+        cross = vec[k, 0] * rel[k, 1] - vec[k, 1] * rel[k, 0]
+        offset = float(dists[k]) * (-1.0 if cross > 0 else 1.0)
+        best = Snap(part=part_index, chainage=float(chainage),
+                    offset=offset, dist=float(dists[k]))
+    return best
+
+
+def longest_non_decreasing(values):
+    """Indeks paa den laengste ikke-aftagende delfoelge (patience sorting).
+
+    Bruges til at finde den stoerste indbyrdes konsistente gruppe af profiler:
+    stationeringen i MIKE og stationeringen paa centerlinjen skal stige samtidig.
+    Gør de ikke det, er profilet snappet forkert (typisk til en naboslynge).
+    """
+    if len(values) == 0:
+        return []
+    tails = []
+    tails_index = []
+    prev = [-1] * len(values)
+    for i, value in enumerate(values):
+        pos = bisect_right(tails, value)
+        if pos == len(tails):
+            tails.append(value)
+            tails_index.append(i)
+        else:
+            tails[pos] = value
+            tails_index[pos] = i
+        prev[i] = tails_index[pos - 1] if pos > 0 else -1
+    out = []
+    k = tails_index[-1]
+    while k != -1:
+        out.append(k)
+        k = prev[k]
+    return out[::-1]
+
+
+def consistent_order(stations, chainages):
+    """Vaelg de profiler hvis stationering og placering paa linjen passer sammen.
+
+    :return: ``(beholdte indeks (sorteret efter station), modsat_retning)``
+             hvor ``modsat_retning`` er True hvis centerlinjen er digitaliseret
+             modsat vandloebets stationering.
+    """
+    order = np.argsort(stations, kind="stable")
+    ordered = np.asarray(chainages, dtype=float)[order]
+    keep_up = longest_non_decreasing(ordered)
+    keep_down = longest_non_decreasing(-ordered)
+    if len(keep_down) > len(keep_up):
+        return [int(order[i]) for i in keep_down], True
+    return [int(order[i]) for i in keep_up], False
+
+
+# ---------------------------------------------------------------------------
+# Korridoren
+# ---------------------------------------------------------------------------
+
+def positions_at(points, cum, stations):
+    """Punkter paa polylinjen ved de givne stationeringer."""
+    stations = np.clip(stations, cum[0], cum[-1])
+    idx = np.clip(np.searchsorted(cum, stations, side="right") - 1,
+                  0, len(cum) - 2)
+    seg = cum[idx + 1] - cum[idx]
+    t = np.where(seg > 0, (stations - cum[idx]) / np.where(seg > 0, seg, 1.0),
+                 0.0)
+    return points[idx] + t[:, None] * (points[idx + 1] - points[idx])
+
+
+def normals_at(points, cum, stations, window):
+    """Enhedsnormaler (positiv = hoejre) ved de givne stationeringer.
+
+    Retningen bestemmes over et vindue paa ``window`` meter i stedet for over
+    to nabo-knaekpunkter. Paa en taetdigitaliseret centerlinje ligger
+    knaekpunkterne faa decimeter fra hinanden, og en kort maalebasis goer
+    tvaersnittene til ren digitaliseringsstoej -- de vifter og krydser
+    hinanden, hvilket giver takker i resultatet.
+    """
+    half = max(window, 1e-6) / 2.0
+    before = positions_at(points, cum, stations - half)
+    after = positions_at(points, cum, stations + half)
+    delta = after - before
+    length = np.hypot(delta[:, 0], delta[:, 1])
+    # Faldback for stationer hvor vinduet kollapser (fx en linje kortere end
+    # vinduet): brug hele linjens retning.
+    bad = length < 1e-9
+    if np.any(bad):
+        whole = points[-1] - points[0]
+        norm = np.hypot(whole[0], whole[1]) or 1.0
+        delta[bad] = whole / norm
+        length[bad] = 1.0
+    unit = delta / length[:, None]
+    # Rotér 90 grader med uret: (dx, dy) -> (dy, -dx) = hoejre side.
+    return np.column_stack([unit[:, 1], -unit[:, 0]])
+
+
+def offset_grid(profiles, spacing, max_width=0.0):
+    """Faelles offset-akse for alle profiler.
+
+    Alle profiler evalueres paa den samme akse, saa punkt nr. i altid betyder
+    samme afstand fra bunden. Aksen daekker det bredeste profil; smallere
+    profiler giver NaN i enderne og braendes ikke der.
+    """
+    low = min(float(p.offsets[0]) for p in profiles)
+    high = max(float(p.offsets[-1]) for p in profiles)
+    if max_width and max_width > 0:
+        low = max(low, -max_width / 2.0)
+        high = min(high, max_width / 2.0)
+    if high - low <= 0:
+        raise ValueError("Profilerne har ingen bredde at braende ned.")
+    count = int(np.ceil((high - low) / max(spacing, 1e-6))) + 1
+    return np.linspace(low, high, count)
+
+
+def profile_matrix(profiles, offsets):
+    """Matrix (profil x offset) med koter, NaN uden for hvert profil."""
+    return np.vstack([p.interp(offsets) for p in profiles])
+
+
+def interpolate_along(chainages, matrix, stations):
+    """Interpolér koterne mellem profilerne langs vandloebet.
+
+    Blandingen er NaN-bevidst: naar kun det ene naboprofil naaer ud til et
+    givet offset, bruges dets kote alene i stedet for at goere hele punktet
+    ugyldigt. Naar ingen af dem naaer derud, bliver resultatet NaN og punktet
+    braendes ikke.
+    """
+    chainages = np.asarray(chainages, dtype=float)
+    idx = np.clip(np.searchsorted(chainages, stations, side="right") - 1,
+                  0, len(chainages) - 2)
+    span = chainages[idx + 1] - chainages[idx]
+    t = np.where(span > 0,
+                 (stations - chainages[idx]) / np.where(span > 0, span, 1.0),
+                 0.0)
+    t = np.clip(t, 0.0, 1.0)[:, None]
+
+    lower = matrix[idx]
+    upper = matrix[idx + 1]
+    w_low = (1.0 - t) * ~np.isnan(lower)
+    w_high = t * ~np.isnan(upper)
+    total = w_low + w_high
+
+    result = np.full(lower.shape, np.nan)
+    good = total > 0
+    stacked = np.where(np.isnan(lower), 0.0, lower) * w_low \
+        + np.where(np.isnan(upper), 0.0, upper) * w_high
+    result[good] = stacked[good] / total[good]
+    return result

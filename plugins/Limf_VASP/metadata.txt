@@ -2,8 +2,8 @@
 name=LIMF - VASP
 qgisMinimumVersion=3.0
 description=Integration mellem VASP Access-database og QGIS. Henter terræn-, profil- og vandspejlsdata ind som lag.
-about=Læser profil-, terræn- og vandspejlsdata fra en VASP Access-database (.mdb) og indlæser dem som lag i QGIS: længdeprofiler, vandløbslinjer, terræn på profil (fra DHM) og vandspejlsberegninger (simpel + multi) fra VASP's .ber-filer.
-version=1.1.1
+about=Læser profil-, terræn- og vandspejlsdata fra en VASP Access-database (.mdb) og indlæser dem som lag i QGIS: længdeprofiler, vandløbslinjer, terræn på profil (fra DHM) og vandspejlsberegninger (simpel + multi) fra VASP's .ber-filer. Indeholder desuden en testudgave af "Brænd vandløb i terræn (MIKE til DHM)", der brænder MIKE-tværprofiler ned i en terrænmodel.
+version=1.2.0
 author=VASP
 email=henrikrosenskjold@gmail.com
 tracker=https://example.invalid/issues

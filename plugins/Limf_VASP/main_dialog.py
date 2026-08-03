@@ -22,7 +22,7 @@ class MainDialog(QDialog):
 
     def __init__(self, on_terraen, on_importer, on_importer_linje,
                  on_importer_vsp, on_opdater, on_vaelg_database, get_db_path,
-                 data_ready, parent=None):
+                 data_ready, on_braend_vandloeb=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("VASP-integration")
         self.setMinimumWidth(420)
@@ -88,6 +88,22 @@ class MainDialog(QDialog):
         btn_opdater.clicked.connect(lambda: self._run(on_opdater))
         layout.addWidget(btn_opdater)
         self._action_buttons.append(btn_opdater)
+
+        # --- værktøjer uden databaseadgang ------------------------------------
+        # Nedbrænding arbejder på filer (MIKE-eksport, DHM) og har hverken brug
+        # for VASP-databasen eller datafilen — knappen gråtones derfor ikke.
+        if on_braend_vandloeb is not None:
+            line2 = QFrame()
+            line2.setFrameShape(QFrame.HLine)
+            line2.setFrameShadow(QFrame.Sunken)
+            layout.addWidget(line2)
+
+            btn_braend = QPushButton("Brænd vandløb i terræn (MIKE → DHM) …")
+            btn_braend.setToolTip(
+                "Testudgave: brænder MIKE-tværprofiler ned i en terrænmodel. "
+                "Kræver ikke VASP-databasen.")
+            btn_braend.clicked.connect(lambda: self._run(on_braend_vandloeb))
+            layout.addWidget(btn_braend)
 
         btn_luk = QPushButton("Luk")
         btn_luk.clicked.connect(self.reject)

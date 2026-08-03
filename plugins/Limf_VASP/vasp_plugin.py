@@ -92,8 +92,26 @@ class VaspPlugin:
             on_vaelg_database=self.vaelg_database,
             get_db_path=config.db_path,
             data_ready=self._data_ready,
+            on_braend_vandloeb=self.run_braend_vandloeb,
             parent=self.iface.mainWindow())
         dialog.exec_()
+
+    def run_braend_vandloeb(self):
+        """Åbn Processing-dialogen for nedbrænding af MIKE-profiler i DHM.
+
+        Værktøjet er en testudgave af 'Fra MIKE til DHM' fra
+        Limf_WetlandTools, skrevet om efter metoden i Klimadatastyrelsens
+        rivertopo. Det bruger hverken VASP-databasen eller datafilen.
+        """
+        from qgis import processing
+        try:
+            from .framike_til_dhm import BraendVandloebITerraenAlgorithm
+            processing.execAlgorithmDialog(BraendVandloebITerraenAlgorithm())
+        except Exception as exc:
+            QMessageBox.critical(
+                self.iface.mainWindow(),
+                "VASP — brænd vandløb i terræn",
+                "Værktøjet kunne ikke startes:\n\n%s" % exc)
 
     def _data_ready(self):
         """True hvis datafilen (GeoPackagen) findes – dvs. en database er valgt
