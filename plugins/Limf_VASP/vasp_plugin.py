@@ -102,8 +102,7 @@ class VaspPlugin:
 
         Brugeren vælger et profil-datalag i VASP; vandløbslinjen hentes fra
         den linje profilet er geokodet på, og begge dele sendes videre til
-        Processing-dialogen, hvor terrænmodel og indstillinger vælges.
-        Alternativt kan man vælge en MIKE-eksport i stedet.
+        Processing-dialogen, hvor terrænmodel og output vælges.
         """
         win = self.iface.mainWindow()
         try:
@@ -125,9 +124,6 @@ class VaspPlugin:
         dialog = TvpDialog(profiler, win)
         if dialog.exec_() != TvpDialog.Accepted:
             return
-        if dialog.use_mike():
-            self._braend_dialog({})
-            return
 
         prof = dialog.selected_profile()
         if not prof:
@@ -136,9 +132,8 @@ class VaspPlugin:
             QMessageBox.warning(
                 win, "VASP — brænd vandløb i terræn",
                 "Profilet '%s' er ikke geokodet til en vandløbslinje, så "
-                "linjen kan ikke hentes automatisk.\n\nImportér en "
-                "vandløbslinje til GIS og kør værktøjet med MIKE-knappen, "
-                "eller vælg et andet profil." % prof["navn"])
+                "linjen kan ikke hentes automatisk.\n\nVælg et andet profil."
+                % prof["navn"])
             return
 
         try:

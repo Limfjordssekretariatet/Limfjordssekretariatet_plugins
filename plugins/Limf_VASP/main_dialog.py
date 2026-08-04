@@ -98,8 +98,8 @@ class MainDialog(QDialog):
 
             btn_braend = QPushButton("Brænd vandløb i terræn …")
             btn_braend.setToolTip(
-                "Brænder tværprofilerne fra et VASP-profil (eller en "
-                "MIKE-eksport) ned i en terrænmodel.")
+                "Brænder tværprofilerne fra et VASP-profil ned i en "
+                "terrænmodel.")
             btn_braend.clicked.connect(lambda: self._run(on_braend_vandloeb))
             layout.addWidget(btn_braend)
             self._action_buttons.append(btn_braend)

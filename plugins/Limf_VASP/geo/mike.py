@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Indlæsning og geometri for MIKE-tværprofiler.
+"""Geometri for tværprofiler i MIKE-stil (profilerne kommer fra VASP).
 
-Indeholder al beregning der ikke kræver QGIS: parsning af MIKE-eksporten,
-forankring af profilerne, snapping til en centerlinje og opbygning af den
-korridor (stationer x offsets) der skal brændes ned i terraenmodellen.
+Indeholder al beregning der ikke kræver QGIS: opbygning af profilerne fra
+VASP-databasen, forankring af dem, snapping til en centerlinje og opbygning af
+den korridor (stationer x offsets) der skal brændes ned i terraenmodellen.
 
 Metoden foelger principperne fra Klimadatastyrelsens rivertopo
 (https://github.com/Klimadatastyrelsen/rivertopo):
@@ -19,7 +19,6 @@ Metoden foelger principperne fra Klimadatastyrelsens rivertopo
   saa baade stationering og vinkelret afstand er kendt og kan valideres.
 """
 
-import re
 from bisect import bisect_right
 from collections import namedtuple
 
@@ -33,38 +32,9 @@ ANCHOR_THALWEG = "thalweg"
 ANCHOR_MARKER = "marker"
 ANCHOR_MIDDLE = "midte"
 
-_MARKER_RE = re.compile(r"<[^>]*?(\d+)[^>]*>")
-_TAG_RE = re.compile(r"<[^>]*>")
-
-
-def _to_float(token):
-    """Konvertér et tal-token til float. Returnerer None hvis det ikke er et tal.
-
-    Accepterer komma som decimalseparator, da nogle MIKE-eksporter er skrevet
-    med dansk locale.
-    """
-    try:
-        return float(token)
-    except ValueError:
-        pass
-    try:
-        return float(token.replace(",", "."))
-    except ValueError:
-        return None
-
-
-def _floats(line):
-    """Alle tal paa en linje, i raekkefoelge."""
-    out = []
-    for token in line.split():
-        value = _to_float(token)
-        if value is not None:
-            out.append(value)
-    return out
-
 
 class MikeProfile:
-    """Ét tvaerprofil fra MIKE-eksporten.
+    """Ét tvaerprofil.
 
     ``dist`` er raa afstand langs profilet som den staar i filen (0 i profilets
     venstre ende), ``offsets`` er den samme akse flyttet saa 0 ligger i
@@ -142,109 +112,6 @@ class MikeProfile:
         """
         return np.interp(offsets, self.offsets, self.z,
                          left=np.nan, right=np.nan)
-
-
-# ---------------------------------------------------------------------------
-# Parsning af MIKE-eksporten
-# ---------------------------------------------------------------------------
-
-def parse_mike_file(path, encoding="latin-1"):
-    """Læs en MIKE-tekstfil med tvaerprofiler.
-
-    Parseren er noegleord-styret (COORDINATES / PROFILE / ****) i stedet for at
-    taelle linjer. En blok med en ekstra eller manglende linje forskyder derfor
-    ikke resten af filen, og en blok der ikke kan laeses giver en advarsel i
-    stedet for at desynkronisere laesningen.
-
-    :return: ``(profiler, advarsler)``
-    """
-    with open(path, "r", encoding=encoding, errors="replace") as handle:
-        lines = handle.read().splitlines()
-
-    blocks = []
-    current = []
-    for line in lines:
-        if "****" in line:
-            blocks.append(current)
-            current = []
-        else:
-            current.append(line)
-    if current:
-        blocks.append(current)
-
-    profiles = []
-    warnings = []
-    for block_no, block in enumerate(blocks, start=1):
-        if not [ln for ln in block if ln.strip()]:
-            continue
-        profile, problem = _parse_block(block, block_no)
-        if profile is None:
-            if problem:
-                warnings.append(problem)
-            continue
-        profiles.append(profile)
-    return profiles, warnings
-
-
-def _parse_block(block, block_no):
-    """Læs én profilblok. Returnerer ``(MikeProfile | None, advarsel | None)``."""
-    stripped = [ln.strip() for ln in block if ln.strip()]
-
-    idx_coord = None
-    idx_profile = None
-    for i, line in enumerate(stripped):
-        upper = line.upper()
-        if idx_coord is None and upper.startswith("COORDINATES"):
-            idx_coord = i
-        elif idx_profile is None and upper.startswith("PROFILE"):
-            idx_profile = i
-
-    if idx_coord is None:
-        return None, ("Blok %d springes over: ingen COORDINATES-linje."
-                      % block_no)
-
-    coords = _floats(stripped[idx_coord])
-    if len(coords) < 2:
-        return None, ("Blok %d springes over: COORDINATES-linjen indeholder "
-                      "ikke to koordinater (%s)."
-                      % (block_no, stripped[idx_coord]))
-    base_x, base_y = coords[0], coords[1]
-
-    header = stripped[:idx_coord]
-    name = header[0] if header else "profil %d" % block_no
-    station = None
-    for line in header[1:]:
-        values = _floats(line)
-        if len(values) == 1:
-            station = values[0]
-            break
-    if station is None and header:
-        # Navnet kan i nogle eksporter selv indeholde stationeringen.
-        values = _floats(header[0])
-        if len(values) == 1:
-            station = values[0]
-
-    # Data starter efter PROFILE-linjen; mangler den, tages alle talraekker
-    # efter COORDINATES.
-    start = (idx_profile + 1) if idx_profile is not None else (idx_coord + 1)
-    dist, z, markers = [], [], []
-    for line in stripped[start:]:
-        marker_hit = _MARKER_RE.search(line)
-        marker = int(marker_hit.group(1)) if marker_hit else 0
-        values = _floats(_TAG_RE.sub(" ", line))
-        if len(values) < 2:
-            continue
-        dist.append(values[0])
-        z.append(values[1])
-        markers.append(marker)
-
-    if len(dist) < 2:
-        return None, ("Profil '%s' (blok %d) springes over: kun %d punkter."
-                      % (name, block_no, len(dist)))
-
-    return MikeProfile(name, station, base_x, base_y,
-                       np.array(dist), np.array(z), np.array(markers),
-                       block_no), None
 
 
 # ---------------------------------------------------------------------------

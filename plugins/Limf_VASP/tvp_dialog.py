@@ -47,28 +47,16 @@ class TvpDialog(QDialog):
 
         self._hint = QLabel(
             "Vandløbslinjen hentes automatisk fra den linje profilet er "
-            "geokodet på. Derefter vælger du terrænmodel og indstillinger.")
+            "geokodet på. Derefter vælger du terrænmodel og output — "
+            "resten ligger under Avancerede parametre.")
         self._hint.setWordWrap(True)
         layout.addWidget(self._hint)
 
-        self._use_mike = False
         buttons = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        mike_btn = buttons.addButton("Brug MIKE-fil i stedet …",
-                                     QDialogButtonBox.ActionRole)
-        mike_btn.clicked.connect(self._choose_mike)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
-
-    def _choose_mike(self):
-        """Luk dialogen og lad brugeren vælge en MIKE-eksport i stedet."""
-        self._use_mike = True
-        self.accept()
-
-    def use_mike(self):
-        """True hvis brugeren valgte MIKE-filen frem for et VASP-profil."""
-        return self._use_mike
 
     def _label(self, prof):
         vlb = prof["vlbnavn"] or "(ukendt vandløb)"

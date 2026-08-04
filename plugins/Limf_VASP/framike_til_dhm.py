@@ -39,7 +39,6 @@ from qgis.core import (
     QgsProcessingParameterEnum,
     QgsProcessingParameterFeatureSink,
     QgsProcessingParameterFeatureSource,
-    QgsProcessingParameterFile,
     QgsProcessingParameterNumber,
     QgsProcessingParameterRasterDestination,
     QgsProcessingParameterRasterLayer,
@@ -93,7 +92,6 @@ def _runs(valid):
 class BraendVandloebITerraenAlgorithm(QgsProcessingAlgorithm):
     """Brænder MIKE-tværprofiler ned i DHM'et og beholder min(DHM, profil)."""
 
-    PARAM_MIKE_TXT = "MIKE_TXT"
     PARAM_LGDID = "VASP_LGDID"
     PARAM_CENTERLINE = "CENTERLINE"
     PARAM_DHM = "DHM"
@@ -109,7 +107,7 @@ class BraendVandloebITerraenAlgorithm(QgsProcessingAlgorithm):
         return "vasp_braend_vandloeb"
 
     def displayName(self):
-        return "Brænd vandløb i terræn (MIKE/VASP → DHM)"
+        return "Brænd vandløb i terræn (VASP → DHM)"
 
     def group(self):
         return "VASP"
@@ -121,19 +119,19 @@ class BraendVandloebITerraenAlgorithm(QgsProcessingAlgorithm):
         return (
             "Placerer tværprofiler på en centerlinje og brænder dem ned i "
             "terrænmodellen. Output er min(DHM, profil).\n\n"
-            "Profilerne kommer enten fra VASP eller fra en MIKE-eksport. "
-            "Startes værktøjet fra VASP-dialogen, er profil og centerlinje "
-            "allerede udfyldt; ellers vælges en MIKE-tekstfil og et linjelag "
-            "manuelt.\n\n"
+            "Tværprofilerne kommer fra VASP. Værktøjet startes fra "
+            "VASP-dialogen, så profil og centerlinje allerede er udfyldt — "
+            "du vælger terrænmodel og output.\n\n"
             "Profilerne forankres i deres dybeste punkt og evalueres på et "
             "fælles offset-gitter, så der interpoleres mellem sammenlignelige "
             "punkter. Resultatet rasteriseres direkte i DHM'ets gitter, så der "
             "hverken resamples eller klippes med en concave hull.\n\n"
             "Profiler der ligger længere fra centerlinjen end grænsen, eller "
-            "hvis placering strider mod MIKE-stationeringen, sorteres fra og "
+            "hvis placering strider mod stationeringen, sorteres fra og "
             "nævnes i loggen. Kør med kontrol-laget slået til for at se hvor "
             "hvert profil landede.\n\n"
-            "MIKE-koordinaterne antages at være i centerlinjelagets CRS."
+            "Alt hvad der er valgfrit ligger under Avancerede parametre. "
+            "Profilernes koordinater antages at være i centerlinjelagets CRS."
         )
 
     def createInstance(self):
@@ -141,19 +139,8 @@ class BraendVandloebITerraenAlgorithm(QgsProcessingAlgorithm):
 
     # ------------------------------------------------------------------
     def initAlgorithm(self, config=None):
-        self.addParameter(QgsProcessingParameterFile(
-            self.PARAM_MIKE_TXT, "MIKE-eksport (tekstfil)", extension="txt",
-            optional=True))
-
-        # Udfyldes automatisk når værktøjet startes fra VASP-dialogen. Er den
-        # sat, hentes tværprofilerne fra VASP i stedet for fra en MIKE-fil.
-        param = QgsProcessingParameterNumber(
-            self.PARAM_LGDID,
-            "VASP-profil (LGDID — udfyldes fra VASP-dialogen)",
-            QgsProcessingParameterNumber.Integer,
-            defaultValue=0, minValue=0, optional=True)
-        self.addParameter(param)
-
+        # Kun de tre felter brugeren skal tage stilling til står frit; alt
+        # valgfrit lægges i den sammenfoldede "Avanceret"-gruppe nedenfor.
         self.addParameter(QgsProcessingParameterFeatureSource(
             self.PARAM_CENTERLINE, "Centerlinje (vandløbsmidte)",
             [QgsProcessing.TypeVectorLine]))
@@ -161,15 +148,37 @@ class BraendVandloebITerraenAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(QgsProcessingParameterRasterLayer(
             self.PARAM_DHM, "Terrænmodel (DHM)"))
 
-        self.addParameter(QgsProcessingParameterNumber(
+        self.addParameter(QgsProcessingParameterRasterDestination(
+            self.PARAM_OUTPUT, "Terrænmodel med vandløb"))
+
+        # --- avanceret: udfyldes fra VASP-dialogen eller har en fornuftig
+        # standardværdi, så brugeren normalt ikke skal røre dem ------------
+        # Sættes automatisk når værktøjet startes fra VASP-dialogen; herfra
+        # hentes tværprofilerne.
+        param = QgsProcessingParameterNumber(
+            self.PARAM_LGDID,
+            "VASP-profil (LGDID — udfyldes fra VASP-dialogen)",
+            QgsProcessingParameterNumber.Integer,
+            defaultValue=0, minValue=0, optional=True)
+        param.setFlags(param.flags()
+                       | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(param)
+
+        param = QgsProcessingParameterNumber(
             self.PARAM_MAX_SNAP,
             "Maks. afstand fra profil til centerlinje (m)",
             QgsProcessingParameterNumber.Double,
-            defaultValue=50.0, minValue=0.1))
+            defaultValue=50.0, minValue=0.1)
+        param.setFlags(param.flags()
+                       | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(param)
 
-        self.addParameter(QgsProcessingParameterEnum(
+        param = QgsProcessingParameterEnum(
             self.PARAM_ANCHOR, "Profilernes nulpunkt",
-            options=_ANCHOR_CHOICES, defaultValue=0))
+            options=_ANCHOR_CHOICES, defaultValue=0)
+        param.setFlags(param.flags()
+                       | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(param)
 
         param = QgsProcessingParameterNumber(
             self.PARAM_NORMAL_WINDOW,
@@ -198,19 +207,16 @@ class BraendVandloebITerraenAlgorithm(QgsProcessingAlgorithm):
                        | QgsProcessingParameterDefinition.FlagAdvanced)
         self.addParameter(param)
 
-        self.addParameter(QgsProcessingParameterRasterDestination(
-            self.PARAM_OUTPUT, "Terrænmodel med vandløb"))
-
         sink = QgsProcessingParameterFeatureSink(
             self.PARAM_OUTPUT_LINES, "Tværsnit til kontrol",
             QgsProcessing.TypeVectorLine, optional=True,
             createByDefault=False)
+        sink.setFlags(sink.flags()
+                      | QgsProcessingParameterDefinition.FlagAdvanced)
         self.addParameter(sink)
 
     # ------------------------------------------------------------------
     def processAlgorithm(self, parameters, context, feedback):
-        mike_path = self.parameterAsFile(
-            parameters, self.PARAM_MIKE_TXT, context)
         lgdid = self.parameterAsInt(parameters, self.PARAM_LGDID, context)
         source = self.parameterAsSource(
             parameters, self.PARAM_CENTERLINE, context)
@@ -229,9 +235,9 @@ class BraendVandloebITerraenAlgorithm(QgsProcessingAlgorithm):
         out_path = self.parameterAsOutputLayer(
             parameters, self.PARAM_OUTPUT, context)
 
-        if not mike_path and not lgdid:
+        if not lgdid:
             raise QgsProcessingException(
-                "Vælg enten en MIKE-tekstfil eller start værktøjet fra "
+                "Der er ikke valgt noget VASP-profil. Start værktøjet fra "
                 "VASP-dialogen, så profilerne hentes fra databasen.")
         if source is None:
             raise QgsProcessingException("Centerlinjelaget kunne ikke læses.")
@@ -245,12 +251,8 @@ class BraendVandloebITerraenAlgorithm(QgsProcessingAlgorithm):
         step = max(pixel * density, 1e-3)
 
         # --- 1) profiler ------------------------------------------------
-        if lgdid:
-            profiles, warnings = self._load_vasp_profiles(lgdid, feedback)
-            kilde = "VASP-profil %d" % lgdid
-        else:
-            profiles, warnings = mike.parse_mike_file(mike_path)
-            kilde = "MIKE-filen"
+        profiles, warnings = self._load_vasp_profiles(lgdid, feedback)
+        kilde = "VASP-profil %d" % lgdid
         for message in warnings:
             _warn(feedback, message)
         if len(profiles) < 2:
@@ -281,7 +283,7 @@ class BraendVandloebITerraenAlgorithm(QgsProcessingAlgorithm):
         if len(kept) < 2:
             raise QgsProcessingException(
                 "Færre end 2 profiler kunne placeres på centerlinjen. Tjek at "
-                "MIKE-koordinaterne er i samme koordinatsystem som "
+                "profilernes koordinater er i samme koordinatsystem som "
                 "centerlinjen, og at afstandsgrænsen ikke er for lille.")
 
         part_index, kept = self._pick_part(kept, feedback)
@@ -341,7 +343,7 @@ class BraendVandloebITerraenAlgorithm(QgsProcessingAlgorithm):
         valid = ~np.isnan(z_grid)
         if not np.any(valid):
             raise QgsProcessingException(
-                "Ingen gyldige koter i korridoren — tjek MIKE-filen.")
+                "Ingen gyldige koter i korridoren — tjek tværprofilerne.")
         feedback.setProgress(25)
 
         # --- 4) linjenet der kan rasteriseres --------------------------
@@ -569,10 +571,10 @@ class BraendVandloebITerraenAlgorithm(QgsProcessingAlgorithm):
         return best, [p for p in kept if p.part == best]
 
     def _check_order(self, kept, feedback):
-        """Frasortér profiler hvis placering strider mod MIKE-stationeringen."""
+        """Frasortér profiler hvis placering strider mod stationeringen."""
         if any(p.station is None for p in kept):
             _warn(feedback,
-                  "Ikke alle profiler har en stationering i MIKE-filen — "
+                  "Ikke alle profiler har en stationering — "
                   "rækkefølgen kan ikke kontrolleres.")
             return kept
         stations = np.array([p.station for p in kept])
@@ -582,7 +584,7 @@ class BraendVandloebITerraenAlgorithm(QgsProcessingAlgorithm):
         if dropped:
             _warn(feedback,
                   "%d profiler blev placeret ude af rækkefølge i forhold til "
-                  "MIKE-stationeringen og springes over — typisk et fejlsnap "
+                  "stationeringen og springes over — typisk et fejlsnap "
                   "til en naboslynge. Fx: %s."
                   % (len(dropped),
                      ", ".join("'%s' (station %.1f, %.1f m fra linjen)"
