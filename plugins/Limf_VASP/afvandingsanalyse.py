@@ -19,8 +19,10 @@ from osgeo import gdal, ogr, osr
 
 from qgis.core import (
     QgsCategorizedSymbolRenderer,
+    QgsCoordinateTransform,
     QgsFillSymbol,
     QgsProcessing,
+    QgsProcessingParameterBoolean,
     QgsProcessingAlgorithm,
     QgsProcessingMultiStepFeedback,
     QgsProcessingParameterDefinition,
@@ -61,6 +63,14 @@ _UDENFOR = -9999
 # resultatets opløsning følger DHM'et, uanset hvad der står her.
 _VSP_CELLE_M = 5.0
 _VSP_MAX_CELLER = 2000
+
+
+def _advar(feedback, besked):
+    """Advarsel der virker på både nyere og ældre QGIS-versioner."""
+    if hasattr(feedback, "pushWarning"):
+        feedback.pushWarning(besked)
+    else:
+        feedback.pushInfo("ADVARSEL: %s" % besked)
 
 
 def saet_afvandingslegende(layer):
@@ -107,6 +117,7 @@ class AfvandingsanalyseAlgorithm(QgsProcessingAlgorithm):
     PARAM_MAX_POINTS = "MAX_POINTS"
     PARAM_MIN_POINTS = "MIN_POINTS"
     PARAM_POWER = "POWER"
+    PARAM_NUL_ER_HUL = "NUL_ER_HUL"
     PARAM_OUTPUT = "OUTPUT"
 
     def name(self):
@@ -135,6 +146,12 @@ class AfvandingsanalyseAlgorithm(QgsProcessingAlgorithm):
             "Punkterne interpoleres med IDW (nærmeste naboer), så områder "
             "længere væk end søgeradius ikke får en vandspejlskote og "
             "falder uden for klasserne.\n\n"
+            "Celler hvor terrænkoten er præcis 0,00 m regnes som huller i "
+            "DHM'et og holdes uden for klasserne — ellers ville et hul "
+            "fyldt med nul blive til 'frit vandspejl'. Slå det fra under "
+            "Avanceret, hvis 0,00 m er en rigtig kote i dit område.\n\n"
+            "Loggen viser terræn minus vandspejl i punkterne, så det kan "
+            "ses med det samme, hvis DHM og vandspejl ikke passer sammen.\n\n"
             "Alt hvad der er valgfrit ligger under Avancerede parametre."
         )
 
@@ -204,6 +221,13 @@ class AfvandingsanalyseAlgorithm(QgsProcessingAlgorithm):
                        | QgsProcessingParameterDefinition.FlagAdvanced)
         self.addParameter(param)
 
+        param = QgsProcessingParameterBoolean(
+            self.PARAM_NUL_ER_HUL,
+            "Behandl 0,00 m i terrænmodellen som hul", defaultValue=True)
+        param.setFlags(param.flags()
+                       | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(param)
+
     # ------------------------------------------------------------------
     def processAlgorithm(self, parameters, context, model_feedback):
         feedback = QgsProcessingMultiStepFeedback(5, model_feedback)
@@ -234,11 +258,13 @@ class AfvandingsanalyseAlgorithm(QgsProcessingAlgorithm):
         if feedback.isCanceled():
             return {}
 
+        self._tjek_terraen(parameters, context, feedback)
+
         # --- 2) afvandingsdybden i cm -----------------------------------
         alg_params = {
             "CELL_SIZE": None,
             "CRS": None,
-            "EXPRESSION": '("A@1" - "B@1")*100',
+            "EXPRESSION": self._dybde_udtryk(parameters, context),
             "EXTENT": parameters[self.PARAM_EXTENT],
             "LAYERS": [parameters[self.PARAM_DHM],
                        outputs["Vandspejlsraster"]["OUTPUT"]],
@@ -315,6 +341,104 @@ class AfvandingsanalyseAlgorithm(QgsProcessingAlgorithm):
         return {}
 
     # ------------------------------------------------------------------
+    def _dybde_udtryk(self, parameters, context):
+        """Udtrykket der giver afvandingsdybden i cm.
+
+        DHM-fliser fra en klipning eller sammenfletning kan være fyldt med
+        0,00 m i stedet for nodata. Uden maskering læses de som terræn i
+        havniveau, og alt med et vandspejl over 0 m havner i "frit
+        vandspejl". Rigtige LiDAR-koter rammer aldrig præcis 0,000000, så
+        de kan skilles fra ved lighed med nul. Maskerede celler får -9999,
+        som falder uden for klassetabellen og bliver til "Øvrigt".
+        """
+        if not self.parameterAsBool(parameters, self.PARAM_NUL_ER_HUL,
+                                    context):
+            return '("A@1" - "B@1")*100'
+        return ('(("A@1" != 0) * (("A@1" - "B@1")*100))'
+                ' + (("A@1" = 0) * %d)' % _UDENFOR)
+
+    def _tjek_terraen(self, parameters, context, feedback):
+        """Sammenlign terrænet med vandspejlet i punkterne.
+
+        Ligger vandspejlet over terrænet stort set overalt, bliver hele
+        kortet til "frit vandspejl". Det skyldes så godt som altid inputtet
+        — forkert terrænmodel, huller fyldt med nul, eller et vandspejl fra
+        et andet vandløb — og ikke selve beregningen. Derfor siges det
+        tydeligt i loggen frem for at lade brugeren gætte.
+        """
+        lag = self.parameterAsVectorLayer(parameters, self.PARAM_VSP, context)
+        dhm = self.parameterAsRasterLayer(parameters, self.PARAM_DHM, context)
+        felt = self.parameterAsString(parameters, self.PARAM_FIELD, context)
+        if lag is None or dhm is None or not felt:
+            return
+
+        transform = None
+        if (lag.crs().isValid() and dhm.crs().isValid()
+                and lag.crs() != dhm.crs()):
+            transform = QgsCoordinateTransform(
+                lag.crs(), dhm.crs(), context.transformContext())
+
+        maskeret = self.parameterAsBool(
+            parameters, self.PARAM_NUL_ER_HUL, context)
+        provider = dhm.dataProvider()
+        forskelle, nuller, udenfor = [], 0, 0
+        for feature in lag.getFeatures():
+            vsp = feature[felt]
+            geometri = feature.geometry()
+            if vsp is None or geometri.isEmpty():
+                continue
+            punkt = geometri.asPoint()
+            if transform is not None:
+                punkt = transform.transform(punkt)
+            vaerdi, fandtes = provider.sample(punkt, 1)
+            if not fandtes or vaerdi is None:
+                udenfor += 1
+                continue
+            if vaerdi == 0.0:
+                nuller += 1
+                # Tælles ikke med i sammenligningen, når de alligevel
+                # sorteres fra af beregningen.
+                if maskeret:
+                    continue
+            forskelle.append(float(vaerdi) - float(vsp))
+
+        if nuller:
+            _advar(feedback,
+                   "%d af punkterne ligger på celler med terrænkoten 0,00 m. "
+                   "Det er næsten altid huller i DHM'et, der er fyldt med nul "
+                   "i stedet for nodata, og de ville ellers blive til 'frit "
+                   "vandspejl'. De %s."
+                   % (nuller, "sorteres fra" if maskeret
+                      else "regnes med, fordi 0,00 m ikke behandles som hul"))
+
+        if not forskelle:
+            _advar(feedback,
+                   "Terrænmodellen har ingen brugbare koter der hvor "
+                   "vandspejlspunkterne ligger (%d uden for modellen, %d i "
+                   "nul-fyldte huller). Tjek at DHM'et dækker samme område "
+                   "som beregningen." % (udenfor, nuller))
+            return
+
+        forskelle.sort()
+        median = forskelle[len(forskelle) // 2]
+        under = sum(1 for d in forskelle if d < 0)
+        feedback.pushInfo(
+            "Terræn minus vandspejl i de %d punkter: mindst %.2f m, median "
+            "%.2f m, størst %.2f m."
+            % (len(forskelle), forskelle[0], median, forskelle[-1]))
+        if udenfor:
+            feedback.pushInfo(
+                "%d punkter ligger uden for terrænmodellen." % udenfor)
+
+        if under > len(forskelle) // 2:
+            _advar(feedback,
+                   "Vandspejlet ligger over terrænet i %d af %d punkter "
+                   "(median %.2f m). Så bliver stort set hele kortet til "
+                   "'frit vandspejl'. Tjek at terrænmodellen dækker "
+                   "vandløbet, at den er i meter over DVR90, og at "
+                   "vandspejlsberegningen hører til netop dette vandløb."
+                   % (under, len(forskelle), median))
+
     def _grid_udstraekning(self, parameters, context, feedback):
         """Kommandolinje-tilføjelse der lægger vandspejlsrasteret på området.
 
