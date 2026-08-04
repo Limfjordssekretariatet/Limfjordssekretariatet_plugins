@@ -1,7 +1,8 @@
-"""GUI til valg af en vandspejlsberegning der skal importeres til GIS.
+"""GUI til valg af en vandspejlsberegning — og af et scenarie i den.
 
-Viser en søgbar liste over beregninger (simpel + multi) med projekt, navn og
-type. Brugeren vælger én; hentes via selected_calc().
+VspDialog viser en søgbar liste over beregninger (simpel + multi) med projekt,
+navn og type; brugeren vælger én, som hentes via selected_calc().
+ScenarieDialog vælger bagefter ét scenarie i en multiberegning.
 """
 
 from qgis.PyQt.QtWidgets import (
@@ -20,15 +21,17 @@ from qgis.PyQt.QtCore import Qt
 class VspDialog(QDialog):
     """Dialog der lader brugeren vælge én vandspejlsberegning."""
 
-    def __init__(self, calcs, parent=None):
+    def __init__(self, calcs, parent=None,
+                 titel="Importer vandspejlsberegning til GIS",
+                 intro="Vælg den vandspejlsberegning der skal hentes ind i "
+                       "QGIS:"):
         super().__init__(parent)
-        self.setWindowTitle("Importer vandspejlsberegning til GIS")
+        self.setWindowTitle(titel)
         self.resize(600, 480)
         self._calcs = calcs
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(
-            "Vælg den vandspejlsberegning der skal hentes ind i QGIS:"))
+        layout.addWidget(QLabel(intro))
 
         search_row = QHBoxLayout()
         search_row.addWidget(QLabel("Søg:"))
@@ -77,5 +80,42 @@ class VspDialog(QDialog):
 
     def selected_calc(self):
         """Returnér den valgte beregnings-dict, eller None."""
+        item = self._list.currentItem()
+        return item.data(Qt.UserRole) if item else None
+
+
+class ScenarieDialog(QDialog):
+    """Dialog der lader brugeren vælge ét scenarie i en multiberegning."""
+
+    def __init__(self, scenarier, calc_navn, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Vælg scenarie")
+        self.resize(460, 360)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel(
+            "'%s' er en multiberegning. Vælg det scenarie der skal bruges:"
+            % calc_navn))
+
+        self._list = QListWidget()
+        self._list.itemDoubleClicked.connect(lambda _: self.accept())
+        for i, scen in enumerate(scenarier):
+            navn = (scen.get("navn") or "").strip() or "Scenarie %d" % (i + 1)
+            item = QListWidgetItem(
+                "%s  —  %d punkter" % (navn, len(scen.get("points") or [])))
+            item.setData(Qt.UserRole, i)
+            self._list.addItem(item)
+        if self._list.count():
+            self._list.setCurrentRow(0)
+        layout.addWidget(self._list)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def selected_index(self):
+        """Returnér indekset på det valgte scenarie, eller None."""
         item = self._list.currentItem()
         return item.data(Qt.UserRole) if item else None

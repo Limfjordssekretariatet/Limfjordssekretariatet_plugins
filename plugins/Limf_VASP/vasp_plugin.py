@@ -12,14 +12,15 @@ from qgis.PyQt.QtWidgets import (
     QAction, QMessageBox, QFileDialog, QProgressDialog)
 from qgis.PyQt.QtCore import Qt, QThread, pyqtSignal, QEventLoop
 from qgis.PyQt.QtGui import QIcon
-from qgis.core import QgsProject, QgsApplication
+from qgis.core import (
+    QgsApplication, QgsProject, QgsRectangle, QgsReferencedRectangle)
 
 from . import config
 from . import dbaccess
 from . import writeback
 from .profile_dialog import ProfileDialog
 from .gisline_dialog import GisLineDialog
-from .vsp_dialog import VspDialog
+from .vsp_dialog import VspDialog, ScenarieDialog
 from .tvp_dialog import TvpDialog
 from .main_dialog import MainDialog
 from .terrain_task import TerrainTask
@@ -94,6 +95,7 @@ class VaspPlugin:
             get_db_path=config.db_path,
             data_ready=self._data_ready,
             on_braend_vandloeb=self.run_braend_vandloeb,
+            on_afvandingsanalyse=self.run_afvandingsanalyse,
             parent=self.iface.mainWindow())
         dialog.exec_()
 
@@ -160,29 +162,42 @@ class VaspPlugin:
 
     def _braend_dialog(self, parameters):
         """Åbn Processing-dialogen for nedbrændingen med givne parametre."""
+        def lav():
+            from .framike_til_dhm import BraendVandloebITerraenAlgorithm
+            return BraendVandloebITerraenAlgorithm()
+
+        self._processing_dialog(
+            lav, parameters, "VASP — brænd vandløb i terræn",
+            "VaspBraendVandloebDialog", flyt=("OUTPUT_LINES",))
+
+    def _processing_dialog(self, lav_algoritme, parameters, titel,
+                           objekt_navn, flyt=()):
+        """Kør en af pluginnets Processing-algoritmer i sin egen dialog.
+
+        Dialogen bygges selv (i stedet for execAlgorithmDialog), fordi
+        "Avanceret"-gruppen først kan foldes ind mellem show() og exec().
+        """
         from qgis import processing
         try:
-            from .framike_til_dhm import BraendVandloebITerraenAlgorithm
-            algoritme = BraendVandloebITerraenAlgorithm()
+            algoritme = lav_algoritme()
             dialog = processing.createAlgorithmDialog(algoritme, parameters)
             if dialog is None:
                 processing.execAlgorithmDialog(algoritme, parameters)
                 return
             # Eget navn, saa QGIS gemmer "Avanceret"-tilstanden under vores
             # egen noegle i stedet for den alle Processing-dialoger deler.
-            dialog.setObjectName("VaspBraendVandloebDialog")
+            dialog.setObjectName(objekt_navn)
             dialog.show()
-            self._fold_avanceret_ind(dialog)
+            self._fold_avanceret_ind(dialog, flyt)
             dialog.exec_()
             dialog.close()
         except Exception as exc:
             QMessageBox.critical(
-                self.iface.mainWindow(),
-                "VASP — brænd vandløb i terræn",
+                self.iface.mainWindow(), titel,
                 "Værktøjet kunne ikke startes:\n\n%s" % exc)
 
     @staticmethod
-    def _fold_avanceret_ind(dialog):
+    def _fold_avanceret_ind(dialog, flyt=()):
         """Fold "Avancerede parametre" ind, hver gang dialogen åbnes.
 
         Gruppen er en QgsCollapsibleGroupBox, der genskaber sin gemte
@@ -195,7 +210,10 @@ class VaspPlugin:
         gruppe = dialog.findChild(QGroupBox, "grpAdvanced")
         if gruppe is None:
             return
-        flyttet = VaspPlugin._flyt_til_avanceret(dialog, gruppe, "OUTPUT_LINES")
+        flyttet = []
+        for parameter in flyt:
+            flyttet += VaspPlugin._flyt_til_avanceret(
+                dialog, gruppe, parameter)
         # Gruppen husker hvilke børn der var synlige, da den blev foldet ind,
         # og viser netop dem igen ved udfoldning. De nyflyttede widgets skal
         # derfor være synlige i en udfoldet gruppe først — ellers dukker de
@@ -526,6 +544,142 @@ class VaspPlugin:
             calc["navn"], n_points)
         besked += (", %s)." % ekstra) if ekstra else ")."
         self.iface.messageBar().pushSuccess("VASP", besked)
+
+    # --- Afvandingsanalyse ------------------------------------------------
+
+    # Margin omkring vandspejlspunkterne i det foreslåede beregningsområde.
+    AFVANDING_MARGIN_M = 500.0
+
+    def run_afvandingsanalyse(self):
+        """Afvandingsanalyse ud fra et beregnet vandspejl i VASP.
+
+        Brugeren vælger en vandspejlsberegning — og et scenarie, hvis det er
+        en multiberegning — hvorefter punktlaget bygges og sendes videre til
+        Processing-dialogen sammen med et forslag til beregningsområdet.
+        """
+        win = self.iface.mainWindow()
+        try:
+            calcs = dbaccess.list_vsp_calcs()
+        except dbaccess.VaspDbError as exc:
+            QMessageBox.critical(win, "VASP — databasefejl", str(exc))
+            return
+        if not calcs:
+            QMessageBox.information(
+                win, "VASP",
+                "Der blev ikke fundet nogen vandspejlsberegninger.")
+            return
+
+        dialog = VspDialog(
+            calcs, win,
+            titel="Afvandingsanalyse — vælg vandspejlsberegning",
+            intro="Vælg det beregnede vandspejl afvandingen skal måles i "
+                  "forhold til:")
+        if dialog.exec_() != VspDialog.Accepted:
+            return
+        calc = dialog.selected_calc()
+        if not calc:
+            return
+
+        punkter, scenarie = self._vsp_punkter(calc)
+        if punkter is None:
+            return
+
+        navn = "VASP vandspejl: %s" % calc["navn"]
+        if scenarie:
+            navn += " (%s)" % scenarie
+        brugbare, sprunget = self._brugbare_vsp_punkter(punkter)
+        if len(brugbare) < 3:
+            QMessageBox.warning(
+                win, "VASP — afvandingsanalyse",
+                "Beregningen har kun %d punkter med både koordinater og en "
+                "vandspejlskote. Der skal mindst være 3 for at kunne "
+                "interpolere et vandspejl." % len(brugbare))
+            return
+
+        layer = layer_builder.build_vsp_layer(
+            navn, brugbare, calc["koordsysid"],
+            [("vsp", "vsp"), ("bund", "bund")])
+        if not layer.isValid():
+            QMessageBox.critical(
+                win, "VASP", "Kunne ikke oprette vandspejls-laget i QGIS.")
+            return
+        QgsProject.instance().addMapLayer(layer)
+        if sprunget:
+            self.iface.messageBar().pushInfo(
+                "VASP", "%d punkter uden koordinater eller vandspejlskote "
+                        "indgår ikke i afvandingsanalysen." % sprunget)
+
+        parameters = {"VSP": layer, "VSP_FIELD": "vsp"}
+        extent = self._punkt_extent(layer)
+        if extent is not None:
+            parameters["EXTENT"] = extent
+        self._afvanding_dialog(parameters)
+
+    def _vsp_punkter(self, calc):
+        """Hent punkterne til analysen: (punkter, scenarienavn).
+
+        Returnerer (None, "") hvis filen ikke kunne læses, eller hvis
+        brugeren fortrød scenarievalget.
+        """
+        win = self.iface.mainWindow()
+        path = config.ber_path(
+            calc["projektid"], calc["berid"], multi=calc["multi"])
+        try:
+            if calc["multi"]:
+                scenarier = ber.decode_multi(path)
+            else:
+                return ber.decode_simpel(path), ""
+        except (OSError, ValueError) as exc:
+            self._vsp_read_error(path, exc)
+            return None, ""
+
+        if not scenarier:
+            QMessageBox.information(
+                win, "VASP", "Beregningen indeholdt ingen scenarier.")
+            return None, ""
+        dialog = ScenarieDialog(scenarier, calc["navn"], win)
+        if dialog.exec_() != ScenarieDialog.Accepted:
+            return None, ""
+        i = dialog.selected_index()
+        if i is None:
+            return None, ""
+        return scenarier[i]["points"], (scenarier[i].get("navn") or "").strip()
+
+    @staticmethod
+    def _brugbare_vsp_punkter(punkter):
+        """Frasortér punkter der ikke kan interpoleres imellem.
+
+        Punkter uden vandspejlskote ville blive læst som kote 0 af
+        interpolationen, og et punkt i (0, 0) ville trække beregningsområdet
+        hen til nulpunktet. Returnerer (brugbare, antal frasorterede).
+        """
+        brugbare = []
+        for p in punkter or []:
+            x, y, vsp = p.get("x"), p.get("y"), p.get("vsp")
+            if x is None or y is None or vsp is None:
+                continue
+            if not x and not y:
+                continue
+            brugbare.append(p)
+        return brugbare, len(punkter or []) - len(brugbare)
+
+    def _punkt_extent(self, layer):
+        """Punkternes udstrækning plus margin — forslag til beregningsområdet."""
+        rect = QgsRectangle(layer.extent())
+        if rect.isEmpty():
+            return None
+        rect.grow(self.AFVANDING_MARGIN_M)
+        return QgsReferencedRectangle(rect, layer.crs())
+
+    def _afvanding_dialog(self, parameters):
+        """Åbn Processing-dialogen for afvandingsanalysen."""
+        def lav():
+            from .afvandingsanalyse import AfvandingsanalyseAlgorithm
+            return AfvandingsanalyseAlgorithm()
+
+        self._processing_dialog(
+            lav, parameters, "VASP — afvandingsanalyse",
+            "VaspAfvandingsanalyseDialog")
 
     def run_opdater_data(self):
         """Genopbyg GeoPackagen fra den aktive Access-database.

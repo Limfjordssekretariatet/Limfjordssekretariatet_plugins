@@ -1,121 +1,194 @@
 """Hoveddialog for VASP-integration.
 
 Åbnes fra den ene toolbar-/menuknap "VASP-integration" og samler pluginnets
-handlinger som knapper: vælg database, "Terræn på profil" og "Opdater data
-fra VASP". Selve handlingerne ligger i vasp_plugin; dialogen kalder dem via
-callbacks.
+handlinger i tre afsnit: den aktive database, hvad der kan hentes ind i GIS,
+og analyserne. Selve handlingerne ligger i vasp_plugin; dialogen kalder dem
+via callbacks.
 """
 
-import os
-
+from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtGui import QFontMetrics
 from qgis.PyQt.QtWidgets import (
     QDialog,
-    QVBoxLayout,
+    QGroupBox,
+    QHBoxLayout,
     QLabel,
     QPushButton,
-    QFrame,
+    QSizePolicy,
+    QStyle,
+    QVBoxLayout,
 )
+
+# Fælles knaphøjde, så afsnittene står i samme rytme.
+_KNAP_HOEJDE = 30
 
 
 class MainDialog(QDialog):
-    """Lille menu-dialog med knapper til VASP-handlingerne."""
+    """Menu-dialog med VASP-handlingerne samlet i afsnit."""
 
     def __init__(self, on_terraen, on_importer, on_importer_linje,
                  on_importer_vsp, on_opdater, on_vaelg_database, get_db_path,
-                 data_ready, on_braend_vandloeb=None, parent=None):
+                 data_ready, on_braend_vandloeb=None,
+                 on_afvandingsanalyse=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("VASP-integration")
-        self.setMinimumWidth(420)
+        self.setMinimumWidth(460)
         self._get_db_path = get_db_path
         self._on_vaelg_database = on_vaelg_database
         self._data_ready = data_ready
-
-        layout = QVBoxLayout(self)
-
-        # --- aktuel database --------------------------------------------------
-        layout.addWidget(QLabel("Aktiv VASP-database:"))
-        self._db_label = QLabel()
-        self._db_label.setWordWrap(True)
-        self._db_label.setStyleSheet("font-weight: bold;")
-        layout.addWidget(self._db_label)
-
-        btn_db = QPushButton("Vælg database …")
-        btn_db.clicked.connect(self._vaelg_database)
-        layout.addWidget(btn_db)
-
-        # Hjælpe-tekst der vises indtil en database/datafil er klar.
-        self._hint = QLabel(
-            "Vælg din VASP-database for at komme i gang. "
-            "Handlingerne nedenfor låses op når datafilen er bygget.")
-        self._hint.setWordWrap(True)
-        self._hint.setStyleSheet("color: #a00;")
-        layout.addWidget(self._hint)
-
-        line = QFrame()
-        line.setFrameShape(QFrame.HLine)
-        line.setFrameShadow(QFrame.Sunken)
-        layout.addWidget(line)
-
-        # --- handlinger -------------------------------------------------------
-        layout.addWidget(QLabel("Vælg en handling:"))
+        self._db_sti = ""
 
         # Handlings-knapper der kræver en bygget datafil → samles så de kan
         # gråtones indtil data er klar.
         self._action_buttons = []
 
-        btn_importer = QPushButton("Importer længdeprofil til GIS")
-        btn_importer.clicked.connect(lambda: self._run(on_importer))
-        layout.addWidget(btn_importer)
-        self._action_buttons.append(btn_importer)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(12)
 
-        btn_importer_linje = QPushButton("Importer vandløbslinje til GIS")
-        btn_importer_linje.clicked.connect(
-            lambda: self._run(on_importer_linje))
-        layout.addWidget(btn_importer_linje)
-        self._action_buttons.append(btn_importer_linje)
-
-        btn_importer_vsp = QPushButton("Importer vandspejlsberegning til GIS")
-        btn_importer_vsp.clicked.connect(lambda: self._run(on_importer_vsp))
-        layout.addWidget(btn_importer_vsp)
-        self._action_buttons.append(btn_importer_vsp)
-
-        btn_terraen = QPushButton("Terræn på profil")
-        btn_terraen.clicked.connect(lambda: self._run(on_terraen))
-        layout.addWidget(btn_terraen)
-        self._action_buttons.append(btn_terraen)
-
-        btn_opdater = QPushButton("Genindlæs database")
-        btn_opdater.clicked.connect(lambda: self._run(on_opdater))
-        layout.addWidget(btn_opdater)
-        self._action_buttons.append(btn_opdater)
-
-        # --- terrænbearbejdning -----------------------------------------------
-        if on_braend_vandloeb is not None:
-            line2 = QFrame()
-            line2.setFrameShape(QFrame.HLine)
-            line2.setFrameShadow(QFrame.Sunken)
-            layout.addWidget(line2)
-
-            btn_braend = QPushButton("Brænd vandløb i terræn …")
-            btn_braend.setToolTip(
-                "Brænder tværprofilerne fra et VASP-profil ned i en "
-                "terrænmodel.")
-            btn_braend.clicked.connect(lambda: self._run(on_braend_vandloeb))
-            layout.addWidget(btn_braend)
-            self._action_buttons.append(btn_braend)
-
-        btn_luk = QPushButton("Luk")
-        btn_luk.clicked.connect(self.reject)
-        layout.addWidget(btn_luk)
+        layout.addWidget(self._database_boks())
+        layout.addWidget(self._import_boks(
+            on_importer, on_importer_linje, on_importer_vsp))
+        layout.addWidget(self._analyse_boks(
+            on_terraen, on_braend_vandloeb, on_afvandingsanalyse))
+        layout.addStretch(1)
+        layout.addLayout(self._bund_raekke(on_opdater))
 
         self._refresh_db_label()
         self._update_enabled()
 
+    # --- afsnit -----------------------------------------------------------
+
+    def _database_boks(self):
+        """Øverste afsnit: hvilken database der arbejdes på."""
+        boks = QGroupBox("Database")
+        indhold = QVBoxLayout(boks)
+        indhold.setSpacing(8)
+
+        self._db_label = QLabel()
+        self._db_label.setStyleSheet("font-weight: bold;")
+        self._db_label.setSizePolicy(QSizePolicy.Ignored,
+                                     QSizePolicy.Preferred)
+        indhold.addWidget(self._db_label)
+
+        btn_db = self._knap("Vælg database …", self._vaelg_database,
+                            ikon=QStyle.SP_DirOpenIcon)
+        indhold.addWidget(btn_db)
+
+        # Vises indtil en database/datafil er klar.
+        self._hint = QLabel(
+            "Vælg din VASP-database for at komme i gang. Handlingerne "
+            "nedenfor låses op, når datafilen er bygget.")
+        self._hint.setWordWrap(True)
+        self._hint.setStyleSheet("color: #a04000;")
+        indhold.addWidget(self._hint)
+        return boks
+
+    def _import_boks(self, on_importer, on_importer_linje, on_importer_vsp):
+        """Afsnit med det der hentes fra VASP ind i QGIS."""
+        boks = QGroupBox("Hent ind i GIS")
+        indhold = QVBoxLayout(boks)
+        indhold.setSpacing(6)
+        # Alle tre åbner en valgdialog, derfor "…" på dem alle.
+        for tekst, tip, handling in (
+            ("Længdeprofil …",
+             "Importer et længdeprofil fra VASP som lag i QGIS.",
+             on_importer),
+            ("Vandløbslinje …",
+             "Importer en geokodet vandløbslinje fra VASP som lag i QGIS.",
+             on_importer_linje),
+            ("Vandspejlsberegning …",
+             "Importer en beregnet vandspejlslinje (.ber) som punktlag.",
+             on_importer_vsp),
+        ):
+            knap = self._knap(tekst, handling, tip=tip, handlingsknap=True)
+            indhold.addWidget(knap)
+        return boks
+
+    def _analyse_boks(self, on_terraen, on_braend_vandloeb,
+                      on_afvandingsanalyse):
+        """Afsnit med det der regnes ud af terræn og profiler."""
+        valg = [(
+            "Terræn på profil …",
+            "Læg terrænkoter fra DHM ind på et profil og skriv dem "
+            "tilbage til VASP.", on_terraen)]
+        if on_braend_vandloeb is not None:
+            valg.append((
+                "Brænd vandløb i terræn …",
+                "Brænder tværprofilerne fra et VASP-profil ned i en "
+                "terrænmodel.", on_braend_vandloeb))
+        if on_afvandingsanalyse is not None:
+            valg.append((
+                "Afvandingsanalyse …",
+                "Beregner afstanden fra terrænet ned til et beregnet "
+                "vandspejl fra VASP og klassificerer den i "
+                "afvandingsklasser.", on_afvandingsanalyse))
+
+        boks = QGroupBox("Analyser")
+        indhold = QVBoxLayout(boks)
+        indhold.setSpacing(6)
+        for tekst, tip, handling in valg:
+            indhold.addWidget(
+                self._knap(tekst, handling, tip=tip, handlingsknap=True))
+        return boks
+
+    def _bund_raekke(self, on_opdater):
+        """Nederste række: vedligehold til venstre, Luk til højre."""
+        raekke = QHBoxLayout()
+        btn_opdater = self._knap(
+            "Genindlæs database", on_opdater,
+            tip="Genopbygger datafilen fra VASP-databasen, så nye profiler "
+                "kommer med.",
+            ikon=QStyle.SP_BrowserReload, handlingsknap=True)
+        raekke.addWidget(btn_opdater)
+        raekke.addStretch(1)
+
+        btn_luk = QPushButton("Luk")
+        btn_luk.setMinimumHeight(_KNAP_HOEJDE)
+        btn_luk.setDefault(True)
+        btn_luk.clicked.connect(self.reject)
+        raekke.addWidget(btn_luk)
+        return raekke
+
+    # --- småting ----------------------------------------------------------
+
+    def _knap(self, tekst, handling, tip="", ikon=None, handlingsknap=False):
+        """Lav en knap i dialogens fælles stil.
+
+        ``handlingsknap`` betyder at knappen kræver en bygget datafil: den
+        lukker dialogen før handlingen og gråtones indtil data er klar.
+        """
+        knap = QPushButton(tekst)
+        knap.setMinimumHeight(_KNAP_HOEJDE)
+        if tip:
+            knap.setToolTip(tip)
+        if ikon is not None:
+            knap.setIcon(self.style().standardIcon(ikon))
+        if handlingsknap:
+            knap.clicked.connect(lambda: self._run(handling))
+            self._action_buttons.append(knap)
+        else:
+            knap.clicked.connect(handling)
+        return knap
+
+    def resizeEvent(self, event):
+        """Hold database-stien på én linje, uanset dialogens bredde."""
+        super().resizeEvent(event)
+        self._vis_db_sti()
+
     def _refresh_db_label(self):
         """Opdatér visningen af den aktuelle database-sti."""
-        path = self._get_db_path()
-        self._db_label.setText(path or "(ingen valgt)")
-        self._db_label.setToolTip(path or "")
+        self._db_sti = self._get_db_path() or ""
+        self._db_label.setToolTip(self._db_sti)
+        self._vis_db_sti()
+
+    def _vis_db_sti(self):
+        """Skriv stien forkortet på midten, så både drev og filnavn ses."""
+        tekst = self._db_sti or "(ingen database valgt)"
+        bredde = max(160, self._db_label.width())
+        metrics = QFontMetrics(self._db_label.font())
+        self._db_label.setText(
+            metrics.elidedText(tekst, Qt.ElideMiddle, bredde))
 
     def _update_enabled(self):
         """Gråtone handlings-knapperne indtil datafilen (gpkg) er klar."""
