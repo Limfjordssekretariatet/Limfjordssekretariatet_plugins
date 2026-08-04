@@ -163,13 +163,84 @@ class VaspPlugin:
         from qgis import processing
         try:
             from .framike_til_dhm import BraendVandloebITerraenAlgorithm
-            processing.execAlgorithmDialog(
-                BraendVandloebITerraenAlgorithm(), parameters)
+            algoritme = BraendVandloebITerraenAlgorithm()
+            dialog = processing.createAlgorithmDialog(algoritme, parameters)
+            if dialog is None:
+                processing.execAlgorithmDialog(algoritme, parameters)
+                return
+            # Eget navn, saa QGIS gemmer "Avanceret"-tilstanden under vores
+            # egen noegle i stedet for den alle Processing-dialoger deler.
+            dialog.setObjectName("VaspBraendVandloebDialog")
+            dialog.show()
+            self._fold_avanceret_ind(dialog)
+            dialog.exec_()
+            dialog.close()
         except Exception as exc:
             QMessageBox.critical(
                 self.iface.mainWindow(),
                 "VASP — brænd vandløb i terræn",
                 "Værktøjet kunne ikke startes:\n\n%s" % exc)
+
+    @staticmethod
+    def _fold_avanceret_ind(dialog):
+        """Fold "Avancerede parametre" ind, hver gang dialogen åbnes.
+
+        Gruppen er en QgsCollapsibleGroupBox, der genskaber sin gemte
+        tilstand i sin showEvent — har man foldet den ud én gang, åbner den
+        udfoldet næste gang. Derfor foldes den ind EFTER show(). Klassen er
+        ikke eksponeret i Python, så det sker gennem Qt-egenskaben
+        ``collapsed`` (som kalder setCollapsed()).
+        """
+        from qgis.PyQt.QtWidgets import QGroupBox
+        gruppe = dialog.findChild(QGroupBox, "grpAdvanced")
+        if gruppe is None:
+            return
+        flyttet = VaspPlugin._flyt_til_avanceret(dialog, gruppe, "OUTPUT_LINES")
+        # Gruppen husker hvilke børn der var synlige, da den blev foldet ind,
+        # og viser netop dem igen ved udfoldning. De nyflyttede widgets skal
+        # derfor være synlige i en udfoldet gruppe først — ellers dukker de
+        # aldrig op igen. Rækkefølgen ligger mellem show() og exec(), så
+        # dialogen når ikke at blive tegnet undervejs.
+        gruppe.setProperty("collapsed", False)
+        for widget in flyttet:
+            widget.setVisible(True)
+        gruppe.setProperty("collapsed", True)
+
+    @staticmethod
+    def _flyt_til_avanceret(dialog, gruppe, parameter):
+        """Flyt et valgfrit *output* ned i Avanceret-gruppen.
+
+        QGIS samler alle destinations-parametre nederst i dialogen og ser bort
+        fra FlagAdvanced for dem, så kontrol-laget ville ellers stå frit.
+        Widget og tilhørende label flyttes derfor over i gruppens layout.
+
+        Returnerer de flyttede widgets.
+        """
+        from qgis.PyQt.QtWidgets import QLabel
+        panel = dialog.mainWidget()
+        wrapper = getattr(panel, "wrappers", {}).get(parameter)
+        if wrapper is None or not hasattr(wrapper, "wrappedWidget"):
+            return []
+        widget = wrapper.wrappedWidget()
+        if widget is None or widget.parentWidget() is None:
+            return []
+        layout = widget.parentWidget().layout()
+        maal = gruppe.layout()
+        if layout is None or maal is None:
+            return []
+        plads = layout.indexOf(widget)
+        if plads < 0:
+            return []
+        flyttet = []
+        if plads > 0:
+            forrige = layout.itemAt(plads - 1)
+            if forrige is not None and isinstance(forrige.widget(), QLabel):
+                flyttet.append(forrige.widget())
+        flyttet.append(widget)
+        for w in flyttet:
+            layout.removeWidget(w)
+            maal.addWidget(w)
+        return flyttet
 
     def _data_ready(self):
         """True hvis datafilen (GeoPackagen) findes – dvs. en database er valgt
