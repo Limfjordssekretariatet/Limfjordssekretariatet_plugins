@@ -19,8 +19,10 @@ from qgis.PyQt.QtWidgets import (
     QVBoxLayout,
 )
 
-# Fælles knaphøjde, så afsnittene står i samme rytme.
-_KNAP_HOEJDE = 30
+from . import faelles_ui
+
+# Målene ligger i faelles_ui, så alle pluginnenes dialoger deler dem.
+_KNAP_HOEJDE = faelles_ui.KNAP_HOEJDE
 
 
 class MainDialog(QDialog):
@@ -43,8 +45,9 @@ class MainDialog(QDialog):
         self._action_buttons = []
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(12)
+        layout.setContentsMargins(faelles_ui.MARGIN, faelles_ui.MARGIN,
+                                  faelles_ui.MARGIN, faelles_ui.MARGIN)
+        layout.setSpacing(faelles_ui.AFSTAND)
 
         layout.addWidget(self._database_boks())
         layout.addWidget(self._import_boks(

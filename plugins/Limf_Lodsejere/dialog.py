@@ -9,6 +9,7 @@ from qgis.core import (
     QgsField, QgsFields, QgsCoordinateReferenceSystem, QgsCoordinateTransform
 )
 
+from . import faelles_ui
 from .api import DatafordelerClient
 
 
@@ -24,41 +25,45 @@ class LodsejerDialog(QDialog):
         self._load_settings()
 
     def _build_ui(self):
-        layout = QVBoxLayout()
+        layout = QVBoxLayout(self)
 
-        # --- Matriklen WFS ---
-        layout.addWidget(QLabel('Matriklen API-nøgle:'))
+        # --- Adgang til Datafordeleren ----------------------------------
+        adgang, adgang_l = faelles_ui.afsnit('Adgang til Datafordeleren')
+        adgang_l.addWidget(QLabel('Matriklen API-nøgle:'))
         self.wfs_apikey_edit = QLineEdit()
         self.wfs_apikey_edit.setEchoMode(QLineEdit.Password)
-        layout.addWidget(self.wfs_apikey_edit)
+        adgang_l.addWidget(self.wfs_apikey_edit)
 
-        # --- EJF OAuth ---
-        layout.addWidget(QLabel('EJF Client ID:'))
+        adgang_l.addWidget(QLabel('EJF Client ID:'))
         self.client_id_edit = QLineEdit()
-        self.client_id_edit.setPlaceholderText('xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx')
-        layout.addWidget(self.client_id_edit)
+        self.client_id_edit.setPlaceholderText(
+            'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx')
+        adgang_l.addWidget(self.client_id_edit)
 
-        layout.addWidget(QLabel('EJF Shared Secret:'))
+        adgang_l.addWidget(QLabel('EJF Shared Secret:'))
         self.secret_edit = QLineEdit()
         self.secret_edit.setEchoMode(QLineEdit.Password)
-        layout.addWidget(self.secret_edit)
+        adgang_l.addWidget(self.secret_edit)
 
-        # --- Vis/skjul adgangskoder ---
         vis_layout = QHBoxLayout()
         vis_layout.addStretch()
         self.vis_secret_cb = QCheckBox('Vis adgangskoder')
         self.vis_secret_cb.toggled.connect(self._toggle_secret)
         vis_layout.addWidget(self.vis_secret_cb)
-        layout.addLayout(vis_layout)
+        adgang_l.addLayout(vis_layout)
+        layout.addWidget(adgang)
 
-        # --- Filtrering ---
+        # --- Hvad der hentes --------------------------------------------
+        udtraek, udtraek_l = faelles_ui.afsnit('Udtræk')
         self.only_companies_cb = QCheckBox(
-            'Vis kun virksomhedsejere (CVR) — private ejere vises som "Privat ejer"'
+            'Vis kun virksomhedsejere (CVR) — private ejere vises som '
+            '"Privat ejer"'
         )
         self.only_companies_cb.setChecked(False)
-        layout.addWidget(self.only_companies_cb)
+        udtraek_l.addWidget(self.only_companies_cb)
+        layout.addWidget(udtraek)
 
-        # --- Progress ---
+        # --- Fremdrift ---------------------------------------------------
         self.progress = QProgressBar()
         self.progress.setVisible(False)
         layout.addWidget(self.progress)
@@ -67,18 +72,16 @@ class LodsejerDialog(QDialog):
         self.status_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.status_label)
 
-        # --- Knapper ---
-        btn_layout = QHBoxLayout()
-        self.run_btn = QPushButton('Hent lodsejere')
-        self.run_btn.setDefault(True)
-        self.run_btn.clicked.connect(self._run)
-        close_btn = QPushButton('Luk')
-        close_btn.clicked.connect(self.reject)
-        btn_layout.addWidget(self.run_btn)
-        btn_layout.addWidget(close_btn)
-        layout.addLayout(btn_layout)
+        layout.addStretch(1)
 
-        self.setLayout(layout)
+        # --- Bundrække ----------------------------------------------------
+        self.run_btn = faelles_ui.knap(
+            'Hent lodsejere', self._run, primaer=True,
+            tip='Henter matrikler og ejeroplysninger for det valgte polygon')
+        luk_btn = faelles_ui.knap('Luk', self.reject)
+        layout.addLayout(faelles_ui.bundraekke(self.run_btn, luk_btn))
+
+        faelles_ui.anvend_stil(self)
 
     def _toggle_secret(self, checked):
         mode = QLineEdit.Normal if checked else QLineEdit.Password

@@ -11,6 +11,9 @@ FORM_CLASS, _ = uic.loadUiType(
 )
 
 
+from . import faelles_ui
+
+
 class SelectPolygonDialog(QDialog, FORM_CLASS):
     def __init__(self, iface, parent=None):
         super().__init__(parent or iface.mainWindow())
@@ -18,6 +21,7 @@ class SelectPolygonDialog(QDialog, FORM_CLASS):
         self._layers = []    # QgsVectorLayer i samme rækkefølge som combo_lag
         self._features = []  # QgsFeature i samme rækkefølge som combo_objekt
         self.setupUi(self)
+        faelles_ui.anvend_stil(self)
         self._populate_layers()
         self.combo_lag.currentIndexChanged.connect(self._on_layer_changed)
 

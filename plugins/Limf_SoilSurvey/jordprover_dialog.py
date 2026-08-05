@@ -8,10 +8,14 @@ from .eksporter_rapport_dialog import EksporterRapportDialog
 FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), 'jordprover_dialog.ui'))
 
 
+from . import faelles_ui
+
+
 class JordproverDialog(QtWidgets.QDialog, FORM_CLASS):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setupUi(self)
+        faelles_ui.anvend_stil(self)
 
         self.btnLavGrid.clicked.connect(self.lav_grid)
         self.btnLavCenterpunkter.clicked.connect(self.lav_centerpunkter)

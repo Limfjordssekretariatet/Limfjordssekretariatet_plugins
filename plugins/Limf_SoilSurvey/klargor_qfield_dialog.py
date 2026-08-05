@@ -55,10 +55,14 @@ STANDARD_FIELDS = [
 STANDARD_NAMES = {f[0] for f in STANDARD_FIELDS}
 
 
+from . import faelles_ui
+
+
 class KlargorQFieldDialog(QtWidgets.QDialog, FORM_CLASS):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setupUi(self)
+        faelles_ui.anvend_stil(self)
         self._populate_lag()
         self.cboLag.currentIndexChanged.connect(self._load_fields)
         self.btnKor.clicked.connect(self.kor)

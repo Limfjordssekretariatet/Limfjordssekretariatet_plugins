@@ -28,4 +28,7 @@ class DrænudløbspunkterPlugin:
         script_path = os.path.join(self.plugin_dir, "Opening.py")
         with open(script_path, "r", encoding="utf-8") as f:
             code = f.read()
-        exec(compile(code, script_path, "exec"), {"iface": self.iface})
+        # PLUGIN_DIR gives med, så scriptet kan finde faelles_ui ved siden af
+        # sig selv — det køres uden pakkekontekst og kan ikke importere.
+        exec(compile(code, script_path, "exec"),
+             {"iface": self.iface, "PLUGIN_DIR": self.plugin_dir})

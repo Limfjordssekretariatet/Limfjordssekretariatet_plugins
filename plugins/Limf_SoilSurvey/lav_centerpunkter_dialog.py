@@ -10,10 +10,14 @@ from qgis.core import (
 FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), 'lav_centerpunkter_dialog.ui'))
 
 
+from . import faelles_ui
+
+
 class LavCenterpunkterDialog(QtWidgets.QDialog, FORM_CLASS):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setupUi(self)
+        faelles_ui.anvend_stil(self)
         self._populate_lag()
         self.btnKor.clicked.connect(self.kor)
 

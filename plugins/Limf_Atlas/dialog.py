@@ -31,6 +31,7 @@ from qgis.core import (
     QgsVectorLayer,
 )
 
+from . import faelles_ui
 from .template_spec import PLACEHOLDERS
 
 # Værdi i felt-combo der betyder "intet felt – lad pluginnet generere".
@@ -177,9 +178,12 @@ class AtlasDialog(QDialog):
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel
         )
         self.buttons.button(QDialogButtonBox.Ok).setText("Byg atlas")
+        self.buttons.button(QDialogButtonBox.Cancel).setText("Annullér")
         self.buttons.accepted.connect(self._on_accept)
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
+
+        faelles_ui.anvend_stil(self)
 
     # -------------------------------------------------------------- layers
     def _populate_project_layers(self):

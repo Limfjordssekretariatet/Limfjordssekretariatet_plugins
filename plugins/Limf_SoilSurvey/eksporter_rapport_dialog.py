@@ -187,10 +187,14 @@ def _build_html(layer):
 </html>'''
 
 
+from . import faelles_ui
+
+
 class EksporterRapportDialog(QtWidgets.QDialog, FORM_CLASS):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setupUi(self)
+        faelles_ui.anvend_stil(self)
         self._populate_lag()
         self.btnBrowse.clicked.connect(self._browse)
         self.btnKor.clicked.connect(self.kor)

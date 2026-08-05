@@ -24,6 +24,9 @@ sys.modules['resources_rc'] = resources_rc
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'Limf_tools_dialog_base.ui'))
 
+from . import faelles_ui
+
+
 class Limfjordssekretariatet_toolsDialog(QtWidgets.QDialog, FORM_CLASS):
 
     def __init__(self, parent=None):
@@ -32,6 +35,7 @@ class Limfjordssekretariatet_toolsDialog(QtWidgets.QDialog, FORM_CLASS):
 
         # Build UI
         self.setupUi(self)
+        faelles_ui.anvend_stil(self)
         self.InterpolerBtn.clicked.connect(self.koer_interpoler_terraen)
 
         # Connect UI buttons to functions

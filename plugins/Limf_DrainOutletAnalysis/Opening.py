@@ -15,6 +15,31 @@ from qgis.core import (
 from qgis.gui import QgsMapToolEmitPoint, QgsVertexMarker
 
 
+def _anvend_faelles_stil(dialog):
+    """Hent husets dialogstil ved siden af denne fil.
+
+    Filen her køres med exec() fra plugin.py og har derfor ingen pakke at
+    importere fra — hverken 'from . import' eller almindelig import virker.
+    Modulet indlæses derfor direkte fra sin sti. Kan det ikke findes, får
+    dialogen bare Qt's standardudseende; det er ikke værd at fejle på.
+    """
+    import importlib.util
+    import os
+
+    sti = os.path.join(PLUGIN_DIR, "faelles_ui.py")
+    try:
+        spec = importlib.util.spec_from_file_location("faelles_ui", sti)
+        modul = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(modul)
+        modul.anvend_stil(dialog)
+    except Exception:
+        pass
+
+
+# Sættes af plugin.py inden scriptet køres.
+PLUGIN_DIR = globals().get("PLUGIN_DIR", "")
+
+
 class DrainDialog(QDialog):
     def __init__(self, iface):
         super().__init__(iface.mainWindow())
@@ -129,6 +154,7 @@ class DrainDialog(QDialog):
         self.lbl_result.setWordWrap(True)
         main.addWidget(self.lbl_result)
 
+        _anvend_faelles_stil(self)
         self._populate_point_layers()
 
     def _fill_dem_layers(self):

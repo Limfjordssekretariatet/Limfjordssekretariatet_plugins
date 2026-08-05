@@ -91,6 +91,9 @@ def log(msg):
     QgsMessageLog.logMessage(f'SoilSurvey/grid: {msg}', 'SoilSurvey')
 
 
+from . import faelles_ui
+
+
 class Parcel:
     """En arbejds-mark under grid-processen."""
     __slots__ = ('geom', 'status')
@@ -108,6 +111,7 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setupUi(self)
+        faelles_ui.anvend_stil(self)
         self._populate_lag()
         self.btnKorGrid.clicked.connect(self.kor_grid)
 
