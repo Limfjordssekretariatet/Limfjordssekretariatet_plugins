@@ -2,21 +2,27 @@ import os
 from qgis.PyQt.QtWidgets import QAction
 from qgis.PyQt.QtGui import QIcon
 
+from . import faelles_gui
+
 
 class DrænudløbspunkterPlugin:
     def __init__(self, iface):
         self.iface = iface
         self.plugin_dir = os.path.dirname(__file__)
+        self.action = None
 
     def initGui(self):
         icon = QIcon(os.path.join(self.plugin_dir, "icon.svg"))
-        self.action = QAction(icon, "Drænudløbspunkter", self.iface.mainWindow())
+        self.action = QAction(icon, "Dræn …", self.iface.mainWindow())
+        self.action.setStatusTip(
+            "Find drænudløbspunkter ud fra fald og terrænmodel")
         self.action.triggered.connect(self.run)
-        self.iface.addToolBarIcon(self.action)
+        faelles_gui.tilfoej(self.iface, self.action)
 
     def unload(self):
-        self.iface.removeToolBarIcon(self.action)
-        del self.action
+        if self.action is not None:
+            faelles_gui.fjern(self.iface, self.action)
+            self.action = None
 
     def run(self):
         script_path = os.path.join(self.plugin_dir, "Opening.py")

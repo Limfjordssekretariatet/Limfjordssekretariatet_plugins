@@ -17,6 +17,7 @@ from qgis.core import (
 
 from . import config
 from . import dbaccess
+from . import faelles_gui
 from . import writeback
 from .profile_dialog import ProfileDialog
 from .gisline_dialog import GisLineDialog
@@ -55,30 +56,28 @@ class VaspPlugin:
 
     def __init__(self, iface):
         self.iface = iface
-        self.menu = "&VASP"
         self.actions = []
 
     # --- QGIS plugin-livscyklus ------------------------------------------
 
     def initGui(self):
-        """Opret VASP-hovedknappen. Kaldes når pluginnet indlæses.
+        """Opret VASP-knappen i Vandprojekter-menuen og -værktøjslinjen.
 
-        Én knap "VASP-integration" åbner en dialog med de enkelte
-        handlinger som knapper.
+        Én knap "VASP" åbner en dialog med de enkelte handlinger som knapper.
         """
         icon_path = os.path.join(config.PLUGIN_DIR, "icon.png")
         icon = QIcon(icon_path) if os.path.exists(icon_path) else QIcon()
-        action = QAction(icon, "VASP-integration", self.iface.mainWindow())
+        action = QAction(icon, "VASP …", self.iface.mainWindow())
+        action.setStatusTip(
+            "Hent profil-, terræn- og vandspejlsdata fra VASP, og regn på dem")
         action.triggered.connect(self.open_main_dialog)
-        self.iface.addPluginToMenu(self.menu, action)
-        self.iface.addToolBarIcon(action)
+        faelles_gui.tilfoej(self.iface, action)
         self.actions.append(action)
 
     def unload(self):
-        """Fjern menu og toolbar-knap. Kaldes når pluginnet afregistreres."""
+        """Fjern knappen igen. Kaldes når pluginnet afregistreres."""
         for action in self.actions:
-            self.iface.removePluginMenu(self.menu, action)
-            self.iface.removeToolBarIcon(action)
+            faelles_gui.fjern(self.iface, action)
         self.actions = []
 
     # --- Handlinger -------------------------------------------------------

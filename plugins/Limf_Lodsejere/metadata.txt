@@ -1,15 +1,15 @@
 [general]
-name=LIMF - Lodsejerudtræk
+name=Vandprojekter – Lodsejerudtræk
 qgisMinimumVersion=3.40
 description=Henter matrikler og ejeroplysninger for et valgt polygon-område via Datafordeleren
-version=0.1
+version=0.1.1
 author=Limfjordssekretariatet
-email=
+email=henrik.rosenskjold@aalborg.dk
 about=Vælg et polygon i QGIS og hent alle matrikler med ejeroplysninger (navn, adresse, ejerforhold) via Datafordeleren og CVR.
-tracker=
-repository=
+tracker=https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues
+repository=https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins
 tags=matrikel,lodsejere,ejendom,datafordeler,cvr
-homepage=
+homepage=https://limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/
 category=Vector
 icon=icon.png
 experimental=True

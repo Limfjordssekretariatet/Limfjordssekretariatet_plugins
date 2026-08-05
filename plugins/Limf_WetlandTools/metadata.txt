@@ -3,17 +3,17 @@
 # This file should be included when you package your plugin.# Mandatory items:
 
 [general]
-name=LIMF - Vådområdeværktøjer
+name=Vandprojekter – Vådområder
 qgisMinimumVersion=3.0
-description=Limfjordssekretariatet forskellige tools
-version=4.0.11
-author=Henrik Rosenskjold, Limfjordssekretariatet
+description=Værktøjer til vådområde- og lavbundsprojekter: afvanding, terræn og jordberegning
+version=4.0.12
+author=Limfjordssekretariatet
 email=henrik.rosenskjold@aalborg.dk
 
-about=Tools til Limfjordssekretariatet
+about=Samling af værktøjer til vådområde- og lavbundsprojekter: afvandingsanalyse, terrænbearbejdning, grid til LER og jordberegning.
 
-tracker=https://github.com/hrosenskjold/limf-qgis-plugin/issues
-repository=https://github.com/hrosenskjold/limf-qgis-plugin
+tracker=https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues
+repository=https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins
 # End of mandatory metadata
 
 # Recommended items:
@@ -23,9 +23,9 @@ hasProcessingProvider=no
 # changelog=
 
 # Tags are comma separated with spaces allowed
-tags=python
+tags=vådområde,lavbund,afvanding,terræn,vandløb
 
-homepage=https://github.com/hrosenskjold/limf-qgis-plugin
+homepage=https://limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/
 category=Plugins
 icon=icon.png
 # experimental flag

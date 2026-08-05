@@ -1,4 +1,9 @@
+import os
+
+from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QDialog, QMessageBox
+
+from . import faelles_gui
 
 
 class Lodsejere:
@@ -7,15 +12,18 @@ class Lodsejere:
         self.action = None
 
     def initGui(self):
-        self.action = QAction('Hent Lodsejere', self.iface.mainWindow())
-        self.action.setToolTip('Hent matrikler og ejeroplysninger for valgt polygon')
+        icon_sti = os.path.join(os.path.dirname(__file__), 'icon.png')
+        icon = QIcon(icon_sti) if os.path.exists(icon_sti) else QIcon()
+        self.action = QAction(icon, 'Lodsejerudtræk …', self.iface.mainWindow())
+        self.action.setStatusTip(
+            'Hent matrikler og ejeroplysninger for et valgt polygon')
         self.action.triggered.connect(self.run)
-        self.iface.addToolBarIcon(self.action)
-        self.iface.addPluginToMenu('Lodsejere', self.action)
+        faelles_gui.tilfoej(self.iface, self.action)
 
     def unload(self):
-        self.iface.removePluginMenu('Lodsejere', self.action)
-        self.iface.removeToolBarIcon(self.action)
+        if self.action is not None:
+            faelles_gui.fjern(self.iface, self.action)
+            self.action = None
 
     def run(self):
         from .select_polygon_dialog import SelectPolygonDialog

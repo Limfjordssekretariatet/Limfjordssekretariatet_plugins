@@ -22,6 +22,8 @@ from qgis.PyQt.QtWidgets import QAction
 # Initialize Qt resources from file resources.py
 from .resources import *
 
+from . import faelles_gui
+
 # Import the code for the dialog
 from .Limf_tools_dialog import Limfjordssekretariatet_toolsDialog
 
@@ -42,7 +44,9 @@ class Limfjordssekretariatet_tools:
         self.plugin_dir = os.path.dirname(__file__)
 
         # Initialize locale
-        locale = QSettings().value('locale/userLocale')[0:2]
+        # Kan være usat i en frisk QGIS-profil; så ville [0:2] fejle på None
+        # og pluginnet slet ikke blive indlæst.
+        locale = (QSettings().value('locale/userLocale') or '')[0:2]
         locale_path = os.path.join(
             self.plugin_dir,
             'i18n',
@@ -55,7 +59,6 @@ class Limfjordssekretariatet_tools:
 
         # Declare instance attributes
         self.actions = []
-        self.menu = self.tr('&Limfjordssekretariatet tools')
         self.first_start = None
 
     def tr(self, message):
@@ -83,13 +86,9 @@ class Limfjordssekretariatet_tools:
         if whats_this is not None:
             action.setWhatsThis(whats_this)
 
-        # Add to Toolbar
-        if add_to_toolbar:
-            self.iface.addToolBarIcon(action)
-
-        # Add to Plugin Menu
-        if add_to_menu:
-            self.iface.addPluginToMenu(self.menu, action)
+        # Menu og værktøjslinje deles med de øvrige Vandprojekter-plugins.
+        if add_to_menu or add_to_toolbar:
+            faelles_gui.tilfoej(self.iface, action)
 
         self.actions.append(action)
         return action
@@ -99,7 +98,9 @@ class Limfjordssekretariatet_tools:
         icon_path = ':/plugins/limf_tools/icon.png'   # IMPORTANT: case-sensitive
         self.add_action(
             icon_path,
-            text=self.tr(u'Tools til Limfjordssekretariatet'),
+            text=self.tr(u'Vådområder …'),
+            status_tip=self.tr(u'Værktøjer til vådområde- og '
+                               u'lavbundsprojekter'),
             callback=self.run,
             parent=self.iface.mainWindow())
 
@@ -108,8 +109,8 @@ class Limfjordssekretariatet_tools:
     def unload(self):
         """Removes the plugin menu item and icon."""
         for action in self.actions:
-            self.iface.removePluginMenu(self.menu, action)
-            self.iface.removeToolBarIcon(action)
+            faelles_gui.fjern(self.iface, action)
+        self.actions = []
 
     def run(self):
         """Run whenever user clicks icon/menu."""

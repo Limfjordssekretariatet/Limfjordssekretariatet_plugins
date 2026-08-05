@@ -1,18 +1,18 @@
 [general]
-name=LIMF - Jordbund
+name=Vandprojekter – Jordbund
 qgisMinimumVersion=3.0
 description=Plugin til håndtering af jordprøver
-version=3.2.7
-author=Henrik Rosenskjold
+version=3.2.8
+author=Limfjordssekretariatet
 email=henrik.rosenskjold@aalborg.dk
 about=Plugin med værktøjer til grid (Markkort-baseret), centerpunkter, QField-klargøring og rapporteksport.
-tracker=https://github.com/hrosenskjold/Jordprover/issues
-repository=https://github.com/hrosenskjold/Jordprover
+tracker=https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues
+repository=https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins
 hasProcessingProvider=no
 changelog=
 experimental=False
 deprecated=False
-tags=
-homepage=
+tags=jordprøver,jordbund,grid,qfield,markkort
+homepage=https://limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/
 category=Plugins
 icon=icon.png

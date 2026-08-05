@@ -1,6 +1,8 @@
 import os
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction
+
+from . import faelles_gui
 from .jordprover_dialog import JordproverDialog
 
 
@@ -12,15 +14,16 @@ class Jordprover:
 
     def initGui(self):
         icon = QIcon(os.path.join(os.path.dirname(__file__), 'icon.png'))
-        self.action = QAction(icon, 'Jordprover', self.iface.mainWindow())
+        self.action = QAction(icon, 'Jordbund …', self.iface.mainWindow())
+        self.action.setStatusTip(
+            'Jordprøver: grid, centerpunkter, QField-klargøring og rapporter')
         self.action.triggered.connect(self.run)
-        self.iface.addToolBarIcon(self.action)
-        self.iface.addPluginToMenu('Jordprover', self.action)
+        faelles_gui.tilfoej(self.iface, self.action)
 
     def unload(self):
-        self.iface.removePluginMenu('Jordprover', self.action)
-        self.iface.removeToolBarIcon(self.action)
-        del self.action
+        if self.action is not None:
+            faelles_gui.fjern(self.iface, self.action)
+            self.action = None
 
     def run(self):
         if self.dialog is None:

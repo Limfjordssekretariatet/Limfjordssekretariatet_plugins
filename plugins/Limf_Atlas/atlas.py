@@ -13,6 +13,7 @@ from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QMessageBox
 from qgis.core import QgsProject
 
+from . import faelles_gui
 from .dialog import AtlasDialog
 from .atlas_builder import AtlasBuilder, AtlasBuildError
 from .reference_data import ensure_reference
@@ -29,28 +30,23 @@ class AtlasMapbook:
     def __init__(self, iface):
         self.iface = iface
         self.actions = []
-        self.menu = "&Atlas Mapbook"
-        self.toolbar = self.iface.addToolBar("Atlas Mapbook")
-        self.toolbar.setObjectName("AtlasMapbook")
 
     # ------------------------------------------------------------------ GUI
     def initGui(self):
         icon_path = os.path.join(PLUGIN_DIR, "icon.png")
         icon = QIcon(icon_path) if os.path.exists(icon_path) else QIcon()
 
-        action = QAction(icon, "Byg lodsejer-atlas…", self.iface.mainWindow())
+        action = QAction(icon, "Lodsejeratlas …", self.iface.mainWindow())
         action.triggered.connect(self.run)
         action.setStatusTip("Generér et mapbook-atlas ud fra et lodsejerlag")
 
-        self.toolbar.addAction(action)
-        self.iface.addPluginToMenu(self.menu, action)
+        faelles_gui.tilfoej(self.iface, action)
         self.actions.append(action)
 
     def unload(self):
         for action in self.actions:
-            self.iface.removePluginMenu(self.menu, action)
-            self.toolbar.removeAction(action)
-        del self.toolbar
+            faelles_gui.fjern(self.iface, action)
+        self.actions = []
 
     # ------------------------------------------------------------------ run
     def run(self):
