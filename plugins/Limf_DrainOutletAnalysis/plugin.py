@@ -12,7 +12,7 @@ class DrænudløbspunkterPlugin:
         self.action = None
 
     def initGui(self):
-        icon = QIcon(os.path.join(self.plugin_dir, "icon.svg"))
+        icon = QIcon(os.path.join(self.plugin_dir, "icon.png"))
         self.action = QAction(icon, "Dræn …", self.iface.mainWindow())
         self.action.setStatusTip(
             "Find drænudløbspunkter ud fra fald og terrænmodel")

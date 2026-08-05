@@ -95,7 +95,9 @@ class Limfjordssekretariatet_tools:
 
     def initGui(self):
         """Create the menu entries and toolbar icon inside QGIS."""
-        icon_path = ':/plugins/limf_tools/icon.png'   # IMPORTANT: case-sensitive
+        # Filen frem for Qt-ressourcen: ressourcen ligger indbagt i
+        # resources.py og ville stadig vise det gamle ikon.
+        icon_path = os.path.join(self.plugin_dir, 'icon.png')
         self.add_action(
             icon_path,
             text=self.tr(u'Vådområder …'),
