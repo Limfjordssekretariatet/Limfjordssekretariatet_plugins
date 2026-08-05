@@ -21,28 +21,47 @@ class WritebackError(Exception):
     """Rejses ved fejl under tilbageskrivning, med en dansk besked."""
 
 
-def _find_powershell():
-    """Find den 32-bit powershell.exe via fuld sti.
+def _har_ace(powershell):
+    """True hvis den PowerShell-udgave har Access-driveren registreret."""
+    kommando = ("(New-Object System.Data.OleDb.OleDbEnumerator).GetElements()"
+                " | Select-Object -ExpandProperty SOURCES_NAME")
+    try:
+        svar = subprocess.run(
+            [powershell, "-NoProfile", "-Command", kommando],
+            capture_output=True, text=True, timeout=60,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return "Microsoft.ACE.OLEDB" in (svar.stdout or "")
 
-    Skrivningen bruger 32-bit ACE-driveren, så vi SKAL bruge 32-bit
-    PowerShell. På 64-bit Windows ligger den i SysWOW64 (ikke System32, som
-    er 64-bit). QGIS' Python er 64-bit, så uden eksplicit sti ville vi ramme
-    den 64-bit PowerShell, der ikke har ACE-provideren.
+
+def _find_powershell():
+    """Find den powershell.exe der har Access-driveren (ACE).
+
+    Driveren findes kun i én arkitektur ad gangen, og hvilken afhænger af,
+    om Office er 32- eller 64-bit. Derfor spørges begge udgaver i stedet for
+    at antage 32-bit. På 64-bit Windows er SysWOW64 den 32-bit udgave og
+    System32 den 64-bit — omvendt af hvad navnene antyder.
     """
     windir = os.environ.get("WINDIR") or os.environ.get("SystemRoot")
+    kandidater = []
     if windir:
-        # SysWOW64 = 32-bit på 64-bit Windows.
-        full = os.path.join(
-            windir, "SysWOW64", "WindowsPowerShell", "v1.0", "powershell.exe")
-        if os.path.exists(full):
-            return full
-        # Fald tilbage til System32 (fx på et rent 32-bit system).
-        full = os.path.join(
-            windir, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
-        if os.path.exists(full):
-            return full
+        for undermappe in ("System32", "SysWOW64"):
+            sti = os.path.join(windir, undermappe, "WindowsPowerShell",
+                               "v1.0", "powershell.exe")
+            if os.path.exists(sti):
+                kandidater.append(sti)
     from shutil import which
-    return which("powershell.exe") or which("powershell")
+    fundet = which("powershell.exe") or which("powershell")
+    if fundet and fundet not in kandidater:
+        kandidater.append(fundet)
+
+    for sti in kandidater:
+        if _har_ace(sti):
+            return sti
+    # Ingen af dem har driveren. Returnér den første, så kaldet fejler med
+    # PowerShells egen besked i stedet for at gætte forkert i tavshed.
+    return kandidater[0] if kandidater else None
 
 
 def terrain_layer_name(source_navn, side_left):

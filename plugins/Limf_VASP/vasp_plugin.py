@@ -45,7 +45,11 @@ class _BuildWorker(QThread):
             result = subprocess.run(
                 self._cmd, capture_output=True, text=True,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-            tail = (result.stderr or result.stdout or "").strip()[-1500:]
+            # Begge strømme med: fremdriften skrives til stdout, mens selve
+            # årsagen (fx en manglende Access-driver) kommer på stderr. Vises
+            # kun den ene, står brugeren med en overskrift uden forklaring.
+            dele = [(result.stdout or "").strip(), (result.stderr or "").strip()]
+            tail = "\n".join(d for d in dele if d)[-2500:]
             self.done.emit(result.returncode, tail)
         except OSError as exc:
             self.done.emit(-1, str(exc))
