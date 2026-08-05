@@ -1,97 +1,97 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <plugins>
 
-  <pyqgis_plugin name="Vandprojekter – Lodsejeratlas" version="0.2.4">
+  <pyqgis_plugin name="Vandprojekter – Lodsejeratlas" version="0.2.5">
     <description>Genererer et lodsejer-atlas (mapbook) ud fra en QGIS layout-skabelon. Mapper automatisk datafelter til skabelonens dynamiske tekst og åbner atlasset klar i Layout Designer.</description>
     <about>Tag et lodsejerlag (shapefil/GeoPackage) og byg et atlas baseret på den medfølgende mapbook-skabelon. Pluginnet auto-matcher felter (navn, adresse, postnummer m.m.) til skabelonens dynamiske tekst, genererer manglende felter (løbenummer, postnummer) og sætter atlasset op pr. lodsejer.</about>
-    <version>0.2.4</version>
+    <version>0.2.5</version>
     <qgis_minimum_version>3.40</qgis_minimum_version>
     <homepage>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins</homepage>
     <file_name>Limf_Atlas.zip</file_name>
     <icon>icon.png</icon>
     <author_name>Limfjordssekretariatet</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_Atlas.zip</download_url>
-    <update_date>2026-08-05T07:03:17Z</update_date>
+    <update_date>2026-08-05T07:17:00Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
     <repository>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins</repository>
   </pyqgis_plugin>
-  <pyqgis_plugin name="Vandprojekter – Dræn" version="0.2.13">
+  <pyqgis_plugin name="Vandprojekter – Dræn" version="0.2.14">
     <description>Find drænudløbspunkter baseret på fald og DEM</description>
     <about>Finder drænudløbspunkter langs et vandløb ud fra terrænmodellen og et fald, og dokumenterer fundene så de kan bruges i projektarbejdet.</about>
-    <version>0.2.13</version>
+    <version>0.2.14</version>
     <qgis_minimum_version>3.0</qgis_minimum_version>
     <homepage>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins</homepage>
     <file_name>Limf_DrainOutletAnalysis.zip</file_name>
     <icon>icon.png</icon>
     <author_name>Limfjordssekretariatet</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_DrainOutletAnalysis.zip</download_url>
-    <update_date>2026-08-05T07:03:17Z</update_date>
+    <update_date>2026-08-05T07:17:00Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
     <repository>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins</repository>
   </pyqgis_plugin>
-  <pyqgis_plugin name="Vandprojekter – Lodsejerudtræk" version="0.1.3">
+  <pyqgis_plugin name="Vandprojekter – Lodsejerudtræk" version="0.1.4">
     <description>Henter matrikler og ejeroplysninger for et valgt polygon-område via Datafordeleren</description>
     <about>Vælg et polygon i QGIS og hent alle matrikler med ejeroplysninger (navn, adresse, ejerforhold) via Datafordeleren og CVR.</about>
-    <version>0.1.3</version>
+    <version>0.1.4</version>
     <qgis_minimum_version>3.40</qgis_minimum_version>
     <homepage>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins</homepage>
     <file_name>Limf_Lodsejere.zip</file_name>
     <icon>icon.png</icon>
     <author_name>Limfjordssekretariatet</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_Lodsejere.zip</download_url>
-    <update_date>2026-08-05T07:03:17Z</update_date>
+    <update_date>2026-08-05T07:17:00Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
     <repository>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins</repository>
   </pyqgis_plugin>
-  <pyqgis_plugin name="Vandprojekter – Jordbund" version="3.2.10">
+  <pyqgis_plugin name="Vandprojekter – Jordbund" version="3.2.11">
     <description>Plugin til håndtering af jordprøver</description>
     <about>Plugin med værktøjer til grid (Markkort-baseret), centerpunkter, QField-klargøring og rapporteksport.</about>
-    <version>3.2.10</version>
+    <version>3.2.11</version>
     <qgis_minimum_version>3.0</qgis_minimum_version>
     <homepage>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins</homepage>
     <file_name>Limf_SoilSurvey.zip</file_name>
     <icon>icon.png</icon>
     <author_name>Limfjordssekretariatet</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_SoilSurvey.zip</download_url>
-    <update_date>2026-08-05T07:03:17Z</update_date>
+    <update_date>2026-08-05T07:17:00Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
     <repository>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins</repository>
   </pyqgis_plugin>
-  <pyqgis_plugin name="Vandprojekter – VASP" version="1.2.8">
+  <pyqgis_plugin name="Vandprojekter – VASP" version="1.2.9">
     <description>Integration mellem VASP Access-database og QGIS. Henter terræn-, profil- og vandspejlsdata ind som lag.</description>
     <about>Læser profil-, terræn- og vandspejlsdata fra en VASP Access-database (.mdb) og indlæser dem som lag i QGIS: længdeprofiler, vandløbslinjer, terræn på profil (fra DHM) og vandspejlsberegninger (simpel + multi) fra VASP's .ber-filer. Indeholder desuden "Brænd vandløb i terræn", der brænder VASP's egne tværprofiler ned i en terrænmodel (vælg blot vandløb), og "Afvandingsanalyse", der klassificerer afstanden fra terrænet ned til et beregnet vandspejl (vælg beregning og scenarie direkte i databasen).</about>
-    <version>1.2.8</version>
+    <version>1.2.9</version>
     <qgis_minimum_version>3.0</qgis_minimum_version>
     <homepage>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins</homepage>
     <file_name>Limf_VASP.zip</file_name>
     <icon>icon.png</icon>
     <author_name>Limfjordssekretariatet</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_VASP.zip</download_url>
-    <update_date>2026-08-05T07:03:17Z</update_date>
+    <update_date>2026-08-05T07:17:00Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
     <repository>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins</repository>
   </pyqgis_plugin>
-  <pyqgis_plugin name="Vandprojekter – Vådområder" version="4.0.14">
+  <pyqgis_plugin name="Vandprojekter – Vådområder" version="4.0.15">
     <description>Værktøjer til vådområde- og lavbundsprojekter: afvanding, terræn og jordberegning</description>
     <about>Samling af værktøjer til vådområde- og lavbundsprojekter: afvandingsanalyse, terrænbearbejdning, grid til LER og jordberegning.</about>
-    <version>4.0.14</version>
+    <version>4.0.15</version>
     <qgis_minimum_version>3.0</qgis_minimum_version>
     <homepage>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins</homepage>
     <file_name>Limf_WetlandTools.zip</file_name>
     <icon>icon.png</icon>
     <author_name>Limfjordssekretariatet</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_WetlandTools.zip</download_url>
-    <update_date>2026-08-05T07:03:17Z</update_date>
+    <update_date>2026-08-05T07:17:01Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
