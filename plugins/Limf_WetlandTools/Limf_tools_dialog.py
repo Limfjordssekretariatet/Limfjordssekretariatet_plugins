@@ -39,19 +39,12 @@ class Limfjordssekretariatet_toolsDialog(QtWidgets.QDialog, FORM_CLASS):
         self.InterpolerBtn.clicked.connect(self.koer_interpoler_terraen)
 
         # Connect UI buttons to functions
-        self.VASPBtn.clicked.connect(self.koer_vasp_excel)
         self.JordbalanceBtn.clicked.connect(self.jordberegning)
         self.GridTilLERBtn.clicked.connect(self.grid_til_ler)
 
-    # Afvandingsanalyse og "Brænd vandløb i terræn" er flyttet til
-    # VASP-pluginnet, hvor vandspejl og tværprofiler hentes direkte fra
-    # databasen i stedet for at skulle eksporteres først.
-
-    def koer_vasp_excel(self):
-        """Åbner QGIS' standard parameterdialog for VASPExcel-modellen"""
-        from .VaspExcel import Vaspexcelbegge
-        alg = Vaspexcelbegge()
-        processing.execAlgorithmDialog(alg)
+    # Afvandingsanalyse, "Brænd vandløb i terræn" og "Terræn til VASP" er
+    # flyttet til VASP-pluginnet, hvor profiler, tværprofiler og vandspejl
+    # hentes direkte fra databasen i stedet for at skulle eksporteres først.
 
     def koer_interpoler_terraen(self):
         from .InterpolateTerrain import InterpolerTerrn
