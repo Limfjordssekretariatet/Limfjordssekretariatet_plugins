@@ -39,25 +39,13 @@ class Limfjordssekretariatet_toolsDialog(QtWidgets.QDialog, FORM_CLASS):
         self.InterpolerBtn.clicked.connect(self.koer_interpoler_terraen)
 
         # Connect UI buttons to functions
-        self.AfvandingsanalyseBtn.clicked.connect(self.koer_afvandingsanalyse)
         self.VASPBtn.clicked.connect(self.koer_vasp_excel)
-        self.BurnBtn.clicked.connect(self.koer_fra_mike_til_dhm)   
         self.JordbalanceBtn.clicked.connect(self.jordberegning)
         self.GridTilLERBtn.clicked.connect(self.grid_til_ler)
 
-
-    def koer_afvandingsanalyse(self):
-        """Åbner QGIS' standard parameterdialog for afvandings-modellen"""
-
-        # Importér modellen (instantieres ved kørsel)
-        from .Afvandingsanalyse_v1_0 import Afvandingsmodelqgisoktober2025gdal
-
-        # Lav en instans af modellen
-        alg = Afvandingsmodelqgisoktober2025gdal()
-
-        # Åbn QGIS standard dialog for algoritmen, så bruger selv vælger lag
-        processing.execAlgorithmDialog(alg)
-
+    # Afvandingsanalyse og "Brænd vandløb i terræn" er flyttet til
+    # VASP-pluginnet, hvor vandspejl og tværprofiler hentes direkte fra
+    # databasen i stedet for at skulle eksporteres først.
 
     def koer_vasp_excel(self):
         """Åbner QGIS' standard parameterdialog for VASPExcel-modellen"""
@@ -70,19 +58,6 @@ class Limfjordssekretariatet_toolsDialog(QtWidgets.QDialog, FORM_CLASS):
         alg = InterpolerTerrn()
         processing.execAlgorithmDialog(alg)
         
-    def koer_fra_mike_til_dhm(self):
-        """Åbner Processing-dialog til 'Fra MIKE til DHM'."""
-        try:
-            from .FraMikeTilDHM import FraMikeTilDHMAlgorithm
-            alg = FraMikeTilDHMAlgorithm()
-            processing.execAlgorithmDialog(alg)
-        except Exception as e:
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Fejl i FraMikeTilDHM",
-                f"Der opstod en fejl under kørsel af FraMikeTilDHM:\n{e}"
-            )
-
     def grid_til_ler(self):
         from .GridTilLER import GridTilLER
         alg = GridTilLER()
