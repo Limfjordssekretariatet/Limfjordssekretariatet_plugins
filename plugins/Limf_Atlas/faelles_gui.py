@@ -11,12 +11,19 @@ sted. Rettes den, skal den rettes alle seks steder.
 
 from qgis.PyQt.QtWidgets import QToolBar
 
+try:
+    from qgis.PyQt import sip
+except ImportError:      # ældre PyQt-udgaver
+    sip = None
+
 # Menuen ligger under Plugins. '&V' giver genvejstasten.
 MENU = "&Vandprojekter"
 TOOLBAR_TITEL = "Vandprojekter"
-# objectName er nøglen til at genfinde linjen på tværs af plugins. QGIS
-# gemmer også linjens placering under det navn, så det skal ligge fast.
+# objectName er nøglen til at genfinde linjen på tværs af plugins.
 TOOLBAR_ID = "VandprojekterToolbar"
+
+# Holder liv i værktøjslinjen — se _behold().
+_linje = None
 
 
 def vaerktoejslinje(iface):
@@ -30,9 +37,37 @@ def vaerktoejslinje(iface):
             # Var den tom og skjult, skal den frem igen.
             linje.setVisible(True)
             return linje
+
     linje = iface.addToolBar(TOOLBAR_TITEL)
     linje.setObjectName(TOOLBAR_ID)
+    _behold(linje)
+    # QGIS husker ikke plugin-linjers placering, så en ny linje lander sidst
+    # i den øverste række. Er rækken fuld, kollapser alle knapperne ned i
+    # ">>"-menuen, og linjen ligner ingenting. Et linjeskift giver de seks
+    # ikoner deres egen række, hvor de er til at få øje på.
+    iface.mainWindow().insertToolBarBreak(linje)
+    linje.setVisible(True)
     return linje
+
+
+def _behold(linje):
+    """Sørg for at værktøjslinjen ikke bliver ryddet væk igen.
+
+    ``iface.addToolBar()`` er erklæret ``/Factory/`` i QGIS' sip-binding:
+    Python overtager ejerskabet over det oprettede objekt. Beholder man ikke
+    en reference, sletter Pythons oprydning C++-objektet, så snart kaldet er
+    færdigt — linjen forsvinder fra vinduet uden nogen fejlmeddelelse, mens
+    menupunkterne bliver stående, fordi de ejes af QGIS. Derfor både en
+    modulglobal reference og ejerskabet tilbage til C++, hvor hovedvinduet
+    rydder op til sidst.
+    """
+    global _linje
+    _linje = linje
+    if sip is not None:
+        try:
+            sip.transferto(linje, None)
+        except (TypeError, ValueError, RuntimeError):
+            pass
 
 
 def tilfoej(iface, action):
