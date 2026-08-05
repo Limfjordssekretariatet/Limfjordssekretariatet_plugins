@@ -60,6 +60,21 @@ from .template_spec import PLACEHOLDERS
 MAIN_MAP_ID = "Kort 1"        # atlas-styret hovedkort
 OVERVIEW_MAP_ID = "Kort 2"    # oversigtskort over hele projektområdet
 
+# Standardfarver, hvis brugeren ikke vælger andet.
+STANDARD_KANT = QColor(255, 210, 0)      # gul matrikelkant
+STANDARD_OMRAADE = QColor(227, 26, 28)   # rød projektgrænse
+STANDARD_FYLD = QColor(255, 210, 0, 0)   # gennemsigtigt: intet fyld
+
+
+def _farve_tekst(farve, standard=None):
+    """Farve som "r,g,b,a" til QgsFillSymbol.createSimple()."""
+    if farve is None:
+        farve = standard
+    if farve is None:
+        return "0,0,0,0"
+    return "%d,%d,%d,%d" % (farve.red(), farve.green(), farve.blue(),
+                            farve.alpha())
+
 
 class AtlasBuildError(Exception):
     """Rejses ved fejl som skal vises pænt til brugeren."""
@@ -98,10 +113,15 @@ REFERENCE_YEARS = "2021-2023"
 
 
 class AtlasBuilder:
-    def __init__(self, project, template_path, iface=None):
+    def __init__(self, project, template_path, iface=None,
+                 matrikel_kant=None, matrikel_fyld=None, omraade_kant=None):
         self.project = project
         self.template_path = template_path
         self.iface = iface
+        #: Farver brugeren har valgt i dialogen; None = standardfarven.
+        self.matrikel_kant = matrikel_kant
+        self.matrikel_fyld = matrikel_fyld
+        self.omraade_kant = omraade_kant
 
     # ------------------------------------------------------------- public
     def build(self, coverage_layer, field_mapping, generate_lobenr,
@@ -608,11 +628,14 @@ class AtlasBuilder:
         """
         highlight = self._clone_layer(parcel_layer, name)
 
-        # Gul kant, gennemsigtig midte.
+        # Kant og fyld som brugeren har valgt. Er fyldfarven helt
+        # gennemsigtig, tegnes der intet fyld — det er standarden, så
+        # baggrundskortet kan ses gennem matriklen.
+        fyld = self.matrikel_fyld
         symbol = QgsFillSymbol.createSimple({
-            "color": "0,0,0,0",                 # gennemsigtig midte
-            "style": "no",                      # ingen fyld
-            "outline_color": "255,210,0,255",   # gul
+            "color": _farve_tekst(fyld),
+            "style": "no" if fyld is None or fyld.alpha() == 0 else "solid",
+            "outline_color": _farve_tekst(self.matrikel_kant, STANDARD_KANT),
             "outline_width": "0.4",
         })
 
@@ -677,7 +700,7 @@ class AtlasBuilder:
         symbol = QgsFillSymbol.createSimple({
             "color": "0,0,0,0",               # gennemsigtig midte
             "style": "no",                    # ingen fyld
-            "outline_color": "227,26,28,255",  # rød
+            "outline_color": _farve_tekst(self.omraade_kant, STANDARD_OMRAADE),
             "outline_width": "0.6",
         })
         styled.setRenderer(QgsSingleSymbolRenderer(symbol))

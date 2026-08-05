@@ -76,6 +76,9 @@ class AtlasMapbook:
                 project=QgsProject.instance(),
                 template_path=TEMPLATE_PATH,
                 iface=self.iface,
+                matrikel_kant=result.matrikel_kant,
+                matrikel_fyld=result.matrikel_fyld,
+                omraade_kant=result.omraade_kant,
             )
             layout = builder.build(
                 coverage_layer=layer,

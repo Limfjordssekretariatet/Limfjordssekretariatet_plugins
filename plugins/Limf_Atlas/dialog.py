@@ -30,8 +30,10 @@ from qgis.core import (
     QgsProject,
     QgsVectorLayer,
 )
+from qgis.gui import QgsColorButton
 
 from . import faelles_ui
+from .atlas_builder import STANDARD_FYLD, STANDARD_KANT, STANDARD_OMRAADE
 from .template_spec import PLACEHOLDERS
 
 # Værdi i felt-combo der betyder "intet felt – lad pluginnet generere".
@@ -58,6 +60,10 @@ class AtlasDialogResult:
         #: Baggrundskort: True = auto (rasterlag), None = intet, ellers et lag.
         self.background_auto = True
         self.background_layer = None
+        #: Farver på matrikler og projektgrænse (QColor).
+        self.matrikel_kant = STANDARD_KANT
+        self.matrikel_fyld = STANDARD_FYLD
+        self.omraade_kant = STANDARD_OMRAADE
 
 
 class AtlasDialog(QDialog):
@@ -157,6 +163,39 @@ class AtlasDialog(QDialog):
         grp_hint.setStyleSheet("color: gray;")
         grp_form.addRow(grp_hint)
         layout.addWidget(grp_box)
+
+        # --- Farver ----------------------------------------------------
+        farve_boks = QGroupBox("4. Farver")
+        farve_form = QFormLayout(farve_boks)
+
+        self.kant_btn = QgsColorButton()
+        self.kant_btn.setColor(STANDARD_KANT)
+        self.kant_btn.setDefaultColor(STANDARD_KANT)
+        self.kant_btn.setColorDialogTitle("Farve på matrikelkanten")
+        farve_form.addRow("Matrikler – kant:", self.kant_btn)
+
+        self.fyld_btn = QgsColorButton()
+        self.fyld_btn.setAllowOpacity(True)
+        self.fyld_btn.setColor(STANDARD_FYLD)
+        self.fyld_btn.setDefaultColor(STANDARD_FYLD)
+        self.fyld_btn.setColorDialogTitle("Fyldfarve i matriklerne")
+        farve_form.addRow("Matrikler – fyld:", self.fyld_btn)
+
+        self.omraade_btn = QgsColorButton()
+        self.omraade_btn.setColor(STANDARD_OMRAADE)
+        self.omraade_btn.setDefaultColor(STANDARD_OMRAADE)
+        self.omraade_btn.setColorDialogTitle("Farve på projektgrænsen")
+        farve_form.addRow("Projektgrænse:", self.omraade_btn)
+
+        farve_hint = QLabel(
+            "Fyldet er gennemsigtigt som standard, så baggrundskortet kan "
+            "ses gennem matriklen. Vælg en fyldfarve — og skru op for "
+            "uigennemsigtigheden — hvis matriklerne skal være farvelagte."
+        )
+        farve_hint.setWordWrap(True)
+        farve_hint.setStyleSheet("color: gray;")
+        farve_form.addRow(farve_hint)
+        layout.addWidget(farve_boks)
 
         # --- Layoutnavn -----------------------------------------------
         name_row = QHBoxLayout()
@@ -417,6 +456,9 @@ class AtlasDialog(QDialog):
         self._result.generate_postnr = generate_postnr
         self._result.owner_field = owner_field
         self._result.layout_name = self.name_edit.text().strip() or "Lodsejer Atlas"
+        self._result.matrikel_kant = self.kant_btn.color()
+        self._result.matrikel_fyld = self.fyld_btn.color()
+        self._result.omraade_kant = self.omraade_btn.color()
 
         # Tilføj fil-lag til projektet så atlasset kan referere det.
         if self._loaded_from_file is not None:
