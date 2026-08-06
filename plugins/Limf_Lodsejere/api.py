@@ -39,6 +39,36 @@ class DatafordelerClient:
         )
 
     # ------------------------------------------------------------------
+    # Fejlhåndtering
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _tjek_svar(resp, hvad: str) -> None:
+        """Rejs en fejl der siger HVORFOR, ikke bare hvilken statuskode.
+
+        requests' raise_for_status() giver kun "403 Client Error: Forbidden
+        for url: ...". Datafordeleren skriver som regel årsagen i svarets
+        krop, og uden den står brugeren uden noget at handle på.
+        """
+        if resp.ok:
+            return
+        krop = ' '.join((resp.text or '').split())[:300]
+        besked = f'{hvad} fejlede: HTTP {resp.status_code}'
+        if krop:
+            besked += f' — {krop}'
+        if resp.status_code in (401, 403):
+            besked += (
+                '\n\nAdgangen blev afvist, selvom log ind lykkedes. Det '
+                'betyder næsten altid, at tjenestebrugeren ikke har netop '
+                'denne tjeneste tilknyttet. Tjek på datafordeler.dk under '
+                'Selvbetjening → Brugerstyring, at brugeren har adgang til '
+                'Ejerfortegnelsen (flexibleCurrent), og at abonnementet '
+                'dækker de oplysninger der hentes — adgang til '
+                'personoplysninger skal godkendes særskilt.'
+            )
+        raise RuntimeError(besked)
+
+    # ------------------------------------------------------------------
     # OAuth
     # ------------------------------------------------------------------
 
@@ -56,7 +86,7 @@ class DatafordelerClient:
             },
             timeout=15,
         )
-        resp.raise_for_status()
+        self._tjek_svar(resp, 'Log ind på Datafordeleren')
         data       = resp.json()
         token      = data['access_token']
         expires_in = int(data.get('expires_in', 3600))
@@ -115,7 +145,7 @@ class DatafordelerClient:
                 },
                 timeout=60,
             )
-            resp.raise_for_status()
+            self._tjek_svar(resp, 'Opslag af matrikler (Matriklen WFS)')
 
             root    = ET.fromstring(resp.content)
             members = root.findall('wfs:member', self.NS)
@@ -201,7 +231,7 @@ class DatafordelerClient:
             headers=headers,
             timeout=15,
         )
-        resp.raise_for_status()
+        self._tjek_svar(resp, 'Opslag af ejeroplysninger (Ejerfortegnelsen)')
         data = resp.json()
 
         if 'errors' in data:

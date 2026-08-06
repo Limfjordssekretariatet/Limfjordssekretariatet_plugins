@@ -161,10 +161,15 @@ class LodsejerDialog(QDialog):
             self._create_layer(results)
 
             if errors:
-                QMessageBox.warning(
-                    self, 'Lodsejere',
-                    f'Lag oprettet.\n\nFørste fejl ({len(errors)} i alt):\n{errors[0]}'
-                )
+                # Ens fejl tælles sammen: 8 gange samme afviste adgang er ét
+                # problem, ikke otte. Er der flere slags, nævnes antallet.
+                unikke = list(dict.fromkeys(errors))
+                tekst = (f'Laget er oprettet, men ejeroplysninger manglede '
+                         f'for {len(errors)} af {len(jordstykker)} '
+                         f'matrikler.\n\n{unikke[0]}')
+                if len(unikke) > 1:
+                    tekst += f'\n\n(+ {len(unikke) - 1} andre fejltyper)'
+                QMessageBox.warning(self, 'Lodsejere', tekst)
 
         except Exception as e:
             QMessageBox.critical(self, 'Fejl', f'Fejl under datahentning:\n{str(e)}')
