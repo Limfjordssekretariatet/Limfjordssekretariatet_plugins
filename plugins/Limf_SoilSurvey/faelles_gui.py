@@ -42,9 +42,9 @@ def vaerktoejslinje(iface):
     linje = iface.addToolBar(TOOLBAR_TITEL)
     linje.setObjectName(TOOLBAR_ID)
     _behold(linje)
-    # Navnet skrives ved siden af ikonet. Et navn inde i selve ikonet er
-    # ikke til at læse ved 24 px, som er QGIS' standardstørrelse.
-    linje.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+    # Kun ikoner: de bærer selv navnet, og teksten ved siden af gjorde blot
+    # linjen bred. Navnet står i menuen og i knappens tooltip.
+    linje.setToolButtonStyle(Qt.ToolButtonIconOnly)
     # QGIS husker ikke plugin-linjers placering, så en ny linje lander sidst
     # i den øverste række. Er rækken fuld, kollapser alle knapperne ned i
     # ">>"-menuen, og linjen ligner ingenting. Et linjeskift giver de seks
@@ -77,10 +77,6 @@ def _behold(linje):
 def tilfoej(iface, action):
     """Læg en handling i den fælles menu og på den fælles værktøjslinje."""
     iface.addPluginToMenu(MENU, action)
-    # Menupunktet beholder sit "…" — konventionen for "åbner en dialog" —
-    # men på en knap ser det forkert ud, så knapteksten sættes uden.
-    action.setIconText(action.text().replace("…", "").replace("...", "")
-                       .strip())
     vaerktoejslinje(iface).addAction(action)
 
 

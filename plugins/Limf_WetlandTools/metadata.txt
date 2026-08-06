@@ -6,7 +6,7 @@
 name=Vandprojekter – Vådområder
 qgisMinimumVersion=3.0
 description=Værktøjer til vådområde- og lavbundsprojekter: afvanding, terræn og jordberegning
-version=4.0.17
+version=4.0.18
 author=Limfjordssekretariatet
 email=henrik.rosenskjold@aalborg.dk
 
