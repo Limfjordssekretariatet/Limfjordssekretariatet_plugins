@@ -344,6 +344,7 @@ class VaspPlugin:
         profiles = self._profiles_or_warn()
         if profiles is None:
             return
+        self._advar_om_gamle_koter()
         dialog = ProfileDialog(
             profiles, mode=ProfileDialog.MODE_PROFILE,
             parent=self.iface.mainWindow())
@@ -353,6 +354,26 @@ class VaspPlugin:
         if not prof:
             return
         self._load_profile(prof, interval=None, side=None)
+
+    def _advar_om_gamle_koter(self):
+        """Sig til, hvis datafilen stammer fra før kote-rettelsen.
+
+        Vises kun én gang pr. QGIS-session, så den ikke bliver til støj.
+        """
+        if getattr(self, "_kote_advarsel_vist", False):
+            return
+        try:
+            if dbaccess.datafil_har_rigtige_koter():
+                return
+        except Exception:
+            return
+        self._kote_advarsel_vist = True
+        QMessageBox.information(
+            self.iface.mainWindow(), "VASP — koter i længdeprofilet",
+            "Datafilen er bygget før kote-rettelsen, så kote-feltet "
+            "indeholder datum-korrektionen (tal omkring nul) i stedet for "
+            "bundkoten.\n\nTryk \"Genindlæs database\" i VASP-dialogen for "
+            "at bygge den forfra med rigtige koter.")
 
     def run_importer_vandloebslinje(self):
         """Importer en vandløbslinje (VANDLØBGIS) til GIS som LineString."""

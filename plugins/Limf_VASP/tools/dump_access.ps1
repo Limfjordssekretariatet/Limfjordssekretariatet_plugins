@@ -42,13 +42,23 @@ ORDER BY h.NAVN
 Export-Query $profilesSql (Join-Path $OutDir "_profiles.tsv") "lgdid`tnavn`tprojektid`tkoordsysid`tpunkter`tgeocodegdsid"
 Write-Host "Skrev _profiles.tsv"
 
+# Bundkoten ligger forskellige steder alt efter punkttype, så rå-felterne
+# eksporteres og build_gpkg.py regner koten ud (jf. _kote_for_punkt der):
+#   type 0 (tværprofil)  : laveste punkt i PKTDATA-blob'en, se _tvp_points.tsv
+#   type 1/2/3 (mellem-  : PARAM1 i cm
+#     punkt, rør, brønd)
+#   type 4/5 (parametrisk): PARAM2 i cm (bundkote)
+# DNNADDENT er en datum-korrektion (hele basen spænder −0,096 til +0,019 m)
+# og lægges til — den er IKKE en kote i sig selv. Den blev tidligere
+# eksporteret som kolonnen "kote", så alle længdeprofiler kom ind med ~0.
 $pointsSql = @"
-SELECT TVPID, LGDID, STATION, KOORDX, KOORDY, DNNADDENT, TVPTYPEKODE
+SELECT TVPID, LGDID, STATION, KOORDX, KOORDY, DNNADDENT, TVPTYPEKODE,
+       PARAM1, PARAM2
 FROM TVPDATAEXT
 WHERE KOORDX IS NOT NULL AND KOORDX <> 0
 ORDER BY LGDID, STATION
 "@
-Export-Query $pointsSql (Join-Path $OutDir "_points.tsv") "tvpid`tlgdid`tstation`tkoordx`tkoordy`tkote`ttvptypekode"
+Export-Query $pointsSql (Join-Path $OutDir "_points.tsv") "tvpid`tlgdid`tstation`tkoordx`tkoordy`tdnnaddent`ttvptypekode`tparam1`tparam2"
 Write-Host "Skrev _points.tsv"
 
 # --- Vandløbslinjer (VANDLØBGIS) -------------------------------------------

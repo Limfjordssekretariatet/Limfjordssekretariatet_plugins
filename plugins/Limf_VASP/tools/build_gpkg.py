@@ -46,6 +46,62 @@ def _to_int(s):
     return int(float(s.replace(",", ".")))
 
 
+# Danske koter. Alt udenfor er sentinelværdier (fx -99900 cm = "ikke sat")
+# eller skrald, ikke en højde.
+KOTE_MIN, KOTE_MAKS = -50.0, 300.0
+
+# TVPDATAEXT.TVPTYPEKODE
+TYPE_TVAERPROFIL = 0      # bundkoten er laveste punkt i PKTDATA-blob'en
+TYPE_PARAM1 = (1, 2, 3)   # mellempunkt, rør, brønd: bundkoten står i PARAM1
+TYPE_PARAM2 = (4, 5)      # simpel/sammensat geometri: bundkoten står i PARAM2
+
+
+def _bundkoter_fra_tvaersnit():
+    """Laveste kote pr. tværsnit, fra de dekodede PKTDATA-punkter.
+
+    Tværprofilerne (type 0) har ingen bundkote i en kolonne — den ligger i
+    blob'en, som dump_access.ps1 allerede har pakket ud til _tvp_points.tsv.
+    """
+    bund = {}
+    if not os.path.exists(TVP_POINTS_TSV):
+        return bund
+    with open(TVP_POINTS_TSV, encoding="utf-8-sig") as f:
+        for row in csv.DictReader(f, delimiter="\t"):
+            tvpid = _to_int(row["tvpid"])
+            kote = _to_float(row["kote"])
+            if tvpid is None or kote is None:
+                continue
+            if tvpid not in bund or kote < bund[tvpid]:
+                bund[tvpid] = kote
+    return bund
+
+
+def _kote_for_punkt(row, bundkoter):
+    """Bundkoten for ét punkt i længdeprofilet, eller None.
+
+    Koten står forskellige steder alt efter punkttype, og DNNADDENT er en
+    datum-korrektion der lægges til — ikke en kote i sig selv. Efterprøvet
+    mod produktionsbasen: i profil 12112 giver PARAM1 for mellempunktet ved
+    station 1148 koten 10,313 m, mens tværsnittets dekodede bund 2 m
+    opstrøms er 10,295 m.
+    """
+    typekode = _to_int(row.get("tvptypekode"))
+    dnn = _to_float(row.get("dnnaddent")) or 0.0
+
+    if typekode == TYPE_TVAERPROFIL:
+        # Blob-koterne har allerede datum-korrektionen med.
+        kote = bundkoter.get(_to_int(row["tvpid"]))
+    else:
+        felt = "param1" if typekode in TYPE_PARAM1 else (
+            "param2" if typekode in TYPE_PARAM2 else None)
+        cm = _to_float(row.get(felt)) if felt else None
+        kote = (cm / 100.0 + dnn) if cm is not None else None
+
+    if kote is None or not (KOTE_MIN <= kote <= KOTE_MAKS):
+        return None
+    return kote
+
+
 def main():
     if os.path.exists(GPKG):
         os.remove(GPKG)
@@ -86,15 +142,19 @@ def main():
     print("profiles: %d rækker" % n)
 
     # --- terrain_points (punkt-geometri) ---------------------------------
+    bundkoter = _bundkoter_fra_tvaersnit()
     pt_layer = ds.CreateLayer("terrain_points", srs, ogr.wkbPoint)
     pt_layer.CreateField(ogr.FieldDefn("tvpid", ogr.OFTInteger))
     pt_layer.CreateField(ogr.FieldDefn("lgdid", ogr.OFTInteger))
     pt_layer.CreateField(ogr.FieldDefn("station", ogr.OFTReal))
     pt_layer.CreateField(ogr.FieldDefn("kote", ogr.OFTReal))
+    # Datum-korrektionen gemmes for sig, så det kan ses hvad koten består af.
+    pt_layer.CreateField(ogr.FieldDefn("dnnaddent", ogr.OFTReal))
     # TVPTYPEKODE: 0=Tværprofil, 1=Mellempunkt (= forløbets bundlinje), m.fl.
     pt_layer.CreateField(ogr.FieldDefn("tvptypekode", ogr.OFTInteger))
 
     pt_layer.StartTransaction()
+    uden_kote = 0
     with open(POINTS_TSV, encoding="utf-8-sig") as f:
         reader = csv.DictReader(f, delimiter="\t")
         n = 0
@@ -103,11 +163,16 @@ def main():
             y = _to_float(row["koordy"])
             if x is None or y is None:
                 continue
+            kote = _kote_for_punkt(row, bundkoter)
+            if kote is None:
+                uden_kote += 1
             feat = ogr.Feature(pt_layer.GetLayerDefn())
             feat.SetField("tvpid", _to_int(row["tvpid"]))
             feat.SetField("lgdid", _to_int(row["lgdid"]))
             feat.SetField("station", _to_float(row["station"]))
-            feat.SetField("kote", _to_float(row["kote"]))
+            if kote is not None:
+                feat.SetField("kote", kote)
+            feat.SetField("dnnaddent", _to_float(row["dnnaddent"]))
             feat.SetField("tvptypekode", _to_int(row["tvptypekode"]))
             pt = ogr.Geometry(ogr.wkbPoint)
             pt.AddPoint(x, y)
@@ -117,7 +182,7 @@ def main():
             if n % 50000 == 0:
                 print("  ... %d punkter" % n)
     pt_layer.CommitTransaction()
-    print("terrain_points: %d rækker" % n)
+    print("terrain_points: %d rækker (%d uden brugbar kote)" % (n, uden_kote))
 
     # --- geocoded_lines (punkter for de geokodede VANDLØBGIS-linjer) ------
     ln_layer = ds.CreateLayer("geocoded_lines", srs, ogr.wkbPoint)

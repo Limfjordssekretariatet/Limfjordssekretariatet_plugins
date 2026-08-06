@@ -33,6 +33,20 @@ def _open_layer(table):
     return layer
 
 
+def datafil_har_rigtige_koter():
+    """True hvis datafilen er bygget efter kote-rettelsen.
+
+    Indtil da stod datum-korrektionen DNNADDENT i kote-feltet, så alle
+    længdeprofiler kom ind med koter omkring nul. Den rettede eksport har
+    et selvstændigt dnnaddent-felt; findes det, er koten en rigtig højde.
+    """
+    try:
+        layer = _open_layer("terrain_points")
+    except VaspDbError:
+        return True   # ingen datafil endnu; så er der intet at advare om
+    return layer.fields().indexFromName("dnnaddent") >= 0
+
+
 def list_profiles():
     """Returnér profil-datalag (profiles) der har geokodede terrænpunkter.
 
