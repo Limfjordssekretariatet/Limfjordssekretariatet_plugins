@@ -136,10 +136,14 @@ Write-Host "Skrev _vsp_multi.tsv"
 # nivelleret eller indtastet som en færdig kote:
 #   sigteplan sat (< 1e30)  -> værdien er en AFLÆSNING: kote = (sigteplan-værdi)/100
 #   sigteplan = 1.7e308     -> sentinel for "ikke sat": værdien ER koten i cm
-# I basen er ca. 2/3 af punkterne den sidste slags. DNNADDENT (datum-korrektion
-# i meter) lægges til begge. Markør-feltet er en int64 gemt i en double; 1 ser
-# ud til at markere brinkpunkter. De rå værdier skrives med, så formlen kan
-# efterprøves uden at dumpe databasen igen.
+# I basen er ca. 2/3 af punkterne den sidste slags. Markør-feltet er en int64
+# gemt i en double; 1 ser ud til at markere brinkpunkter. De rå værdier skrives
+# med, så formlen kan efterprøves uden at dumpe databasen igen.
+#
+# DNNADDENT lægges IKKE til. Efterprøvet af brugeren mod VASP på tvpid 924513
+# (station 8176, DNNADDENT = -0,058): den rigtige kote er -0,455, altså den rå
+# værdi. Blev korrektionen lagt til, gav det -0,513. Den skrives fortsat med i
+# sin egen kolonne, så den kan bruges, hvis et datumskifte bliver aktuelt.
 #
 # Punkter med urimelige tal (sentinel, NaN, vildt store) springes over — de
 # findes spredt i basen og ville ellers give koter på 1e306.
@@ -191,10 +195,10 @@ while ($r.Read()) {
     if (-not (Test-Tal $raa 1000000.0)) { $badPts++; continue }
 
     if (Test-Tal $sig $SENTINEL) {
-      $kote = ($sig - $raa) / 100.0 + $dnn      # nivelleret aflæsning
+      $kote = ($sig - $raa) / 100.0            # nivelleret aflæsning
       $sigUd = $sig
     } else {
-      $kote = $raa / 100.0 + $dnn               # værdien er selve koten
+      $kote = $raa / 100.0                     # værdien er selve koten
       $sigUd = ""
     }
     # Danske koter: alt uden for dette er skrald, ikke terræn.

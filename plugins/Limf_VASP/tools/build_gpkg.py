@@ -79,23 +79,20 @@ def _bundkoter_fra_tvaersnit():
 def _kote_for_punkt(row, bundkoter):
     """Bundkoten for ét punkt i længdeprofilet, eller None.
 
-    Koten står forskellige steder alt efter punkttype, og DNNADDENT er en
-    datum-korrektion der lægges til — ikke en kote i sig selv. Efterprøvet
-    mod produktionsbasen: i profil 12112 giver PARAM1 for mellempunktet ved
-    station 1148 koten 10,313 m, mens tværsnittets dekodede bund 2 m
-    opstrøms er 10,295 m.
+    Koten står forskellige steder alt efter punkttype. DNNADDENT lægges
+    IKKE til: brugeren har efterprøvet mod VASP på tvpid 924513 (station
+    8176, DNNADDENT = -0,058), hvor den rigtige kote er -0,455 — altså den
+    rå værdi. Korrektionen gemmes i sit eget felt, men indgår ikke i koten.
     """
     typekode = _to_int(row.get("tvptypekode"))
-    dnn = _to_float(row.get("dnnaddent")) or 0.0
 
     if typekode == TYPE_TVAERPROFIL:
-        # Blob-koterne har allerede datum-korrektionen med.
         kote = bundkoter.get(_to_int(row["tvpid"]))
     else:
         felt = "param1" if typekode in TYPE_PARAM1 else (
             "param2" if typekode in TYPE_PARAM2 else None)
         cm = _to_float(row.get(felt)) if felt else None
-        kote = (cm / 100.0 + dnn) if cm is not None else None
+        kote = (cm / 100.0) if cm is not None else None
 
     if kote is None or not (KOTE_MIN <= kote <= KOTE_MAKS):
         return None
