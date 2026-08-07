@@ -67,6 +67,28 @@ ejeropslaget svarer 403.** Token-endpointet er ikke IP-spærret, så
 legitimationsoplysningerne ser rigtige ud — det er kun de beskyttede data der
 afvises.
 
+### Når en kollega i en anden organisation skal bruge pluginnet
+
+En anden organisation har sit eget netværk og dermed sin egen udgående
+IP-adresse. Den står ikke på jeres liste, og opslaget vil derfor svare 403 —
+også selvom nøglerne er rigtige.
+
+Der er to veje, og valget er ikke kun teknisk:
+
+**Deling af jeres nøgler.** Tilføj den anden organisations udgående IP til
+listen, og udlevér Client ID og Secret. Det virker med det samme, men
+Datafordeleren ser jeres IT-system, ikke deres: opslagene sker på jeres
+dataadgang og jeres hjemmel, og udtræk af personoplysninger foretaget af en
+anden organisation registreres som jeres. Bed om det faste udgående IP eller
+hele området — mange organisationer har flere, og nogle skifter.
+
+**Egen adgang hos dem.** De opretter deres eget IT-system med egen
+dataadgang, egen API-nøgle, eget OAuth-hemmelighed og egen IP-liste. Det
+tager længere tid, fordi ansøgningen om EJF-persondata skal godkendes, men
+hver organisation henter så på sin egen hjemmel, og der deles ingen
+hemmeligheder. Har organisationen i forvejen adgang til Datafordeleren til
+andre formål, mangler de kun EJF-delen.
+
 ## Trin 6: Opret API-nøgle
 
 API-nøglen hører til IT-systemet og oprettes i Datafordeler Administration
