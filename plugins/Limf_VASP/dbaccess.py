@@ -214,10 +214,11 @@ def list_vsp_calcs():
 
     Selve punkterne ligger i .ber-filer; her returneres kun de headers
     brugeren skal kunne søge og vælge imellem. Hver post: dict med berid,
-    multi (0/1), navn, projektid, prjnavn, koordsysid, stmin, stmax.
-    Sorteret efter projekt og navn.
+    multi (0/1), navn, projektid, prjnavn, vlbnavn, koordsysid, stmin,
+    stmax. Sorteret efter vandløb, projekt og navn.
     """
     layer = _open_layer("vsp_calcs")
+    har_vlb = layer.fields().indexFromName("vlbnavn") >= 0
     calcs = []
     for feat in layer.getFeatures():
         calcs.append({
@@ -226,11 +227,14 @@ def list_vsp_calcs():
             "navn": feat["navn"] or "(uden navn)",
             "projektid": feat["projektid"],
             "prjnavn": feat["prjnavn"] or "",
+            # Tom i datafiler bygget før vandløbet kom med i eksporten.
+            "vlbnavn": (feat["vlbnavn"] or "") if har_vlb else "",
             "koordsysid": feat["koordsysid"],
             "stmin": feat["stmin"],
             "stmax": feat["stmax"],
         })
-    calcs.sort(key=lambda c: ((c["prjnavn"] or "").lower(),
+    calcs.sort(key=lambda c: ((c["vlbnavn"] or "").lower(),
+                              (c["prjnavn"] or "").lower(),
                               (c["navn"] or "").lower()))
     return calcs
 

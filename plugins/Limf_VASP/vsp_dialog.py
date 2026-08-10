@@ -36,7 +36,8 @@ class VspDialog(QDialog):
         search_row = QHBoxLayout()
         search_row.addWidget(QLabel("Søg:"))
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Filtrér på projekt eller navn …")
+        self._search.setPlaceholderText(
+            "Filtrér på vandløb, projekt eller navn …")
         self._search.textChanged.connect(self._apply_filter)
         search_row.addWidget(self._search)
         layout.addLayout(search_row)
@@ -55,6 +56,11 @@ class VspDialog(QDialog):
     def _label(self, c):
         typ = "MULTI" if c["multi"] else "simpel"
         prj = c["prjnavn"] or "(ukendt projekt)"
+        vlb = c.get("vlbnavn") or ""
+        # Vandløbet først, som i de øvrige valglister. Projektet hedder ofte
+        # noget andet end vandløbet, fx "Ryddet Lavbundsprojekt" / "Hasseris å".
+        if vlb:
+            return "%s  /  %s  —  [%s] %s" % (vlb, c["navn"], typ, prj)
         return "[%s]  %s  /  %s" % (typ, prj, c["navn"])
 
     def _populate(self, calcs):
@@ -73,7 +79,8 @@ class VspDialog(QDialog):
         else:
             filtered = [
                 c for c in self._calcs
-                if text in (c["prjnavn"] or "").lower()
+                if text in (c.get("vlbnavn") or "").lower()
+                or text in (c["prjnavn"] or "").lower()
                 or text in (c["navn"] or "").lower()
             ]
         self._populate(filtered)

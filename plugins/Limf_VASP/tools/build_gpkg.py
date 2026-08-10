@@ -441,7 +441,8 @@ def _build_vsp_calcs_table(ds):
     for fld, typ in [("berid", ogr.OFTInteger), ("multi", ogr.OFTInteger),
                      ("navn", ogr.OFTString), ("projektid", ogr.OFTInteger),
                      ("koordsysid", ogr.OFTInteger), ("stmin", ogr.OFTReal),
-                     ("stmax", ogr.OFTReal), ("prjnavn", ogr.OFTString)]:
+                     ("stmax", ogr.OFTReal), ("prjnavn", ogr.OFTString),
+                     ("vlbnavn", ogr.OFTString)]:
         layer.CreateField(ogr.FieldDefn(fld, typ))
     total = 0
     for tsv in (VSP_SIMPEL_TSV, VSP_MULTI_TSV):
@@ -459,6 +460,8 @@ def _build_vsp_calcs_table(ds):
                 feat.SetField("stmin", _to_float(row["stmin"]))
                 feat.SetField("stmax", _to_float(row["stmax"]))
                 feat.SetField("prjnavn", row["prjnavn"])
+                # Kan mangle i en datafil bygget før vandløbet kom med.
+                feat.SetField("vlbnavn", row.get("vlbnavn") or "")
                 layer.CreateFeature(feat)
                 total += 1
         layer.CommitTransaction()

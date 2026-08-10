@@ -107,22 +107,28 @@ Write-Host "Skrev _gislinjer.tsv"
 # Selve punkterne ligger i .ber-filer (ikke i databasen); her dumpes kun de
 # headers brugeren skal kunne søge og vælge imellem. Simpel = VSPBERHEADER,
 # multi = VSPBERMULHEADER. 'multi'-kolonnen skelner dem, 'berid' er filnr.
+# Vandløbet hentes med via PROJEKTER → VANDLØB, så beregningerne kan findes
+# på vandløbsnavnet som de øvrige valglister. Projektnavnet er ofte noget
+# andet — fx projektet "Ryddet Lavbundsprojekt" på vandløbet "Hasseris å".
 $vspSql = @"
 SELECT h.VSPBERID AS berid, 0 AS multi, h.NAVN AS navn, h.PROJEKTID AS projektid,
        h.KOORDSYSID AS koordsysid, h.CALCSTMIN AS stmin, h.CALCSTMAX AS stmax,
-       p.NAVN AS prjnavn
-FROM VSPBERHEADER AS h LEFT JOIN PROJEKTER AS p ON p.PROJEKTID = h.PROJEKTID
+       p.NAVN AS prjnavn, v.NAVN AS vlbnavn
+FROM ((VSPBERHEADER AS h LEFT JOIN PROJEKTER AS p ON p.PROJEKTID = h.PROJEKTID)
+LEFT JOIN VANDLØB AS v ON v.VLBSYSID = p.VLBSYSID)
 WHERE h.CALCSTATUS > 0
 "@
-Export-Query $vspSql (Join-Path $OutDir "_vsp_simpel.tsv") "berid`tmulti`tnavn`tprojektid`tkoordsysid`tstmin`tstmax`tprjnavn"
+Export-Query $vspSql (Join-Path $OutDir "_vsp_simpel.tsv") "berid`tmulti`tnavn`tprojektid`tkoordsysid`tstmin`tstmax`tprjnavn`tvlbnavn"
 Write-Host "Skrev _vsp_simpel.tsv"
 
 $mulSql = @"
 SELECT m.DSID AS berid, 1 AS multi, m.NAVN AS navn, m.PRJID AS projektid,
-       0 AS koordsysid, m.STMIN AS stmin, m.STMAX AS stmax, p.NAVN AS prjnavn
-FROM VSPBERMULHEADER AS m LEFT JOIN PROJEKTER AS p ON p.PROJEKTID = m.PRJID
+       0 AS koordsysid, m.STMIN AS stmin, m.STMAX AS stmax, p.NAVN AS prjnavn,
+       v.NAVN AS vlbnavn
+FROM ((VSPBERMULHEADER AS m LEFT JOIN PROJEKTER AS p ON p.PROJEKTID = m.PRJID)
+LEFT JOIN VANDLØB AS v ON v.VLBSYSID = p.VLBSYSID)
 "@
-Export-Query $mulSql (Join-Path $OutDir "_vsp_multi.tsv") "berid`tmulti`tnavn`tprojektid`tkoordsysid`tstmin`tstmax`tprjnavn"
+Export-Query $mulSql (Join-Path $OutDir "_vsp_multi.tsv") "berid`tmulti`tnavn`tprojektid`tkoordsysid`tstmin`tstmax`tprjnavn`tvlbnavn"
 Write-Host "Skrev _vsp_multi.tsv"
 
 # --- Tværprofiler: opmålte profiler (TVPTYPEKODE 0) ------------------------
