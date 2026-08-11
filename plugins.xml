@@ -11,7 +11,7 @@
     <icon>icon.png</icon>
     <author_name>Limfjordssekretariatet</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_Atlas.zip</download_url>
-    <update_date>2026-08-11T07:27:02Z</update_date>
+    <update_date>2026-08-11T07:28:09Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
@@ -27,7 +27,7 @@
     <icon>icon.png</icon>
     <author_name>Limfjordssekretariatet</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_DrainOutletAnalysis.zip</download_url>
-    <update_date>2026-08-11T07:27:02Z</update_date>
+    <update_date>2026-08-11T07:28:09Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
@@ -43,7 +43,7 @@
     <icon>icon.png</icon>
     <author_name>Limfjordssekretariatet</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_Lodsejere.zip</download_url>
-    <update_date>2026-08-11T07:27:03Z</update_date>
+    <update_date>2026-08-11T07:28:09Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
@@ -59,7 +59,7 @@
     <icon>icon.png</icon>
     <author_name>Limfjordssekretariatet</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_SoilSurvey.zip</download_url>
-    <update_date>2026-08-11T07:27:03Z</update_date>
+    <update_date>2026-08-11T07:28:09Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
@@ -75,7 +75,7 @@
     <icon>icon.png</icon>
     <author_name>Limfjordssekretariatet</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_VASP.zip</download_url>
-    <update_date>2026-08-11T07:27:03Z</update_date>
+    <update_date>2026-08-11T07:28:09Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
@@ -91,7 +91,7 @@
     <icon>icon.png</icon>
     <author_name>Limfjordssekretariatet</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_WetlandTools.zip</download_url>
-    <update_date>2026-08-11T07:27:03Z</update_date>
+    <update_date>2026-08-11T07:28:09Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
