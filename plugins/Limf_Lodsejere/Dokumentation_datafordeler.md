@@ -121,6 +121,19 @@ fejlbeskeden. Læs hvilket af de tre kald der fejler:
 | *Opslag af matrikler (Matriklen WFS) fejlede* | API-nøglen mangler eller er forkert (trin 6) |
 | *Opslag af ejeroplysninger (Ejerfortegnelsen) fejlede* | Log ind virkede — det er dataadgangen (trin 3–4) eller IP-listen (trin 5) |
 
-Ved 401/403 på det sidste: tjek **IP-listen først**, hvis kollegaen bruger
-samme nøgler som en der har fået det til at virke. Bruger vedkommende sine
-egne nøgler, er det snarere dataadgangen der mangler godkendelse.
+**Sådan skelnes de to.** Beskeden citerer Datafordelerens eget svar, og det
+afslører hvor afvisningen sker:
+
+```
+HTTP 403 — The current user is not authorized to access this resource.
+— kode DAF-AUTH-0001 — ressource: EJFCustom_EjerskabBegraenset
+```
+
+Nævnes en **ressource** og koden **DAF-AUTH-0001**, er forespørgslen nået
+ind i GraphQL-motoren og afvist på selve entiteten. Så er det
+**dataadgangen** (trin 3–4) der mangler — netop den entitet skal stå som
+"Godkendt" under Dataadgang. En IP-spærring stopper derimod kaldet i porten
+og nævner ikke nogen ressource.
+
+Er ansøgningen kun godkendt til virksomhedsdata, kan pluginnet stadig
+bruges med afkrydsningen *"Vis kun virksomhedsejere"*.
