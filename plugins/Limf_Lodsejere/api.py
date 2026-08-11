@@ -43,7 +43,35 @@ class DatafordelerClient:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _tjek_svar(resp, hvad: str) -> None:
+    def _fejltekst(resp) -> str:
+        """Den forklarende del af svaret, uden JSON-støj og trace-id.
+
+        Datafordelerens GraphQL svarer med en errors-liste, hvor hver fejl
+        har sit eget traceId. Tages hele kroppen med, bliver ellers ens
+        fejl unikke, og otte afviste opslag ser ud som otte forskellige
+        problemer. Her tages kun beskeden, fejlkoden og den ressource der
+        blev afvist.
+        """
+        try:
+            data = resp.json()
+        except ValueError:
+            return ' '.join((resp.text or '').split())[:300]
+        if not isinstance(data, dict):
+            return ' '.join((resp.text or '').split())[:300]
+
+        fejl = (data.get('errors') or [{}])[0]
+        dele = [fejl.get('message') or '']
+        kode = (fejl.get('extensions') or {}).get('code')
+        if kode:
+            dele.append(f'kode {kode}')
+        sti = fejl.get('path') or []
+        if sti:
+            dele.append('ressource: ' + ', '.join(str(s) for s in sti))
+        tekst = ' — '.join(d for d in dele if d)
+        return tekst or ' '.join((resp.text or '').split())[:300]
+
+    @classmethod
+    def _tjek_svar(cls, resp, hvad: str) -> None:
         """Rejs en fejl der siger HVORFOR, ikke bare hvilken statuskode.
 
         requests' raise_for_status() giver kun "403 Client Error: Forbidden
@@ -52,19 +80,20 @@ class DatafordelerClient:
         """
         if resp.ok:
             return
-        krop = ' '.join((resp.text or '').split())[:300]
+        krop = cls._fejltekst(resp)
         besked = f'{hvad} fejlede: HTTP {resp.status_code}'
         if krop:
             besked += f' — {krop}'
         if resp.status_code in (401, 403):
             besked += (
-                '\n\nAdgangen blev afvist, selvom log ind lykkedes. Det '
-                'betyder næsten altid, at tjenestebrugeren ikke har netop '
-                'denne tjeneste tilknyttet. Tjek på datafordeler.dk under '
-                'Selvbetjening → Brugerstyring, at brugeren har adgang til '
-                'Ejerfortegnelsen (flexibleCurrent), og at abonnementet '
-                'dækker de oplysninger der hentes — adgang til '
-                'personoplysninger skal godkendes særskilt.'
+                '\n\nAdgangen blev afvist, selvom log ind lykkedes. Nævnes '
+                'en ressource ovenfor, er det præcis den entitet, jeres '
+                'ansøgning om dataadgang skal omfatte — se Datafordeler '
+                'Administration → Dataadgang, hvor status skal stå som '
+                '"Godkendt". Fejlkoden DAF-AUTH-0001 betyder netop det. '
+                'Dækker ansøgningen kun virksomhedsdata, kan pluginnet '
+                'stadig bruges med "Vis kun virksomhedsejere" — adgang til '
+                'personoplysninger godkendes særskilt.'
             )
         raise RuntimeError(besked)
 
