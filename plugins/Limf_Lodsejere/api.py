@@ -13,17 +13,27 @@ class DatafordelerClient:
 
     WFS_URL = 'https://wfs.datafordeler.dk/MATRIKLEN2/MatGaeldendeOgForeloebigWFS/1.0.0/WFS'
 
+    # Ejerforholdskoder efter den fælles grunddata-kodeliste (ESR-afledt,
+    # samme liste som BBR bruger — se teknik.bbr.dk/kodelister). Teksterne
+    # er de officielle; kun 90 er forkortet, da den fylder 140 tegn.
+    #
+    # Fem af koderne var tidligere forkerte: 20 og 30 var byttet om (alment
+    # boligselskab kaldtes aktieselskab), og 60 og 80 var byttet om (anden
+    # kommune kaldtes staten). 41 manglede, og 90 blev kaldt "anden
+    # offentlig ejer", selvom den netop dækker blandet og privat ejerskab.
     EJERFORHOLD = {
-        '10': 'Privat eje',
-        '20': 'Aktie-/anpartsselskab',
-        '30': 'Interessentskab',
-        '40': 'Forening/fond',
-        '50': 'Kommunalt eje',
-        '60': 'Statsligt eje',
-        '70': 'Regionalt eje',
-        '80': 'Alment boligselskab',
-        '90': 'Anden offentlig ejer',
-        '99': 'Ukendt',
+        '10': 'Privatpersoner eller interessentskab',
+        '20': 'Alment boligselskab',
+        '30': 'Aktie-, anpart- eller andet selskab (undtagen interessentskab)',
+        '40': 'Forening, legat eller selvejende institution',
+        '41': 'Privat andelsboligforening',
+        '50': 'Den kommune, hvori ejendommen er beliggende',
+        '60': 'Anden primærkommune',
+        '70': 'Region',
+        '80': 'Staten',
+        '90': 'Andet, herunder moderejendomme og ejendomme med flere '
+              'kategorier af ejere',
+        '99': 'Ikke beregnet',
     }
 
     TOKEN_URL   = 'https://auth.datafordeler.dk/realms/distribution/protocol/openid-connect/token'
