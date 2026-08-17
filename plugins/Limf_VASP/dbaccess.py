@@ -50,10 +50,14 @@ def datafil_har_rigtige_koter():
 def list_profiles():
     """Returnér profil-datalag (profiles) der har geokodede terrænpunkter.
 
-    Hver post: dict med lgdid, navn, projektid, koordsysid, punkter.
-    Sorteret efter navn.
+    Hver post: dict med lgdid, navn, projektid, prjnavn, vlbnavn,
+    koordsysid, punkter. Sorteret efter vandløb og navn, som de øvrige
+    valglister.
     """
     layer = _open_layer("profiles")
+    felter = layer.fields()
+    har_navne = (felter.indexFromName("vlbnavn") >= 0
+                 and felter.indexFromName("prjnavn") >= 0)
     profiles = []
     for feat in layer.getFeatures():
         gid = feat["geocodegdsid"]
@@ -61,12 +65,16 @@ def list_profiles():
             "lgdid": feat["lgdid"],
             "navn": feat["navn"] or "(uden navn)",
             "projektid": feat["projektid"],
+            # Tomme i datafiler bygget før navnene kom med i eksporten.
+            "prjnavn": (feat["prjnavn"] or "") if har_navne else "",
+            "vlbnavn": (feat["vlbnavn"] or "") if har_navne else "",
             "koordsysid": feat["koordsysid"],
             "punkter": feat["punkter"],
             # Den VANDLØBGIS-linje profilen er geokodet på (kan være None).
             "geocodegdsid": None if gid in (None, "") else int(gid),
         })
-    profiles.sort(key=lambda p: (p["navn"] or "").lower())
+    profiles.sort(key=lambda p: ((p["vlbnavn"] or "").lower(),
+                                 (p["navn"] or "").lower()))
     return profiles
 
 

@@ -118,6 +118,9 @@ def main():
     prof_layer.CreateField(ogr.FieldDefn("punkter", ogr.OFTInteger))
     # Hvilken VANDLØBGIS-linje profilen er geokodet på (kan være tom).
     prof_layer.CreateField(ogr.FieldDefn("geocodegdsid", ogr.OFTInteger))
+    # Projekt og vandløb, så profilerne kan søges som de øvrige valglister.
+    prof_layer.CreateField(ogr.FieldDefn("prjnavn", ogr.OFTString))
+    prof_layer.CreateField(ogr.FieldDefn("vlbnavn", ogr.OFTString))
 
     prof_layer.StartTransaction()
     with open(PROFILES_TSV, encoding="utf-8-sig") as f:
@@ -133,6 +136,9 @@ def main():
             gid = _to_int(row.get("geocodegdsid"))
             if gid is not None:
                 feat.SetField("geocodegdsid", gid)
+            # Tomme i en datafil bygget før projekt/vandløb kom med.
+            feat.SetField("prjnavn", row.get("prjnavn") or "")
+            feat.SetField("vlbnavn", row.get("vlbnavn") or "")
             prof_layer.CreateFeature(feat)
             n += 1
     prof_layer.CommitTransaction()

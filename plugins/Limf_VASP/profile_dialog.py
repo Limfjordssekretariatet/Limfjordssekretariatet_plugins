@@ -54,7 +54,8 @@ class ProfileDialog(QDialog):
         search_row = QHBoxLayout()
         search_row.addWidget(QLabel("Søg:"))
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Filtrér på navn, projekt eller LGDID …")
+        self._search.setPlaceholderText(
+            "Filtrér på vandløb, navn, projekt eller LGDID …")
         self._search.textChanged.connect(self._apply_filter)
         search_row.addWidget(self._search)
         layout.addLayout(search_row)
@@ -107,10 +108,16 @@ class ProfileDialog(QDialog):
     def _populate(self, profiles):
         self._list.clear()
         for prof in profiles:
-            label = "%s  —  %d punkter  (LGDID %s, projekt %s)" % (
-                prof["navn"], prof["punkter"], prof["lgdid"],
-                prof["projektid"],
-            )
+            # Vandløbet først som i de øvrige valglister. Projektnavnet er
+            # ofte bare "VLBGIS", så det står bagest sammen med LGDID.
+            vlb = prof.get("vlbnavn") or ""
+            prj = prof.get("prjnavn") or prof["projektid"]
+            if vlb:
+                label = "%s  /  %s  —  %d punkter  (LGDID %s, %s)" % (
+                    vlb, prof["navn"], prof["punkter"], prof["lgdid"], prj)
+            else:
+                label = "%s  —  %d punkter  (LGDID %s, projekt %s)" % (
+                    prof["navn"], prof["punkter"], prof["lgdid"], prj)
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, prof)
             self._list.addItem(item)
@@ -122,11 +129,13 @@ class ProfileDialog(QDialog):
         if not text:
             filtered = self._profiles
         else:
-            # Søg bredt: profil-navn, projekt og LGDID – så man kan finde en
-            # profil via sit projekt (samme mønster som vandløbssøgningen).
+            # Søg bredt: vandløb, profilnavn, projekt (navn og id) og LGDID,
+            # så samme søgeord virker her som i de øvrige valglister.
             filtered = [
                 p for p in self._profiles
-                if text in (p.get("navn") or "").lower()
+                if text in (p.get("vlbnavn") or "").lower()
+                or text in (p.get("navn") or "").lower()
+                or text in (p.get("prjnavn") or "").lower()
                 or text in str(p.get("projektid") or "").lower()
                 or text in str(p.get("lgdid") or "").lower()
             ]

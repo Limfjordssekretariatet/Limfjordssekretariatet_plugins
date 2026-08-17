@@ -30,16 +30,21 @@ function Export-Query($sql, $outFile, $header) {
   $sw.Close(); $r.Close()
 }
 
+# Projekt og vandløb hentes med, så profilerne kan søges på samme måde som
+# de øvrige valglister. Begge dækker alle profiler. Projektnavnet er ofte
+# bare "VLBGIS" — vandløbet er det, brugeren leder efter.
 $profilesSql = @"
-SELECT h.LGDID, h.NAVN, h.PROJEKTID, h.KOORDSYSID, t.N, h.GEOCODEGDSID
-FROM LGDPROFHEADER AS h
+SELECT h.LGDID, h.NAVN, h.PROJEKTID, h.KOORDSYSID, t.N, h.GEOCODEGDSID,
+       p.NAVN AS PRJNAVN, v.NAVN AS VLBNAVN
+FROM ((LGDPROFHEADER AS h LEFT JOIN PROJEKTER AS p ON p.PROJEKTID = h.PROJEKTID)
+LEFT JOIN VANDLØB AS v ON v.VLBSYSID = p.VLBSYSID)
 INNER JOIN (
     SELECT LGDID, COUNT(*) AS N FROM TVPDATAEXT
     WHERE KOORDX IS NOT NULL AND KOORDX <> 0 GROUP BY LGDID
 ) AS t ON t.LGDID = h.LGDID
 ORDER BY h.NAVN
 "@
-Export-Query $profilesSql (Join-Path $OutDir "_profiles.tsv") "lgdid`tnavn`tprojektid`tkoordsysid`tpunkter`tgeocodegdsid"
+Export-Query $profilesSql (Join-Path $OutDir "_profiles.tsv") "lgdid`tnavn`tprojektid`tkoordsysid`tpunkter`tgeocodegdsid`tprjnavn`tvlbnavn"
 Write-Host "Skrev _profiles.tsv"
 
 # Bundkoten ligger forskellige steder alt efter punkttype, så rå-felterne
