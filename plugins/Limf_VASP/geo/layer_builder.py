@@ -26,7 +26,10 @@ def epsg_for(koordsysid):
 def build_profile_layer(layer_name, points, koordsysid):
     """Lav et memory-punktlag for ét profil-datalag.
 
-    points: liste af dicts (station, x, y, kote, tvpid) fra dbaccess.
+    points: liste af dicts (station, x, y, kote, tvpid) fra dbaccess, samt
+    punktets eget indhold fra VASP: punkttype, bemærkning, plottekst og
+    bygværk. De fire er tomme for resamplede stationeringspunkter og i
+    datafiler bygget før teksterne kom med i eksporten.
     Returnerer et QgsVectorLayer (ikke tilføjet til projektet endnu).
     """
     epsg = epsg_for(koordsysid)
@@ -39,6 +42,10 @@ def build_profile_layer(layer_name, points, koordsysid):
     fields.append(QgsField("tvpid", QVariant.Int))
     fields.append(QgsField("station", QVariant.Double))
     fields.append(QgsField("kote", QVariant.Double))
+    fields.append(QgsField("punkttype", QVariant.String))
+    fields.append(QgsField("bemaerkning", QVariant.String))
+    fields.append(QgsField("plottekst", QVariant.String))
+    fields.append(QgsField("bygvaerk", QVariant.String))
     provider.addAttributes(fields)
     layer.updateFields()
 
@@ -47,7 +54,11 @@ def build_profile_layer(layer_name, points, koordsysid):
         feat = QgsFeature(layer.fields())
         feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(p["x"], p["y"])))
         # Resamplede stationeringspunkter har ingen tvpid; lad den være tom.
-        feat.setAttributes([p.get("tvpid"), p["station"], p["kote"]])
+        feat.setAttributes([
+            p.get("tvpid"), p["station"], p["kote"],
+            p.get("punkttype", ""), p.get("bemaerkning", ""),
+            p.get("plottekst", ""), p.get("bygvaerk", ""),
+        ])
         features.append(feat)
 
     provider.addFeatures(features)

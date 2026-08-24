@@ -54,16 +54,20 @@ Write-Host "Skrev _profiles.tsv"
 #     punkt, rør, brønd)
 #   type 4/5 (parametrisk): PARAM2 i cm (bundkote)
 # DNNADDENT er en datum-korrektion (hele basen spænder −0,096 til +0,019 m)
-# og lægges til — den er IKKE en kote i sig selv. Den blev tidligere
-# eksporteret som kolonnen "kote", så alle længdeprofiler kom ind med ~0.
+# og lægges IKKE til koten; den skrives med i sin egen kolonne.
+#
+# Punkternes egne tekster tages med, så et importeret længdeprofil bærer alt
+# hvad VASP har på punktet: BEMÆRKNING (udfyldt i 35 %), PLOTTEKST (58 %) og
+# TVPSFKODE (100 %), der markerer bygværker — rørindløb, brønd, styrt,
+# stemmeværk, skalapæl. Koderne oversættes til tekst i build_gpkg.
 $pointsSql = @"
 SELECT TVPID, LGDID, STATION, KOORDX, KOORDY, DNNADDENT, TVPTYPEKODE,
-       PARAM1, PARAM2
+       PARAM1, PARAM2, BEMÆRKNING, PLOTTEKST, TVPSFKODE
 FROM TVPDATAEXT
 WHERE KOORDX IS NOT NULL AND KOORDX <> 0
 ORDER BY LGDID, STATION
 "@
-Export-Query $pointsSql (Join-Path $OutDir "_points.tsv") "tvpid`tlgdid`tstation`tkoordx`tkoordy`tdnnaddent`ttvptypekode`tparam1`tparam2"
+Export-Query $pointsSql (Join-Path $OutDir "_points.tsv") "tvpid`tlgdid`tstation`tkoordx`tkoordy`tdnnaddent`ttvptypekode`tparam1`tparam2`tbemaerkning`tplottekst`tsfkode"
 Write-Host "Skrev _points.tsv"
 
 # --- Vandløbslinjer (VANDLØBGIS) -------------------------------------------

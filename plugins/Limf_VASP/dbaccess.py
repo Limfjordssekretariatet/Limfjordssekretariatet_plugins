@@ -81,9 +81,14 @@ def list_profiles():
 def read_profile_points(lgdid):
     """Hent terrænpunkterne for ét profil-datalag (lgdid) fra terrain_points.
 
-    Hver post: dict med tvpid, station, x, y, kote. Sorteret efter station.
+    Hver post: dict med tvpid, station, x, y, kote samt punktets eget
+    indhold fra VASP — punkttype, bemærkning, plottekst og bygværk.
+    Sorteret efter station.
     """
     layer = _open_layer("terrain_points")
+    felter = layer.fields()
+    # Tomme i datafiler bygget før teksterne kom med i eksporten.
+    har_tekst = felter.indexFromName("plottekst") >= 0
     expr = '"lgdid" = %d' % int(lgdid)
     request = QgsFeatureRequest().setFilterExpression(expr)
     points = []
@@ -98,6 +103,10 @@ def read_profile_points(lgdid):
             "x": pt.x(),
             "y": pt.y(),
             "kote": feat["kote"],
+            "punkttype": (feat["punkttype"] or "") if har_tekst else "",
+            "bemaerkning": (feat["bemaerkning"] or "") if har_tekst else "",
+            "plottekst": (feat["plottekst"] or "") if har_tekst else "",
+            "bygvaerk": (feat["bygvaerk"] or "") if har_tekst else "",
         })
     points.sort(key=lambda p: (p["station"] is None, p["station"]))
     return points

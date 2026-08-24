@@ -50,6 +50,20 @@ def _to_int(s):
 # eller skrald, ikke en højde.
 KOTE_MIN, KOTE_MAKS = -50.0, 300.0
 
+# TVPDATAEXT.TVPTYPEKODE -> TVPBASISTYPER.NAVN
+PUNKTTYPER = {
+    0: "Tværprofil", 1: "Mellempunkt", 2: "Rør", 3: "Brønd",
+    4: "Simpel geometri", 5: "Sammensat geometri",
+}
+
+# TVPDATAEXT.TVPSFKODE -> TVPSFKODER.NAVN. Markerer bygværker langs
+# forløbet; udfyldt på alle punkter, hvor 1 = "Ingen".
+SFKODER = {
+    1: "Ingen", 2: "Rørindløb", 3: "Rørudløb", 4: "Rørpunkt", 5: "Brønd",
+    6: "Rørtilløb", 7: "Åbent tilløb", 8: "Broindløb", 9: "Broudløb",
+    10: "Styrt", 11: "Stemmeværk", 12: "Bundpæl", 13: "Skalapæl",
+}
+
 # TVPDATAEXT.TVPTYPEKODE
 TYPE_TVAERPROFIL = 0      # bundkoten er laveste punkt i PKTDATA-blob'en
 TYPE_PARAM1 = (1, 2, 3)   # mellempunkt, rør, brønd: bundkoten står i PARAM1
@@ -155,6 +169,13 @@ def main():
     pt_layer.CreateField(ogr.FieldDefn("dnnaddent", ogr.OFTReal))
     # TVPTYPEKODE: 0=Tværprofil, 1=Mellempunkt (= forløbets bundlinje), m.fl.
     pt_layer.CreateField(ogr.FieldDefn("tvptypekode", ogr.OFTInteger))
+    pt_layer.CreateField(ogr.FieldDefn("punkttype", ogr.OFTString))
+    # Punktets egne tekster fra VASP.
+    pt_layer.CreateField(ogr.FieldDefn("bemaerkning", ogr.OFTString))
+    pt_layer.CreateField(ogr.FieldDefn("plottekst", ogr.OFTString))
+    # Bygværk på punktet (rørindløb, brønd, styrt …).
+    pt_layer.CreateField(ogr.FieldDefn("sfkode", ogr.OFTInteger))
+    pt_layer.CreateField(ogr.FieldDefn("bygvaerk", ogr.OFTString))
 
     pt_layer.StartTransaction()
     uden_kote = 0
@@ -176,7 +197,15 @@ def main():
             if kote is not None:
                 feat.SetField("kote", kote)
             feat.SetField("dnnaddent", _to_float(row["dnnaddent"]))
-            feat.SetField("tvptypekode", _to_int(row["tvptypekode"]))
+            typekode = _to_int(row["tvptypekode"])
+            feat.SetField("tvptypekode", typekode)
+            feat.SetField("punkttype", PUNKTTYPER.get(typekode, ""))
+            feat.SetField("bemaerkning", (row.get("bemaerkning") or "").strip())
+            feat.SetField("plottekst", (row.get("plottekst") or "").strip())
+            sfkode = _to_int(row.get("sfkode"))
+            if sfkode is not None:
+                feat.SetField("sfkode", sfkode)
+                feat.SetField("bygvaerk", SFKODER.get(sfkode, ""))
             pt = ogr.Geometry(ogr.wkbPoint)
             pt.AddPoint(x, y)
             feat.SetGeometry(pt)
