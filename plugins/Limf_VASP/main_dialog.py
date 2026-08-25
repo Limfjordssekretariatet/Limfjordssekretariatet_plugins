@@ -59,6 +59,7 @@ class MainDialog(QDialog):
 
         self._refresh_db_label()
         self._update_enabled()
+        faelles_ui.goer_rulbar(self)
 
     # --- afsnit -----------------------------------------------------------
 

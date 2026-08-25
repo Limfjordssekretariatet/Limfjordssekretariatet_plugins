@@ -18,6 +18,8 @@ from qgis.PyQt.QtWidgets import (
 from qgis.PyQt.QtCore import Qt
 
 
+from . import faelles_ui
+
 class VspDialog(QDialog):
     """Dialog der lader brugeren vælge én vandspejlsberegning."""
 
@@ -52,6 +54,8 @@ class VspDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+        faelles_ui.anvend_stil(self)
 
     def _label(self, c):
         typ = "MULTI" if c["multi"] else "simpel"
@@ -121,6 +125,8 @@ class ScenarieDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+        faelles_ui.anvend_stil(self)
 
     def selected_index(self):
         """Returnér indekset på det valgte scenarie, eller None."""

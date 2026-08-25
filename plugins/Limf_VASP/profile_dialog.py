@@ -27,6 +27,8 @@ MODE_TERRAIN = "terrain"
 MODE_PROFILE = "profile"
 
 
+from . import faelles_ui
+
 class ProfileDialog(QDialog):
     """Dialog der lader brugeren vælge ét profil-datalag (+ evt. terrænvalg)."""
 
@@ -73,6 +75,8 @@ class ProfileDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+        faelles_ui.anvend_stil(self)
 
     def _build_terrain_controls(self, layout):
         """Interval, side og distance — kun i terræn-tilstand."""

@@ -18,6 +18,8 @@ from qgis.PyQt.QtWidgets import (
 from qgis.PyQt.QtCore import Qt
 
 
+from . import faelles_ui
+
 class TvpDialog(QDialog):
     """Dialog der lader brugeren vælge ét profil-datalag med tværprofiler."""
 
@@ -57,6 +59,8 @@ class TvpDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+        faelles_ui.anvend_stil(self)
 
     def _label(self, prof):
         vlb = prof["vlbnavn"] or "(ukendt vandløb)"
