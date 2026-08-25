@@ -2,7 +2,7 @@
 name=Vandprojekter – Lodsejerudtræk
 qgisMinimumVersion=3.40
 description=Henter matrikler og ejeroplysninger for et valgt polygon-område via Datafordeleren
-version=0.1.8
+version=0.1.9
 author=Limfjordssekretariatet
 email=henrik.rosenskjold@aalborg.dk
 about=Vælg et polygon i QGIS og hent alle matrikler med ejeroplysninger (navn, adresse, ejerforhold) via Datafordeleren og CVR.

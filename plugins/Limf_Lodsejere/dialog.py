@@ -1,9 +1,12 @@
+import os
+
 from qgis.PyQt.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QProgressBar, QCheckBox,
     QMessageBox, QApplication
 )
-from qgis.PyQt.QtCore import QSettings, Qt, QVariant
+from qgis.PyQt.QtCore import QSettings, Qt, QUrl, QVariant
+from qgis.PyQt.QtGui import QDesktopServices
 from qgis.core import (
     QgsProject, QgsVectorLayer, QgsFeature, QgsGeometry,
     QgsField, QgsFields, QgsCoordinateReferenceSystem, QgsCoordinateTransform
@@ -29,6 +32,9 @@ class LodsejerDialog(QDialog):
 
         # --- Adgang til Datafordeleren ----------------------------------
         adgang, adgang_l = faelles_ui.afsnit('Adgang til Datafordeleren')
+        vejledning = self._vejledningslink()
+        if vejledning is not None:
+            adgang_l.addWidget(vejledning)
         adgang_l.addWidget(QLabel('Matriklen API-nøgle:'))
         self.wfs_apikey_edit = QLineEdit()
         self.wfs_apikey_edit.setEchoMode(QLineEdit.Password)
@@ -82,6 +88,45 @@ class LodsejerDialog(QDialog):
         layout.addLayout(faelles_ui.bundraekke(self.run_btn, luk_btn))
 
         faelles_ui.anvend_stil(self)
+
+    # Vejledningerne ligger i pluginmappen: Word-dokumentet med trin 1-7 og
+    # skærmbilleder, og tillægget med felterne, entiteterne og fejlsøgningen.
+    VEJLEDNINGER = [
+        ('docx', 'Dokumentation_datafordeler.docx',
+         'Sådan opretter du adgang'),
+        ('md', 'Dokumentation_datafordeler.md',
+         'Felter, entiteter og fejlsøgning'),
+    ]
+
+    def _vejledningslink(self):
+        """Linje med links til vejledningerne, eller None hvis ingen findes."""
+        mappe = os.path.dirname(__file__)
+        dele = []
+        for noegle, filnavn, tekst in self.VEJLEDNINGER:
+            if os.path.exists(os.path.join(mappe, filnavn)):
+                dele.append('<a href="%s">%s</a>' % (noegle, tekst))
+        if not dele:
+            return None
+        label = QLabel('Mangler du nøgler? ' + ' &nbsp;·&nbsp; '.join(dele))
+        label.setWordWrap(True)
+        label.setStyleSheet('color: gray;')
+        label.setToolTip('Åbner vejledningen fra pluginmappen')
+        label.linkActivated.connect(self._aabn_vejledning)
+        return label
+
+    def _aabn_vejledning(self, noegle):
+        """Åbn en vejledning i systemets standardprogram."""
+        filnavn = dict((n, f) for n, f, _ in self.VEJLEDNINGER).get(noegle)
+        sti = os.path.join(os.path.dirname(__file__), filnavn or '')
+        if not filnavn or not os.path.exists(sti):
+            QMessageBox.information(
+                self, 'Lodsejere',
+                'Vejledningen blev ikke fundet:\n %s' % sti)
+            return
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(sti)):
+            QMessageBox.information(
+                self, 'Lodsejere',
+                'Kunne ikke åbne vejledningen. Den ligger her:\n %s' % sti)
 
     def _toggle_secret(self, checked):
         mode = QLineEdit.Normal if checked else QLineEdit.Password
