@@ -1,0 +1,1307 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ModelMappeDialog</class>
+ <widget class="QDialog" name="ModelMappeDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>780</width>
+    <height>700</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Automatisk udfyldning af N-regneark (LIMF)</string>
+  </property>
+  <layout class="QVBoxLayout" name="mainLayout">
+   <property name="spacing">
+    <number>8</number>
+   </property>
+   <property name="leftMargin">
+    <number>16</number>
+   </property>
+   <property name="topMargin">
+    <number>16</number>
+   </property>
+   <property name="rightMargin">
+    <number>16</number>
+   </property>
+   <property name="bottomMargin">
+    <number>16</number>
+   </property>
+   <item>
+    <widget class="QScrollArea" name="scrollArea">
+     <property name="horizontalScrollBarPolicy">
+      <enum>Qt::ScrollBarAlwaysOff</enum>
+     </property>
+     <property name="verticalScrollBarPolicy">
+      <enum>Qt::ScrollBarAlwaysOn</enum>
+     </property>
+     <property name="widgetResizable">
+      <bool>true</bool>
+     </property>
+     <widget class="QWidget" name="scrollAreaWidgetContents">
+      <property name="geometry">
+       <rect>
+        <x>0</x>
+        <y>0</y>
+        <width>733</width>
+        <height>1053</height>
+       </rect>
+      </property>
+      <layout class="QVBoxLayout" name="scrollLayout">
+       <property name="spacing">
+        <number>12</number>
+       </property>
+       <property name="leftMargin">
+        <number>4</number>
+       </property>
+       <property name="topMargin">
+        <number>4</number>
+       </property>
+       <property name="rightMargin">
+        <number>4</number>
+       </property>
+       <property name="bottomMargin">
+        <number>4</number>
+       </property>
+       <item>
+        <widget class="QGroupBox" name="groupBox1">
+         <property name="styleSheet">
+          <string>QGroupBox { border: 2px solid black; padding: 10px; margin-top: 0px; }</string>
+         </property>
+         <property name="title">
+          <string/>
+         </property>
+         <layout class="QVBoxLayout" name="box1Layout">
+          <property name="spacing">
+           <number>8</number>
+          </property>
+          <item>
+           <layout class="QHBoxLayout" name="mappeHeaderLayout">
+            <item>
+             <widget class="QLabel" name="labelMappe">
+              <property name="text">
+               <string>Datamappe</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="hjaelpMappe">
+              <property name="cursor">
+               <cursorShape>WhatsThisCursor</cursorShape>
+              </property>
+              <property name="toolTip">
+               <string>Vælg en mappe på din computer hvor projektmapper og resultater skal gemmes.</string>
+              </property>
+              <property name="styleSheet">
+               <string>QLabel { color: white; background-color: #1565C0; border-radius: 7px; padding: 0px 5px; font-weight: bold; }</string>
+              </property>
+              <property name="text">
+               <string>?</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="spacer3">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="mappeLayout">
+            <item>
+             <widget class="QLineEdit" name="lineEditMappe">
+              <property name="readOnly">
+               <bool>true</bool>
+              </property>
+              <property name="placeholderText">
+               <string>Standard: C:\temp</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btnVaelgMappe">
+              <property name="text">
+               <string>Vælg mappe</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="lblStatusMappe">
+              <property name="text">
+               <string/>
+              </property>
+              <property name="visible">
+               <bool>false</bool>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="projektnavnHeaderLayout">
+            <item>
+             <widget class="QLabel" name="labelProjektnavn">
+              <property name="text">
+               <string>Projektnavn</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="hjaelpProjektnavn">
+              <property name="cursor">
+               <cursorShape>WhatsThisCursor</cursorShape>
+              </property>
+              <property name="toolTip">
+               <string>Angiv et overordnet projektnavn og tryk på det grønne flueben. Herefter oprettes en ny undermappe med det angivne navn og en .qgz-projektfil på den valgte placering ovenfor.</string>
+              </property>
+              <property name="styleSheet">
+               <string>QLabel { color: white; background-color: #1565C0; border-radius: 7px; padding: 0px 5px; font-weight: bold; }</string>
+              </property>
+              <property name="text">
+               <string>?</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="spacerProjektnavn">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="projektnavnInputLayout">
+            <item>
+             <widget class="QLineEdit" name="lineEditProjektnavn">
+              <property name="placeholderText">
+               <string>Skriv projektnavn...</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btnOpretProjekt">
+              <property name="toolTip">
+               <string>Opret projektmappen med undermapper til resultaterne</string>
+              </property>
+              <property name="styleSheet">
+               <string>QPushButton { color: white; background-color: #2E7D32; border: none; border-radius: 4px; font-weight: bold; padding: 4px 10px; min-height: 26px; } QPushButton:hover { background-color: #1B5E20; }</string>
+              </property>
+              <property name="text">
+               <string>Opret mappe</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="lblStatusProjektnavn">
+              <property name="text">
+               <string/>
+              </property>
+              <property name="visible">
+               <bool>false</bool>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="projektomraadeLayout">
+            <item>
+             <widget class="QLabel" name="labelProjektomraade">
+              <property name="text">
+               <string>Projektområde</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="hjaelpProjektomraade">
+              <property name="cursor">
+               <cursorShape>WhatsThisCursor</cursorShape>
+              </property>
+              <property name="toolTip">
+               <string>Her tilføjer du dit projektområde gemt som en shapefil. Brugeren skal selv indtegne og gemme filen på sin computer.</string>
+              </property>
+              <property name="styleSheet">
+               <string>QLabel { color: white; background-color: #1565C0; border-radius: 7px; padding: 0px 5px; font-weight: bold; }</string>
+              </property>
+              <property name="text">
+               <string>?</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="spacer1">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="filLayout">
+            <item>
+             <widget class="QCheckBox" name="checkProjektomraade">
+              <property name="toolTip">
+               <string>Markér for at inkludere dette projektområde i kørsel</string>
+              </property>
+              <property name="text">
+               <string/>
+              </property>
+              <property name="checked">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLineEdit" name="lineEditProjektomraade">
+              <property name="readOnly">
+               <bool>true</bool>
+              </property>
+              <property name="placeholderText">
+               <string>Ingen fil valgt...</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btnVaelgFil">
+              <property name="text">
+               <string>Vælg kortlag</string>
+              </property>
+              <property name="toolTip">
+               <string>Vælg projektområdet blandt polygonlagene i QGIS-projektet</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="lblStatusProjektomraade">
+              <property name="text">
+               <string/>
+              </property>
+              <property name="visible">
+               <bool>false</bool>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QWidget" name="ekstraProjektomraaderContainer" native="true">
+            <layout class="QVBoxLayout" name="ekstraProjektomraaderLayout">
+             <property name="spacing">
+              <number>6</number>
+             </property>
+             <property name="leftMargin">
+              <number>0</number>
+             </property>
+             <property name="topMargin">
+              <number>0</number>
+             </property>
+             <property name="rightMargin">
+              <number>0</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
+             </property>
+            </layout>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="tokenLayout">
+            <item>
+             <widget class="QLabel" name="labelToken">
+              <property name="text">
+               <string>Dataforsyningen-token</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="hjaelpToken">
+              <property name="cursor">
+               <cursorShape>WhatsThisCursor</cursorShape>
+              </property>
+              <property name="toolTip">
+               <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Her indsætter du dit token til dataforsyningen fra https://dataforsyningen.dk/user#token. &lt;/p&gt;&lt;/body&gt;&lt;/html https://dataforsyningen.dk/user#token&gt;</string>
+              </property>
+              <property name="styleSheet">
+               <string>QLabel { color: white; background-color: #1565C0; border-radius: 7px; padding: 0px 5px; font-weight: bold; }</string>
+              </property>
+              <property name="text">
+               <string>?</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btnDataforsyningenLink">
+              <property name="toolTip">
+               <string>Åbn Dataforsyningen token-siden</string>
+              </property>
+              <property name="styleSheet">
+               <string>QPushButton { padding: 2px 6px; }</string>
+              </property>
+              <property name="text">
+               <string>link</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="spacer2">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="tokenInputLayout">
+            <item>
+             <widget class="QLineEdit" name="lineEditToken">
+              <property name="placeholderText">
+               <string>Indtast token...</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="lblStatusToken">
+              <property name="text">
+               <string/>
+              </property>
+              <property name="styleSheet">
+               <string>QLabel { color: #2E7D32; font-weight: bold; font-size: 14px; }</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>24</width>
+                <height>0</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="groupBox2">
+         <property name="enabled">
+          <bool>false</bool>
+         </property>
+         <property name="styleSheet">
+          <string>QGroupBox { border: 2px solid black; padding: 10px; margin-top: 0px; }</string>
+         </property>
+         <property name="title">
+          <string/>
+         </property>
+         <layout class="QVBoxLayout" name="box2Layout">
+          <property name="spacing">
+           <number>6</number>
+          </property>
+          <item>
+           <widget class="QLabel" name="labelBox2Title">
+            <property name="text">
+             <string>&lt;b&gt;1. Forberedende data:&lt;/b&gt;</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="hojdemodelRaekke">
+            <item>
+             <widget class="QLabel" name="labelHojdemodel">
+              <property name="text">
+               <string>Beregn strømningsveje</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="hjaelpHojdemodel">
+              <property name="cursor">
+               <cursorShape>WhatsThisCursor</cursorShape>
+              </property>
+              <property name="toolTip">
+               <string>OBS: Denne model har til tendens til at fejle første gang man klikker &quot;kør&quot;. I dette tilfælde, kør igen. Henter terrænmodel fra dataforsyningen og klipper en buffer på 5km omkring projektområdet. Anvender funktionen &quot;fill sinks&quot; og beregner channel network. </string>
+              </property>
+              <property name="styleSheet">
+               <string>QLabel { color: white; background-color: #1565C0; border-radius: 7px; padding: 0px 5px; font-weight: bold; }</string>
+              </property>
+              <property name="text">
+               <string>?</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="spacerHojdemodel">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btnKorHojdemodel">
+              <property name="text">
+               <string>Kør</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="lblStatusHojdemodel">
+              <property name="text"><string/></property>
+              <property name="visible"><bool>false</bool></property>
+              <property name="alignment"><set>Qt::AlignCenter</set></property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="oplandeRaekke">
+            <item>
+             <widget class="QLabel" name="labelUdvaelgOplande">
+              <property name="text">
+               <string>Udpeg oplande</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="hjaelpOplande">
+              <property name="cursor">
+               <cursorShape>WhatsThisCursor</cursorShape>
+              </property>
+              <property name="toolTip">
+               <string>Beregner vandløbsoplandet og det direkte opland for projektområdet. Disse sammenlagt kaldes &quot;klippeområdet&quot;.
+
+Håndterer FLERE vandløb der løber ind i projektområdet: hvert indløb med et opstrøms areal på mindst 50 ha tæller som et vandløb og får sit eget opland (de lægges sammen til ét vandløbsopland). Mindre indløb indgår i det direkte opland.</string>
+              </property>
+              <property name="styleSheet">
+               <string>QLabel { color: white; background-color: #1565C0; border-radius: 7px; padding: 0px 5px; font-weight: bold; }</string>
+              </property>
+              <property name="text">
+               <string>?</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="spacerOplande">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btnKorOplande">
+              <property name="text">
+               <string>Kør</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="lblStatusOplande">
+              <property name="text"><string/></property>
+              <property name="visible"><bool>false</bool></property>
+              <property name="alignment"><set>Qt::AlignCenter</set></property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="klipRaekke">
+            <item>
+             <widget class="QLabel" name="labelKlipGrunddata">
+              <property name="text">
+               <string>Klip grunddata til projektområde</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="hjaelpKlipGrunddata">
+              <property name="cursor">
+               <cursorShape>WhatsThisCursor</cursorShape>
+              </property>
+              <property name="toolTip">
+               <string>Klipper Jordbund, mark og befæstelsestema til &quot;klippeområdet&quot;.</string>
+              </property>
+              <property name="styleSheet">
+               <string>QLabel { color: white; background-color: #1565C0; border-radius: 7px; padding: 0px 5px; font-weight: bold; }</string>
+              </property>
+              <property name="text">
+               <string>?</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="spacerKlip">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btnKorKlipGrunddata">
+              <property name="text">
+               <string>Kør</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="lblStatusKlip">
+              <property name="text"><string/></property>
+              <property name="visible"><bool>false</bool></property>
+              <property name="alignment"><set>Qt::AlignCenter</set></property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="korAlleForberedendeRaekke">
+            <item>
+             <spacer name="spacerKorAlleForberedende">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btnKorAlleForberedende">
+              <property name="styleSheet">
+               <string>QPushButton { font-weight: bold; }</string>
+              </property>
+              <property name="text">
+               <string>Kør alle</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="groupBox3">
+         <property name="enabled">
+          <bool>false</bool>
+         </property>
+         <property name="styleSheet">
+          <string>QGroupBox { border: 2px solid black; padding: 10px; margin-top: 0px; }</string>
+         </property>
+         <property name="title">
+          <string/>
+         </property>
+         <layout class="QVBoxLayout" name="box3Layout">
+          <property name="spacing">
+           <number>6</number>
+          </property>
+          <item>
+           <widget class="QLabel" name="labelBox3Title">
+            <property name="text">
+             <string>&lt;b&gt;2. Regneark - tilførsel:&lt;/b&gt;</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="vandoplandRaekke">
+            <item>
+             <widget class="QLabel" name="labelVandopland">
+              <property name="text">
+               <string>Vandopland</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="hjaelpVandopland">
+              <property name="cursor">
+               <cursorShape>WhatsThisCursor</cursorShape>
+              </property>
+              <property name="toolTip">
+               <string>Finder DMI_Gridnummer og udregner arealet af vandoplandet for projektområdet. Indsætter herefter tallene i regnearket under &quot;Tilførsel&quot;=&gt;&quot;Vandløbsoplandet&quot;.</string>
+              </property>
+              <property name="styleSheet">
+               <string>QLabel { color: white; background-color: #1565C0; border-radius: 7px; padding: 0px 5px; font-weight: bold; }</string>
+              </property>
+              <property name="text">
+               <string>?</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="spacerVandopland">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btnKorVandopland">
+              <property name="text">
+               <string>Kør</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="lblStatusVandopland">
+              <property name="text"><string/></property>
+              <property name="visible"><bool>false</bool></property>
+              <property name="alignment"><set>Qt::AlignCenter</set></property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="direkteOplandRaekke">
+            <item>
+             <widget class="QLabel" name="labelDirekteOpland">
+              <property name="text">
+               <string>Direkte opland</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="hjaelpDirekteOpland">
+              <property name="cursor">
+               <cursorShape>WhatsThisCursor</cursorShape>
+              </property>
+              <property name="toolTip">
+               <string>Udpeger DMI_Grid igen. Udregner andel sandjord og dyrket areal i % pba. grunddata. Udregner areal af det direkte opland. Indsætter data under &quot;Tilførsel&quot; =&gt; &quot;Direkte opland&quot;.</string>
+              </property>
+              <property name="styleSheet">
+               <string>QLabel { color: white; background-color: #1565C0; border-radius: 7px; padding: 0px 5px; font-weight: bold; }</string>
+              </property>
+              <property name="text">
+               <string>?</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="spacerDirekteOpland">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btnKorDirekteOpland">
+              <property name="text">
+               <string>Kør</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="lblStatusDirekteOpland">
+              <property name="text"><string/></property>
+              <property name="visible"><bool>false</bool></property>
+              <property name="alignment"><set>Qt::AlignCenter</set></property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="projektomraade3Raekke">
+            <item>
+             <widget class="QLabel" name="labelProjektomraade3">
+              <property name="text">
+               <string>Projektområde</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="hjaelpProjektomraade3">
+              <property name="cursor">
+               <cursorShape>WhatsThisCursor</cursorShape>
+              </property>
+              <property name="toolTip">
+               <string>Udregner arealet af Agerjord, Agerjord brak, Permanent græs, natur og befæstet areal. Indsætter det i regnearket under &quot;Tilførsel&quot; =&gt; &quot;Projektområdet&quot;</string>
+              </property>
+              <property name="styleSheet">
+               <string>QLabel { color: white; background-color: #1565C0; border-radius: 7px; padding: 0px 5px; font-weight: bold; }</string>
+              </property>
+              <property name="text">
+               <string>?</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="spacerProjektomraade3">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btnKorProjektomraade3">
+              <property name="text">
+               <string>Kør</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="lblStatusProjektomraade3">
+              <property name="text"><string/></property>
+              <property name="visible"><bool>false</bool></property>
+              <property name="alignment"><set>Qt::AlignCenter</set></property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="korAlleTilforselRaekke">
+            <item>
+             <spacer name="spacerKorAlleTilforsel">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btnKorAlleTilforsel">
+              <property name="styleSheet">
+               <string>QPushButton { font-weight: bold; }</string>
+              </property>
+              <property name="text">
+               <string>Kør alle</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="groupBox4">
+         <property name="enabled">
+          <bool>false</bool>
+         </property>
+         <property name="styleSheet">
+          <string>QGroupBox { border: 2px solid black; padding: 10px; margin-top: 0px; }</string>
+         </property>
+         <property name="title">
+          <string/>
+         </property>
+         <layout class="QVBoxLayout" name="box4Layout">
+          <property name="spacing">
+           <number>6</number>
+          </property>
+          <item>
+           <widget class="QLabel" name="labelBox4Title">
+            <property name="text">
+             <string>&lt;b&gt;3. Regneark - omsætning:&lt;/b&gt;</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="oversvommelseRaekke">
+            <item>
+             <widget class="QLabel" name="labelOversvommelse">
+              <property name="text">
+               <string>(Oversvømmelse)</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="hjaelpOversvommelse">
+              <property name="cursor">
+               <cursorShape>WhatsThisCursor</cursorShape>
+              </property>
+              <property name="toolTip">
+               <string>Ikke i brug i denne version.</string>
+              </property>
+              <property name="styleSheet">
+               <string>QLabel { color: white; background-color: #1565C0; border-radius: 7px; padding: 0px 5px; font-weight: bold; }</string>
+              </property>
+              <property name="text">
+               <string>?</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="spacerOversvommelse">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="overrislingRaekke">
+            <item>
+             <widget class="QLabel" name="labelOverrisling">
+              <property name="text">
+               <string>Overrisling model</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="hjaelpOverrisling">
+              <property name="cursor">
+               <cursorShape>WhatsThisCursor</cursorShape>
+              </property>
+              <property name="toolTip">
+               <string>Beregner kvælstof-fjernelsesgraden (omsætningen) for det direkte opland ud fra jordbund og arealanvendelse. Kræver at "Udvælg oplande" er kørt først, da beregningen bruger Direkte_Opland-laget. Resultaterne indsættes i regnearket under "2. Omsætning".</string>
+              </property>
+              <property name="styleSheet">
+               <string>QLabel { color: white; background-color: #1565C0; border-radius: 7px; padding: 0px 5px; font-weight: bold; }</string>
+              </property>
+              <property name="text">
+               <string>?</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="spacerOverrisling">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btnKorOverrisling">
+              <property name="text">
+               <string>Kør</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="lblStatusOverrisling">
+              <property name="text"><string/></property>
+              <property name="visible"><bool>false</bool></property>
+              <property name="alignment"><set>Qt::AlignCenter</set></property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="ekstensiveringRaekke">
+            <item>
+             <widget class="QLabel" name="labelEkstensivering">
+              <property name="text">
+               <string>(Ekstensivering)</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="hjaelpEkstensivering">
+              <property name="cursor">
+               <cursorShape>WhatsThisCursor</cursorShape>
+              </property>
+              <property name="toolTip">
+               <string>Angiv graden af ekstensivering af landbruget (0–5) i tal-feltet. Tryk derefter på knappen for at skrive værdien til celle D56 i arket "2. Omsætning" i resultat-regnearket for hvert afkrydsede projektområde.</string>
+              </property>
+              <property name="styleSheet">
+               <string>QLabel { color: white; background-color: #1565C0; border-radius: 7px; padding: 0px 5px; font-weight: bold; }</string>
+              </property>
+              <property name="text">
+               <string>?</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="spacerEkstensivering">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QDoubleSpinBox" name="spinEkstensivering">
+              <property name="toolTip">
+               <string>Ekstensivering af landbrug (0–5). Skrives til celle D56 i arket "2. Omsætning".</string>
+              </property>
+              <property name="minimum">
+               <double>0.000000000000000</double>
+              </property>
+              <property name="maximum">
+               <double>5.000000000000000</double>
+              </property>
+              <property name="singleStep">
+               <double>0.100000000000000</double>
+              </property>
+              <property name="decimals">
+               <number>1</number>
+              </property>
+              <property name="value">
+               <double>2.500000000000000</double>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btnKorEkstensivering">
+              <property name="text">
+               <string>Kør</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="lblStatusEkstensivering">
+              <property name="text"><string/></property>
+              <property name="visible"><bool>false</bool></property>
+              <property name="alignment"><set>Qt::AlignCenter</set></property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="korAlleOmsaetningRaekke">
+            <item>
+             <spacer name="spacerKorAlleOmsaetning">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btnKorAlleOmsaetning">
+              <property name="styleSheet">
+               <string>QPushButton { font-weight: bold; }</string>
+              </property>
+              <property name="text">
+               <string>Kør alle</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="groupBoxRetuner">
+         <property name="styleSheet">
+          <string>QGroupBox { border: 2px solid black; padding: 10px; margin-top: 0px; }</string>
+         </property>
+         <property name="title">
+          <string/>
+         </property>
+         <layout class="QVBoxLayout" name="boxRetunerLayout">
+          <property name="spacing">
+           <number>6</number>
+          </property>
+          <item>
+           <widget class="QLabel" name="labelBoxRetunerTitle">
+            <property name="text">
+             <string>&lt;b&gt;Retuner data til projektområdepolygon:&lt;/b&gt;</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="retunerRaekke">
+            <item>
+             <widget class="QLabel" name="labelRetuner">
+              <property name="text">
+               <string>Retuner data</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="hjaelpRetuner">
+              <property name="cursor">
+               <cursorShape>WhatsThisCursor</cursorShape>
+              </property>
+              <property name="toolTip">
+               <string>Returnerer beregnede data fra excel tilbage til projektområde-polygonet som et nyt shapefillag i QGIS. </string>
+              </property>
+              <property name="styleSheet">
+               <string>QLabel { color: white; background-color: #1565C0; border-radius: 7px; padding: 0px 5px; font-weight: bold; }</string>
+              </property>
+              <property name="text">
+               <string>?</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="spacerRetuner">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btnRetuner">
+              <property name="text">
+               <string>Kør</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="lblStatusRetuner">
+              <property name="text"><string/></property>
+              <property name="visible"><bool>false</bool></property>
+              <property name="alignment"><set>Qt::AlignCenter</set></property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="aabenResultaterRaekke">
+            <item>
+             <widget class="QLabel" name="labelAabenResultater">
+              <property name="text">
+               <string>Vis resultater</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="hjaelpAabenResultater">
+              <property name="cursor">
+               <cursorShape>WhatsThisCursor</cursorShape>
+              </property>
+              <property name="toolTip">
+               <string>Åbner Excel-resultatfilen for projektområdet i Excel.</string>
+              </property>
+              <property name="styleSheet">
+               <string>QLabel { color: white; background-color: #1565C0; border-radius: 7px; padding: 0px 5px; font-weight: bold; }</string>
+              </property>
+              <property name="text">
+               <string>?</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="spacerAabenResultater">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QWidget" name="aabenResultaterContainer" native="true">
+              <layout class="QHBoxLayout" name="aabenResultaterContainerLayout">
+               <property name="spacing">
+                <number>4</number>
+               </property>
+               <property name="leftMargin">
+                <number>0</number>
+               </property>
+               <property name="topMargin">
+                <number>0</number>
+               </property>
+               <property name="rightMargin">
+                <number>0</number>
+               </property>
+               <property name="bottomMargin">
+                <number>0</number>
+               </property>
+              </layout>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <spacer name="spacerBottom">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>20</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+   <item>
+    <widget class="QDialogButtonBox" name="buttonBox">
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Close</set>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections>
+  <connection>
+   <sender>buttonBox</sender>
+   <signal>rejected()</signal>
+   <receiver>ModelMappeDialog</receiver>
+   <slot>reject()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>248</x>
+     <y>650</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>248</x>
+     <y>350</y>
+    </hint>
+   </hints>
+  </connection>
+ </connections>
+</ui>

@@ -1,0 +1,534 @@
+\section{Indledning}
+
+\textbf{Terraen\_model} er en QGIS Processing-model der automatisk opbygger en
+hydrologisk konditioneret terrænmodel til brug i vådområdemodellering. Modellen
+henter det danske højdepunktsnet (DHM Terræn) direkte fra Kortforsyningen,
+brænder drænlinjer (DHMLinje) ind i rastermodellen for at sikre korrekte
+afstrømningsveje, og udleder dernæst et kanalsystem til brug i videre
+oplandsbereegninger.
+
+Resultatet er tre outputfiler der gemmes automatisk i projektmappens
+\texttt{Outputfiler\_<omraade>/}-undermappe:
+
+\begin{itemize}
+  \item \texttt{Hoejdemodel.sdat} — Den konditionerede terrænmodel (SAGA-format)
+  \item \texttt{Channel\_Networks.gpkg} — Udledt kanalsystem
+  \item \texttt{DHMLinje\_Klippet.gpkg} — Klippede DHMLinje-linjer (én pr. parallel gruppe)
+\end{itemize}
+
+\textbf{Overordnet arbejdsgang:}
+
+\begin{enumerate}
+  \item Download DHM Terræn for projektområdet (inkl.\ 3 km buffer)
+  \item Hent og klip DHMLinje til samme buffer
+  \item Udvælg geometrisk centrale linjer der, hvor parallelle linjer overlapper
+  \item Drappe DHM's z-værdier på de udvalgte linjer
+  \item Beregn interpolerede kanalbundshøjder (\texttt{z\_interp}) langs linjerne
+  \item Brænd en V-formet dale ind i DHM med kosinusbaseret overgangszone (0–30 m)
+  \item Erstat kanalbunden direkte (4 m zone) med de interpolerede z-værdier
+  \item Fyld kunstige sænkninger (Fill Sinks)
+  \item Udled kanalsystem og drænoplande
+  \item Gem output
+\end{enumerate}
+
+
+\section{Inputparametre}
+
+\begin{tabular}{lp{10cm}}
+  \hline
+  \textbf{Parameter} & \textbf{Beskrivelse} \\
+  \hline
+  \texttt{projektomraade} & Et polygon-lag der definerer projektområdets udstrækning.
+    Modellen opretter en 3 km buffer og begrænser alle beregninger til dette udsnit. \\[4pt]
+  \texttt{token} & Adgangstoken til Kortforsyningen (Geodatastyrelsen).
+    Bruges til at hente DHM Terræn-data via WCS. \\
+  \hline
+\end{tabular}
+
+\medskip
+DHMLinje hentes automatisk fra mappehierarkiet og kræver ingen manuel
+parameterindstilling (se afsnit~\ref{sec:indput_dhmlinje}).
+
+
+\section{Modelkæden — trin for trin}
+
+\subsection{Trin 1 — Buffer (6000 m)}
+
+\begin{tabular}{ll}
+  \textit{Algoritme:} & \texttt{native:buffer} \\
+  \textit{Input:}     & \texttt{projektomraade} \\
+  \textit{Distance:}  & 6000 m \\
+\end{tabular}
+
+\medskip
+Projektområdet udvides med 6 km i alle retninger. Den store buffer sikrer, at
+DHM-downloaden og de efterfølgende hydrologiske beregninger ikke rammes af
+kanteffekter. Fill-Sinks-algoritmen er især følsom over for kortede
+terrænmodeller, idet kunstige ``vægge'' langs rasterets kant kan tvinge
+afstrømning i forkerte retninger. En bred buffer er særligt vigtig for
+store, flade vådområder med lange afstrømningsveje.
+
+\subsection{Trin 2 — Hent DHM Terræn (WCS)}
+
+\begin{tabular}{ll}
+  \textit{Algoritme:}  & \texttt{script:hent\_dhm\_wcs} \\
+  \textit{Service:}    & \texttt{api.dataforsyningen.dk/dhm\_wcs\_DAF} \\
+  \textit{Coverage:}   & \texttt{dhm\_terraen} \\
+  \textit{Opløsning:}  & 2 m/pixel (standard) \\
+  \textit{Projektion:} & EPSG:25832 (UTM zone 32N) \\
+\end{tabular}
+
+\medskip
+DHM Terræn er det danske LiDAR-baserede digitale terrænmodel med en original
+opløsning på ca.\ 0,4 m/pixel. Modellen downloader det relevante udsnit
+svarende til 3 km-bufferen. Opløsningen er som standard sat til 2 m/pixel for
+at balancere detaljegrad og procestid; den kan nedjusteres til 0,4 m for høj
+præcision eller op til 10 m for oversigtsformål.
+
+GDAL's WCS-driver bruges til at åbne servicen via en XML-konfiguration gemt i
+GDAL's virtuelle filsystem (\texttt{/vsimem/}). Derefter udklippes og resamples
+det ønskede udsnit med \texttt{gdal.Translate}.
+
+\subsection{Trin 3 — Indput DHMLinje (automatisk)}
+
+\begin{tabular}{ll}
+  \textit{Algoritme:} & \texttt{script:indput\_dhmlinje} \\
+  \textit{Kilde:}     & \texttt{Grunddata/DHMLinje/DHMLinje.shp} \\
+\end{tabular}
+
+\medskip
+DHMLinje er et linjekortlag der repræsenterer vandløb og drænkanaler.
+I stedet for at brugeren manuelt skal pege på filen, finder scriptet automatisk
+\texttt{DHMLinje.shp} ved at søge opad og nedad i mappehierarkiet fra enten en
+brugerkonfigureret rodmappe (\texttt{QgsSettings}) eller QGIS-projektets
+hjemmemappe. Se afsnit~\ref{sec:indput_dhmlinje} for detaljer.
+
+\subsection{Trin 4 — Klip DHMLinje til buffer}
+
+\begin{tabular}{ll}
+  \textit{Algoritme:} & \texttt{native:clip} \\
+  \textit{Input:}     & DHMLinje (fra trin 3) \\
+  \textit{Overlay:}   & 3000 m buffer (fra trin 1) \\
+\end{tabular}
+
+\medskip
+Begrænser DHMLinje-laget til det relevante undersøgelsesområde og reducerer
+efterfølgende procestid i trin 5–14.
+
+\subsection{Trin 5 — Udvælg midterste linjer}
+
+\begin{tabular}{ll}
+  \textit{Algoritme:}   & \texttt{script:udpeg\_midterste\_linjer} \\
+  \textit{Søgeafstand:} & 8 m \\
+\end{tabular}
+
+\medskip
+DHMLinje-datasættet indeholder mange steder to eller flere parallelle linjer der
+repræsenterer det samme vandløb. Hvis alle linjer bruges i den efterfølgende
+V-profil-korrektion, opstår der sammenstødende bufferzoner og inkonsistente
+z-værdier.
+
+Scriptet grupperer linjer der ligger inden for 8 m af hinanden (buffer +
+dissolve + singleparts) og beholder for hver gruppe kun den linje, hvis
+tyngdepunkt er geometrisk tættest på gruppens samlede tyngdepunkt. Se
+afsnit~\ref{sec:midterste_linjer} for detaljer.
+
+\subsection{Trin 6 — Drappe Z fra DHM}
+
+\begin{tabular}{ll}
+  \textit{Algoritme:} & \texttt{native:setzfromraster} \\
+  \textit{Input:}     & Midterste linjer (fra trin 5) \\
+  \textit{Raster:}    & DHM Terræn (fra trin 2) \\
+  \textit{Band:}      & 1 \\
+  \textit{NODATA:}    & $-9999$ \\
+\end{tabular}
+
+\medskip
+Tildeler en z-koordinat til hvert knudepunkt på de udvalgte linjer ved at slå
+DHM-højden op i den tilsvarende rastercelle. Outputlaget er 3D-linjer, hvor
+hvert vertex har en z-værdi der afspejler det aktuelle terræn.
+
+Drapping-trinnet er nødvendigt fordi \texttt{native:pointsalonglines} (trin 8)
+udlæser z-koordinaten fra linjernes geometri som \texttt{\$z}-attributten.
+Uden dette trin ville alle z-værdier være 0 eller udefinerede, og
+z\_interp-beregningen i trin 9 ville give NULL for alle punkter.
+
+\subsection{Trin 7 — Beregn linjelængde}
+
+\begin{tabular}{ll}
+  \textit{Algoritme:} & \texttt{native:fieldcalculator} \\
+  \textit{Nyt felt:}  & \texttt{line\_length} \\
+  \textit{Udtryk:}    & \texttt{\$length} \\
+\end{tabular}
+
+\medskip
+Tilføjer linjelængden som et attributfelt til hver DHMLinje-feature. Feltet
+bruges i trin 8 til at generere samplingpunkter med korrekt afstandsangivelse.
+
+\subsection{Trin 8 — Punkter langs linjer (2 m)}
+
+\begin{tabular}{ll}
+  \textit{Algoritme:} & \texttt{native:pointsalonglines} \\
+  \textit{Interval:}  & 2 m \\
+\end{tabular}
+
+\medskip
+Genererer samplingpunkter langs hver DHMLinje-feature med 2 m mellemrum.
+Hvert punkt arver linjens 3D-geometri fra trin 6, og z-koordinaten er
+tilgængelig via QGIS-udtrykket \texttt{\$z}. Algoritmen tilføjer desuden
+attributten \texttt{distance} (afstand fra linjens startpunkt).
+
+\subsection{Trin 9 — Beregn z\_interp}
+
+\begin{tabular}{ll}
+  \textit{Algoritme:} & \texttt{native:fieldcalculator} \\
+  \textit{Nyt felt:}  & \texttt{z\_interp} \\
+  \textit{Udtryk:}    & \texttt{"START\_Z" + ("END\_Z" - "START\_Z") * ("distance" / "line\_length")} \\
+\end{tabular}
+
+\medskip
+Forsøger at beregne en lineær kanalbundshøjde der interpoleres fra linjens
+startpunkt (\texttt{START\_Z}) til slutpunkt (\texttt{END\_Z}) proportionalt
+med afstanden \texttt{distance}. Hensigten er at bruge DHM-terrænet i endepunkterne
+som reference frem for de rå, potentielt støjbehæftede punkthøjder langs linjen.
+
+\medskip
+\textbf{Praktisk begrænsning:} \texttt{START\_Z} og \texttt{END\_Z} er ikke
+standardattributter fra \texttt{native:pointsalonglines}. Hvis inputlinjerne ikke
+allerede har disse felter, returnerer feltberegneren NULL for alle samplingpunkter.
+I praksis bidrager z\_interp-rasteret (trin 11) derfor ikke til den endelige
+terrænmodel — terrænkonditioneringen baseres udelukkende på V-profil-sænkningen
+fra trin 14. Se afsnit~\ref{sec:begr} (kendte begrænsninger) for perspektiv.
+
+\subsection{Trin 10 — Buffer (4 m) om z\_interp-punkter}
+
+\begin{tabular}{ll}
+  \textit{Algoritme:} & \texttt{native:buffer} \\
+  \textit{Distance:}  & 4 m \\
+\end{tabular}
+
+\medskip
+Opbygger en 4 m bred zone langs kanalen. Inden for denne zone erstattes DHM
+direkte med de interpolerede z\_interp-værdier (trin 11 og 15). Zone-bredden
+svarer til kanalbundens umiddelbare omgivelser og sikrer, at den brændte kanal
+er geometrisk sammenhængende i det endelige raster.
+
+\subsection{Trin 11 — Rasterize z\_interp}
+
+\begin{tabular}{ll}
+  \textit{Algoritme:} & \texttt{gdal:rasterize} \\
+  \textit{Burn felt:} & \texttt{z\_interp} \\
+  \textit{NODATA:}    & $-9999$ \\
+\end{tabular}
+
+\medskip
+Konverterer z\_interp-punkternes 4 m bufferzoner til et raster med samme
+opløsning og udstrækning som DHM. Celler inden for bufferzonerne får
+z\_interp-værdien; alle øvrige celler sættes til NODATA ($-9999$).
+
+\subsection{Trin 12 — Rasterize DHMLinje (binær)}
+
+\begin{tabular}{ll}
+  \textit{Algoritme:} & \texttt{gdal:rasterize} \\
+  \textit{BURN:}      & 1 \\
+  \textit{INIT:}      & 0 \\
+\end{tabular}
+
+\medskip
+Opretter et binært raster (0/1) der angiver, hvilke celler der ligger direkte
+på en DHMLinje. Outputtet bruges i trin 13 som kilde til afstandsberegningen.
+
+\subsection{Trin 13 — Nærhedsraster (proximity)}
+
+\begin{tabular}{ll}
+  \textit{Algoritme:}     & \texttt{gdal:proximity} \\
+  \textit{MAX\_DISTANCE:} & 25 m \\
+  \textit{NODATA:}        & 26 \\
+\end{tabular}
+
+\medskip
+Beregner for hver rastercelle den korteste afstand til nærmeste DHMLinje-celle.
+Celler mere end 25 m væk tildeles NODATA-værdien 26, hvilket sikrer, at
+V-profilkorrektionen ikke påvirker terrænnet uden for en 25 m-zone.
+Zonebredden er afstemt med den hydrologiske bremseeffekt: kanalen giver kun
+meningsfuld drænpåvirkning inden for ca.\ 25 m fra vandløbslinjen.
+
+\subsection{Trin 14 — Rasterberegner: kosinusbaseret V-profil}
+
+\begin{tabular}{ll}
+  \textit{Algoritme:} & \texttt{gdal:rastercalculator} \\
+  \textit{Raster A:}  & DHM (fra trin 2) \\
+  \textit{Raster B:}  & Nærhedsraster (fra trin 13) \\
+\end{tabular}
+
+\medskip
+Formlen:
+\begin{verbatim}
+A - numpy.maximum(0.0,
+      1.0 + numpy.cos(numpy.pi * numpy.minimum(B, 25.0) / 25.0))
+\end{verbatim}
+
+Dette er kernen i terrænkonditioneringen. Den skaber en blød V-formet
+sænkning i DHM, centreret om DHMLinje, med:
+
+\begin{itemize}
+  \item \textbf{Maksimal korrektion ved afstand = 0:}
+        $1 + \cos(0) = 2$ meter sænkning
+  \item \textbf{Nul-korrektion ved afstand = 25 m:}
+        $1 + \cos(\pi) = 0$ meter ændring
+  \item \textbf{Glat overgang:} Kosinusfunktionen giver en S-kurveformet
+        aftrapning, som undgår de skarpe kanter der opstår ved lineær aftrapning.
+  \item \textbf{Beskyttelse mod opløftning:}
+        \texttt{numpy.maximum(0, \ldots)} sikrer, at formlen aldrig hæver terrænet.
+\end{itemize}
+
+Matematisk:
+\[
+  z'(d) = z(d) - \max\!\left(0,\; 1 + \cos\!\left(\frac{\pi \cdot \min(d,\,25)}{25}\right)\right)
+\]
+hvor $d$ er afstand til DHMLinje i meter og $z$ er den originale DHM-højde.
+
+\subsection{Trin 15 — Merge: kombiner V-profil og z\_interp}
+
+\begin{tabular}{ll}
+  \textit{Algoritme:}        & \texttt{gdal:merge} \\
+  \textit{Lag (rækkefølge):} & {[V-profil raster, z\_interp raster]} \\
+  \textit{NODATA\_INPUT:}    & $-9999$ \\
+\end{tabular}
+
+\medskip
+z\_interp-rasteret (trin 11) har NODATA for alle celler uden for 4 m-bufferen,
+og V-profil-rasteret (trin 14) dækker hele fladen. Ved at liste z\_interp-rasteret
+sidst i stakken \emph{overskriver} dets gyldige celler V-profil-værdierne i
+kanalbunden, mens V-profil-rasteret udfylder resten.
+
+Det endelige resultat er et DHM der:
+\begin{enumerate}
+  \item Er uændret mere end 30 m fra DHMLinje
+  \item Er glat sænket i 0–30 m-zonen (kosinusovergang)
+  \item Er erstattet med faktiske DHM-kanalbundsværdier i 0–4 m-zonen
+\end{enumerate}
+
+\subsection{Trin 16 — Fill Sinks (Wang \& Liu)}
+
+\begin{tabular}{ll}
+  \textit{Algoritme:}  & \texttt{native:fillsinkswangliu} \\
+  \textit{Input:}      & Merge-raster (trin 15) \\
+  \textit{MIN\_SLOPE:} & 0,01 \\
+\end{tabular}
+
+\medskip
+SAGA's Wang \& Liu-algoritme fjerner kunstige sænkninger i terrænmodellen som
+hindrer sammenhængende afstrømningsveje. Et minimumsgradient på 0,01 sikrer at
+alle overflader har en svag hældning og derved afvander til en kant frem for at
+samle i et lokalt lavpunkt.
+
+Fill Sinks er nødvendigt selv efter V-profilkorrektionen, fordi lokale
+LiDAR-artefakter (broer, bygninger, vegetationssupport) kan skabe lukkede
+sænkninger, og DHM-rasterets kantceller skal have klare afstrømningsveje.
+
+\subsection{Trin 17 — Kanalsystem og drænoplande}
+
+\begin{tabular}{ll}
+  \textit{Algoritme:} & \texttt{sagang:channelnetworkanddrainagebasins} \\
+  \textit{THRESHOLD:} & 5 \\
+\end{tabular}
+
+\medskip
+SAGA's \textit{Channel Network and Drainage Basins}-modul beregner akkumuleret
+afstrømningsareal og udleder kanaler der, hvor den akkumulerede afstrømning
+overstiger tærskelværdien 5. Tærskelværdien styrer kanalnetværkets densitet:
+lavere værdier giver tættere net, højere værdier giver grovere net.
+
+\subsection{Trin 18 — Gem output}
+
+\begin{tabular}{ll}
+  \textit{Algoritme:} & \texttt{script:terraen\_model\_output} \\
+\end{tabular}
+
+\medskip
+Gemmer de tre resultater i projektmappens \texttt{Outputfiler\_<omraade>/}:
+\begin{itemize}
+  \item \texttt{Hoejdemodel.sdat} — Det konditionerede raster konverteret til
+        SAGA-format med \texttt{gdal:translate}
+  \item \texttt{Channel\_Networks.gpkg} — Kanalsystemet som GeoPackage
+  \item \texttt{DHMLinje\_Klippet.gpkg} — De udvalgte DHMLinje-linjer (én pr.
+        parallel gruppe) med drappede z-værdier, som GeoPackage
+\end{itemize}
+Scriptet håndterer Windows-fillåse ved at fjerne indlæste lag, køre Python's
+garbage collector og afvente GDAL's OGR-forbindelseslukninger.
+
+
+\section{Hjælpescripts}
+
+Alle scripts ligger i mappen \texttt{Scripts/} og registreres automatisk i
+QGIS Processing ved opstart via \texttt{modelmappe\_interface.py}.
+
+\subsection{hent\_dhm\_wcs\_script.py}
+
+Downloader DHM Terræn fra Kortforsyningen via GDAL's WCS-driver.
+
+\begin{itemize}
+  \item Bygger en WCS-XML-konfiguration i GDAL's virtuelle filsystem
+        (\texttt{/vsimem/dhm\_wcs.xml}) med service-URL og coverage-navn
+  \item Åbner servicen som et virtuelt GDAL-datasæt
+  \item Udklippes og resamples det ønskede udsnit med \texttt{gdal.Translate}
+  \item Understøtter opløsninger fra 0,4 m (original LiDAR) til 10 m
+\end{itemize}
+
+\textbf{Hvorfor scriptet er nødvendigt:} QGIS's standardalgoritmer kan hente
+WMS/WFS, men ikke WCS i rasterformat med brugerdefineret opløsning og automatisk
+klipning til et bbox — det kræver GDAL-API direkte.
+
+\subsection{Indput\_DHMLinje.py}
+\label{sec:indput_dhmlinje}
+
+Finder og returnerer stien til \texttt{DHMLinje.shp} automatisk uden brugerinput.
+
+Søgelogikken er trelaget:
+\begin{enumerate}
+  \item Tjekker brugerkonfigureret rodmappe fra \texttt{QgsSettings}
+        (\texttt{vaadomraade\_modeller/mappe}), inkl.\ rekursiv søgning nedad
+        i op til 4 mappeniveauer
+  \item Søger opad fra QGIS-projektets hjemmemappe i op til 6 niveauer
+  \item Kaster \texttt{QgsProcessingException} med vejledende besked hvis
+        ingen søgning lykkes
+\end{enumerate}
+
+\textbf{Hvorfor scriptet er nødvendigt:} En hardkodet sti ville kræve manuel
+tilpasning ved hvert projekt. Søgelogikken gør modellen portabel på tværs af
+maskiner og projektmappestrukturer, blot \texttt{Grunddata/DHMLinje/} er til
+stede et sted i hierarkiet.
+
+\subsection{Udpeg\_Midterste\_Linjer.py}
+\label{sec:midterste_linjer}
+
+Udvælger én repræsentativ linje per gruppe af parallelle linjer.
+
+\textbf{Algoritme:}
+\begin{enumerate}
+  \item Buffer på \texttt{distance} meter (standard: 8 m) om alle inputlinjer
+        + dissolve til ét multi-polygon-objekt
+  \item \texttt{native:multiparttosingleparts} splitter multi-polygon'en op i
+        individuelle polygoner — én per sammenhængende klynge af parallelle linjer
+  \item For hver gruppe-polygon beregnes dens centroid
+  \item Alle inputlinjer der overlapper polygonen evalueres; den hvis centroid
+        er nærmest polygon-centroiden markeres som vinder
+  \item Kun vinderlinjerne skrives til outputlaget
+\end{enumerate}
+
+\textbf{Resultat ved $n$ parallelle linjer:}
+\begin{itemize}
+  \item $n$ ulige: den geometrisk midterste linje vælges
+  \item $n$ lige: den linje der er nærmest midtpunktet vælges
+  \item $n = 1$: linjen passerer uændret igennem
+\end{itemize}
+
+\textbf{Hvorfor multiparttosingleparts er nødvendigt:} \texttt{native:buffer}
+med \texttt{DISSOLVE: True} returnerer et enkelt multi-polygon-objekt når blot
+to buffere overlapper. Uden opsplitning behandles hele DHMLinje-netværket som
+én gruppe, og kun én enkelt linje overlever filtreringen.
+
+\textbf{Hvorfor scriptet er nødvendigt:} DHMLinje-datasættet indeholder hyppigt
+to (eller flere) parallelle digitaliserede linjer for samme vandløb. Bruges alle
+linjer, opstår der overlappende V-profil-zoner der skaber uregelmæssige
+fordybninger og rygge i det konditionerede raster.
+
+\subsection{Terraen\_model\_output.py}
+
+Gemmer modelresultaterne til disk og håndterer Windows-specifikke fillåseproblemer.
+
+\begin{itemize}
+  \item Finder output-mappen via \texttt{QgsSettings}:
+        \texttt{<rod>/<projekt>/<omraade>/Outputfiler\_<omraade>/}
+  \item Konverterer rasteret til SAGA-format (\texttt{.sdat}) med
+        \texttt{gdal:translate}
+  \item Gemmer \texttt{DHMLinje\_Klippet.gpkg} med
+        \texttt{QgsVectorFileWriter.writeAsVectorFormatV3}
+  \item Håndterer Windows-fillåse på GPKG-filer med fjernelse af lag fra
+        projektet, \texttt{gc.collect()}, OGR \texttt{DeleteDataSource} og
+        en retry-løkke med korte pauser
+\end{itemize}
+
+
+\section{Outputfiler}
+
+\begin{tabular}{lp{9cm}}
+  \hline
+  \textbf{Fil} & \textbf{Indhold} \\
+  \hline
+  \texttt{Hoejdemodel.sdat} &
+    Konditioneret og sink-fyldt terrænmodel i SAGA-format. Bruges direkte i
+    SAGA-baserede hydrologimodeller og kan indlæses i QGIS som et rasterbånd. \\[4pt]
+  \texttt{Channel\_Networks.gpkg} &
+    Udledt kanalsystem som vektorlinjer. Inkluderer SAGA's standardattributter:
+    flow accumulation, kanalbrede-estimat m.fl. \\[4pt]
+  \texttt{DHMLinje\_Klippet.gpkg} &
+    De udvalgte DHMLinje-linjer klippet til 3 km-bufferen (én pr. parallel
+    gruppe), med drappede z-værdier fra DHM Terræn. Bruges til visuel kontrol
+    og kan danne grundlag for videre hydraulisk modellering. \\
+  \hline
+\end{tabular}
+
+
+\section{Forudsætninger og opsætning}
+
+\begin{enumerate}
+  \item \textbf{Projektmappestruktur:} Interfacet (\texttt{modelmappe\_interface.py})
+        skal have registreret rodmappen under \texttt{QgsSettings}-nøglerne
+        \texttt{vaadomraade\_modeller/mappe}, \texttt{/projektnavn} og
+        \texttt{/projektomraade\_navn}.
+
+  \item \textbf{Grunddata:} Mappen \texttt{Grunddata/DHMLinje/DHMLinje.shp}
+        skal være tilgængelig i hierarkiet under rodmappen.
+
+  \item \textbf{Kortforsyningen-token:} En gyldig API-token er påkrævet for
+        at downloade DHM Terræn. Tokens udstedes gratis på
+        \texttt{dataforsyningen.dk}.
+
+  \item \textbf{QGIS-plugins:} SAGA-algoritmer kræver SAGA installeret og
+        registreret i QGIS Processing
+        (\textit{Processing} $\to$ \textit{Options} $\to$ \textit{Providers}
+        $\to$ \textit{SAGA}).
+
+  \item \textbf{QGIS-projektet} skal være gemt (\textit{Navngiv projekt} i
+        interfacet), og \textit{Tilføj projektområde} skal have oprettet
+        outputmappen, inden \texttt{Terraen\_model} køres.
+\end{enumerate}
+
+
+\section{Kendte begrænsninger}
+\label{sec:begr}
+
+\begin{itemize}
+  \item \textbf{z\_interp virker ikke uden START\_Z/END\_Z-felter:}
+        Den lineære interpolationsformel i trin 9 forudsætter at inputlaget
+        har attributterne \texttt{START\_Z} og \texttt{END\_Z}. Da
+        \texttt{native:pointsalonglines} ikke tilføjer disse felter automatisk,
+        er \texttt{z\_interp} NULL for alle punkter i praksis. Det medfører at
+        trin 11 (rasterize z\_interp) producerer et raster med udelukkende
+        NODATA, og at trin 15 (merge) alene baseres på V-profil-sænkningen.
+        For fuld funktionalitet bør formlen erstattes med \texttt{\$z}, der
+        aflæser Z-koordinaten direkte fra punktets geometri (sat af
+        \texttt{setzfromraster} i trin 6).
+
+  \item \textbf{Afbrudte linjesegmenter:} Hvis DHMLinje-segmenter ikke er
+        forbundne ende til ende, kan kanalsystemet (trin 17) vælge
+        afstrømningsveje der omgår de brændte kanaler. Løsningen er at sikre
+        geometrisk sammenhæng i inputdatasættet.
+
+  \item \textbf{Z-værdier fra DHM:} \texttt{z\_interp} afspejler den faktiske
+        DHM-højde i hvert samplingpunkt. Ved linjer der krydser vejdæmninger
+        eller broer kan z-værdien være forhøjet relativt til den egentlige
+        kanalbund, da DHM inkluderer befæstede overflader. Korrekt håndtering
+        af sådanne krydsninger kræver supplerende data (fx ledningsregistre).
+
+  \item \textbf{Netværksforbindelse:} Trin 2 kræver adgang til
+        \texttt{api.dataforsyningen.dk} port 443. I netværksmiljøer med
+        proxy eller VPN skal GDAL/QGIS konfigureres med korrekte
+        proxyindstillinger.
+
+  \item \textbf{DHM-opløsning:} Standard 2 m er passende for
+        vådområdemodellering i hektar-skala. For meget store projektområder
+        ($>50~\text{km}^2$) anbefales 5–10 m for at reducere procestiden.
+\end{itemize}

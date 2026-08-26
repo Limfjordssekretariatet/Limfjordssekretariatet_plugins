@@ -10,3 +10,12 @@ Desktop.ini
 # Markkort-data distribueres via GitHub release (for stort til plugin-zip),
 # downloades + caches af pluginnet ved første brug. Hold det ude af git.
 plugins/Limf_SoilSurvey/Data/
+
+# N-regnearkets store referencedata distribueres via GitHub release
+# (grunddata-v1) og hentes + caches af pluginnet ved foerste brug.
+# Tilsammen 4 GB — de maa ikke i git.
+plugins/Limf_Nregneark/Grunddata/Jordbundskort_2024/
+plugins/Limf_Nregneark/Grunddata/Marker_2024/
+plugins/Limf_Nregneark/Grunddata/Befaestet_Areal/
+plugins/Limf_Nregneark/Grunddata/Vandloeb/
+plugins/Limf_Nregneark/Grunddata/DHMLinje/

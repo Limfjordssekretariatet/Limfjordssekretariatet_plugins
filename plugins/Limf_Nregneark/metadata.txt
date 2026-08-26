@@ -1,0 +1,137 @@
+[general]
+name=Vandprojekter – N-regneark
+qgisMinimumVersion=3.38
+description=Automatisk udfyldning af kvælstof-regneark (N) for vådområdeprojekter
+version=2.5
+author=Limfjordssekretariatet
+email=henrik.rosenskjold@aalborg.dk
+homepage=https://limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/
+tracker=https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues
+repository=https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins
+tags=kvælstof,n-regneark,vådområde,opland,vandløb,terræn
+category=Plugins
+icon=icon.png
+
+about=Et samlet interface der styrer hele vådområde-arbejdsgangen fra ét vindue:
+ 1) Vælg en placering hvor resultater gemmes (standard: C:\temp), navngiv projektet og angiv Dataforsyningen-token.
+ 2) Tilføj ét eller flere projektområder (.shp).
+ 3) Kør de forberedende data, tilførsels- og omsætningsmodeller — resultaterne skrives til regneark og gemmes pr. projektområde.
+ .
+ Scripts og modeller følger med og registreres automatisk i QGIS Processing ved opstart. Den valgte mappe bruges udelukkende til resultater.
+ .
+ De store referencedata (jordbundskort, marker, befæstet areal, vandløb, DHMLinje) fylder 4 GB og følger IKKE med pakken. De hentes fra en GitHub release første gang et trin skal bruge dem, og gemmes i QGIS-profilen, så de kun hentes én gang og overlever en plugin-opdatering.
+
+changelog=2.5
+ - Nyt lag: Deloplande.gpkg. Modellen delte allerede oplandet op — vandløbsoplandene
+   ét pr. kortlagt vandløb, det direkte opland efter hvordan vandet kommer ind — men
+   opdelingen forsvandt i to samlede polygoner. Nu ligger alle deloplande i ét lag med
+   en type-kolonne, farvet efter den.
+ - Vil man flytte et delopland mellem vandløbsopland og direkte opland, retter man
+   type-kolonnen. Den er en dropdown med de to lovlige værdier, så en stavefejl ikke
+   tavst kan tage et delopland ud af begge summer. Kolonnen beregnet_som står
+   uændret med modellens eget bud, så man kan se hvad der er rettet i hånden.
+ - Vandoplandet.gpkg og Direkte_Opland.gpkg udledes af deloplandene, hver gang
+   "Beregn vandopland" eller "Beregn direkte opland" køres. En rettelse slår altså
+   igennem uden et ekstra skridt. De to filer er stadig ét samlet polygon hver —
+   regnearkskæden læser arealet fra første objekt og kan ikke tåle flere.
+ - Advarsel hvis en af de to typer ender tom: regnearket ville ellers regne videre
+   på nul uden at sige fra.
+ 2.4
+ - Den øverste boks er halveret i højde. Hvert felt havde en række til navnet og
+   ?-ikonet og en række til under med selve feltet — otte rækker til fire felter. Nu
+   står navn, ikon og felt på samme linje.
+ - Boksen bestemmer ikke længere vinduets bredde. Felterne strakte sig ud i hele
+   boksens bredde, så boks 1 nåede længere ud end alt andet indhold. Nu har felterne
+   samme faste bredde som trin-knapperne og står i kolonne med dem, og rækken slutter
+   inden for det øvrige indhold.
+ - Kortere navne i boks 1: "Vælg placering hvor data skal gemmes" blev til
+   "Datamappe", "Navngiv projekt" til "Projektnavn" og "Indsæt dataforsyningen token"
+   til "Dataforsyningen-token". De gamle navne var to til tre gange bredere end
+   navnekolonnen og blev klippet. Forklaringen står uændret på ?-ikonet.
+ - Projektområdet vælges nu blandt polygonlagene i QGIS-projektet. Menuen med
+   "Fra fil…"/"Fra kortlag…" og fildialogen er væk — ét klik i stedet for tre.
+   Ligger laget kun i hukommelsen, gemmes det stadig til disk først.
+ 2.3
+ - Hvert trin har nu én knap. "eller"-labelen og knappen til højre, hvor man kunne bruge
+   sine egne lag i stedet for at køre trinnet, er fjernet.
+ - "Download højdemodel" hedder nu "Beregn strømningsveje" — det er det, trinnet gør.
+   Terrænet er midlet, ikke målet, og det skaffes selv: fra det præberegnede grundlag
+   hvis det dækker området, ellers fra Dataforsyningen.
+ - Knappen tvinger ikke længere en ny download. Et tidligere hentet terræn genbruges,
+   hvis det dækker projektområdet og er nyere end det — ellers hentes der forfra.
+ 2.2
+ - Fill-trinnet er nu Wang & Liu. Whitebox' fill_depressions forsoegte at allokere 128 GiB paa
+   rasterer over ca. 30 mio. celler og rev processen med sig uden fejlbesked — det ramte
+   baade store projektomraader og praeberegningen. Maalt mod hinanden paa det samme opland
+   afviger det konditionerede terraen paa 2,6 %% af cellerne, vandoplandet med 0,95 %%, og
+   traefprocenten mod de kortlagte vandloeb blev bedre (94,0 mod 85,3 %%).
+ - Et omraade uden kortlagte vandloeb stopper ikke laengere koerslen. Baade
+   vandloebsbraendingen, tilpasningslinjerne og stroemningsvejene springes over naar der
+   ikke er noget at bruge dem paa, og hele arealet bliver direkte opland — hvilket er den
+   rigtige beskrivelse af stedet.
+ - Strahler-orden og vektoriseringen af stroemningsvejene regnes nu selv i stedet for i
+   Whitebox. Providerens svar "Error creating algorithm from createInstance()" ramte hver
+   eneste flise over ca. 54 km2, og at registrere den forfra hjalp ikke. Begge dele er
+   holdt op mod Whitebox' egne paa et ukroppet raster: ordenen er enig celle for celle, og
+   nettet giver samme antal straekninger pr. orden med 0,01 %% forskel i samlet laengde.
+ - "Brug lokal hoejdemodel" virker nu uden et Dataforsyningen-token. Token-parameteren var
+   erklaeret paakraevet, saa trinnet stoppede med "Incorrect parameter value for TOKEN",
+   selv om hentescriptet udmaerket kunne springe WCS over.
+ - Praeberegnet grundlag: version 4. Gamle fliser afvises, fordi konditioneringen er
+   aendret.
+ 2.1
+ - Ny hydrologisk model bag BEGGE beregningstrin (Scripts/oplande.py, Whitebox).
+ - "Beregn strømningsveje" erstatter terraen_model.model3: terrænet hentes råt og
+   konditioneres med DHM/Hydros tilpasningskoter (START_Z/END_Z erstatter terrænet, så broer
+   og rørunderføringer ikke bliver kunstige vandskel), det kortlagte vandløbsnetværk brændes
+   ind med påtvunget monotont fald, og der breaches før der fyldes — ren fill lavede
+   plateauer med vilkårlig strømningsretning. Strømningsvejene udledes med D8.
+   Skriver DHM_raa.tif, Hoejdemodel.tif og Channel_Networks.gpkg (Strahler-orden i ORDER).
+ - "Beregn oplande" erstatter sagang:upslopearea-beregningen: totaloplandet spores opstrøms
+   fra projektområdet, vandløbsoplandene udpeges pr. indløbspunkt med spærre ved
+   projektgrænsen, og det direkte opland udledes som restareal — så
+   direkte + Σ vandløbsoplande = totalopland altid holder.
+ - De to trin deler konfiguration og mellemresultater: oplandstrinnet genbruger
+   konditioneringen i stedet for at lave den forfra.
+ - Nyt grunddata: kortlagt vandløbsnetværk som linjer (Grunddata/Vandloeb_AIS).
+ - Hele oplandsleverancen (indløbspunkter, delarealer pr. vandløb, beregnede vandveje, QA og
+   forbehold) gemmes i Outputfiler_<omraade>/Oplande.gpkg. Vandoplandet.gpkg,
+   Direkte_Opland.gpkg og Klippe_Omraade.gpkg er uændrede, så de øvrige modeller kører videre.
+ - Præberegnet oplandsgrundlag: trin 0-2 (konditionering, D8, akkumulering) afhænger kun af
+   terrænet og parametrene, ikke af projektområdet, og kan derfor beregnes én gang pr. opland
+   med Scripts/Praeberegn_Oplandsgrundlag.py. Dækker en flise projektområdet, og er den lavet
+   med de samme parametre, springer begge trin konditioneringen over — målt 1,8 s + 11,2 s mod
+   download plus minutters konditionering. Biblioteksmappen sættes under Avanceret.
+   Hver flise gemmer kun oplandets eget opstrøms-areal plus en margin (halverer pladsen), og
+   bærer sit dækningsområde som polygon: ligger projektområdet ikke helt inden for det,
+   afvises flisen og terrænet konditioneres lokalt. Uden det tjek ville et projektområde i
+   flisens hjørne få oplandet afkortet ved NoData uden at kantkontaminerings-tjekket fangede
+   det, fordi det kun måler celler på selve rasterkanten.
+ - Grundlaget kan hentes fra nettet: er der ikke en flise lokalt, slår pluginnet op i en
+   fortegnelse (index.json) på en udgivelsesadresse, henter den ene flise der dækker
+   projektområdet og er beregnet med brugerens egne parametre, verificerer den mod sha256 og
+   lægger den i det lokale bibliotek. Adressen sættes i indstillingen
+   vaadomraade_modeller/grundlag_url. Scripts/Udgiv_Grundlag.py pakker et bibliotek til
+   udgivelse (én zip pr. flise) og skriver fortegnelsen.
+ - Strømningsvejene dækker nu de kortlagte vandløb: akkumuleringstærsklen stopper nettet i
+   toppen af hvert forløb, så der spores nedstrøms fra det øverste punkt i hvert hul på de
+   kortlagte linjer. Nettet klippes desuden til oplandets eget opstrøms-areal, så
+   nabooplandenes vandløb ikke følger med.
+ - Kontrol ved hver kørsel: træfprocenten mod det kortlagte vandløbsnetværk måles og meldes,
+   så det opdages hvis brændingen ikke er slået igennem. Mål 90 %%.
+ - Forbehold fra beregningen (kantkontaminering, fejlede QA-tjek, lav træfprocent) vises nu i
+   dialogen og skrives i QGIS' Log-panel i stedet for kun at stå i en logfil.
+ - Kræver plugin'et "Whitebox Workflows for QGIS".
+ 2.0
+ - Scripts, Modeller og Grunddata følger nu altid med pluginnet og hentes derfra — ikke længere fra en bruger-valgt mappe.
+ - Scripts registreres automatisk i QGIS Processing ved opstart; den manuelle "Opdater scripts"-knap er fjernet.
+ - "Udpeg vedlagte mappe" er nu "Vælg placering hvor data skal gemmes" (ren outputmappe) med C:\temp som standard.
+ - Dataforsyningen-token forudfyldes (testmiljø).
+ - Nyt regneark-ikon på værktøjslinjen og i dialogens titellinje.
+ 0.1
+ - Første version.
+
+
+experimental=False
+deprecated=False
+hasProcessingProvider=no

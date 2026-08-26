@@ -6,12 +6,13 @@ Fælles plugin-repository med værktøjer udviklet af Limfjordssekretariatet til
 
 | Plugin (vises i QGIS) | Version | Beskrivelse |
 |-----------------------|---------|-------------|
-| **LIMF - Jordbund** | 3.2.7 | Håndtering af jordprøver – grid (markkort-baseret), centerpunkter, QField-klargøring og rapporteksport |
-| **LIMF - Vådområdeværktøjer** | 4.0.11 | Diverse GIS-værktøjer (jordberegning, terræninterpolation m.m.) |
-| **LIMF - Dræn** | 0.2.9 | Find drænudløbspunkter baseret på fald og DEM |
-| **LIMF - Lodsejer Atlas Mapbook** | 0.2.1 | Genererer et lodsejer-atlas (mapbook) ud fra en layout-skabelon med auto-mapping af felter |
-| **LIMF - Lodsejerudtræk** | 0.1 | Henter matrikler og ejeroplysninger for et valgt polygon via Datafordeleren/CVR |
-| **LIMF - VASP** | 1.0.1 | Integration mellem VASP Access-database og QGIS – henter terræn-/profildata ind som lag |
+| **Vandprojekter – Jordbund** | 3.2.7 | Håndtering af jordprøver – grid (markkort-baseret), centerpunkter, QField-klargøring og rapporteksport |
+| **Vandprojekter – Vådområder** | 4.0.11 | Diverse GIS-værktøjer (jordberegning, terræninterpolation m.m.) |
+| **Vandprojekter – Dræn** | 0.2.9 | Find drænudløbspunkter baseret på fald og DEM |
+| **Vandprojekter – Lodsejeratlas** | 0.2.1 | Genererer et lodsejer-atlas (mapbook) ud fra en layout-skabelon med auto-mapping af felter |
+| **Vandprojekter – Lodsejerudtræk** | 0.1 | Henter matrikler og ejeroplysninger for et valgt polygon via Datafordeleren/CVR |
+| **Vandprojekter – VASP** | 1.0.1 | Integration mellem VASP Access-database og QGIS – henter terræn-/profildata ind som lag |
+| **Vandprojekter – N-regneark** | 2.5 | Udfylder kvælstof-regnearket (N) for et vådområdeprojekt: oplande, arealer og tilførsel |
 
 ---
 
@@ -31,7 +32,7 @@ Fælles plugin-repository med værktøjer udviklet af Limfjordssekretariatet til
 ### Trin 2 – Installér plugin
 
 1. Gå til fanen **All**
-2. Søg efter det ønskede plugin (f.eks. *LIMF - Jordbund*)
+2. Søg efter det ønskede plugin (f.eks. *Vandprojekter – Jordbund*)
 3. Klik **Install Plugin**
 
 > Plugins vises fremover under fanen **Installed**, og QGIS giver besked når der er en ny version tilgængelig.
@@ -47,14 +48,22 @@ plugin-opdateringer). Kræver internetadgang ved første kørsel.
 
 | Plugin | Datasæt | Størrelse | Release |
 |--------|---------|-----------|---------|
-| LIMF - Jordbund | Markkort (grid) | ~110 MB | `markkort-v2` |
-| LIMF - Lodsejer Atlas Mapbook | Referencekort (arealtabel 2021-2023) | ~110 MB | `referencekort-v1` |
+| Vandprojekter – Jordbund | Markkort (grid) | ~110 MB | `markkort-v2` |
+| Vandprojekter – Lodsejeratlas | Referencekort (arealtabel 2021-2023) | ~110 MB | `referencekort-v1` |
+| Vandprojekter – N-regneark | Jordbundskort 2024 | 375 MB | `grunddata-v1` |
+| Vandprojekter – N-regneark | Marker 2024 | 353 MB | `grunddata-v1` |
+| Vandprojekter – N-regneark | Befæstet areal | 147 MB | `grunddata-v1` |
+| Vandprojekter – N-regneark | Vandløb (polygoner) | 47 MB | `grunddata-v1` |
+| Vandprojekter – N-regneark | DHMLinje (tilpasningslinjer) | 14 MB | `grunddata-v1` |
 
-**LIMF - Lodsejerudtræk** henter i stedet matrikler og ejeroplysninger *live*
+**Vandprojekter – Lodsejerudtræk** henter i stedet matrikler og ejeroplysninger *live*
 fra Datafordeleren ved hver forespørgsel. Det kræver en personlig
 Datafordeler-API-nøgle, som hver bruger selv skal konfigurere (distribueres ikke).
 
-**LIMF - VASP** læser fra en lokal GeoPackage, som pluginnet selv genopbygger ud
+**Vandprojekter – N-regneark** henter kun det datasæt et trin faktisk skal
+bruge — regner man kun oplande, hentes jordbundskortet aldrig.
+
+**Vandprojekter – VASP** læser fra en lokal GeoPackage, som pluginnet selv genopbygger ud
 fra din VASP Access-database (.mdb) første gang du vælger en database (og via
 "Genindlæs database"). Databasen distribueres ikke – hver bruger peger på sin egen.
 
