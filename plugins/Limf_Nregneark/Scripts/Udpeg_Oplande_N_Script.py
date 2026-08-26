@@ -93,10 +93,20 @@ def _fælles():
     import importlib.util
 
     rod = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-    navn = '_oplandsmodel_' + os.path.basename(rod).lower()
-    if navn in _sys.modules:
-        return _sys.modules[navn]
     sti = os.path.join(rod, 'Scripts', 'oplandsmodel.py')
+    # Fingeraftrykket i navnet: efter en plugin-opdatering laeser
+    # Processing scripterne paa ny, men et modul der ligger i
+    # sys.modules bliver hentet fra cachen — og saa koerer ny kode mod
+    # gammel kerne. Med stoerrelse og tidsstempel i navnet bliver en
+    # aendret fil et andet modul og indlaeses forfra.
+    try:
+        _st = os.stat(sti)
+        _mrk = f'_{_st.st_size}_{int(_st.st_mtime)}'
+    except OSError:
+        _mrk = ''
+    navn = '_oplandsmodel_' + os.path.basename(rod).lower() + _mrk
+    if _sys.modules.get(navn) is not None:
+        return _sys.modules[navn]
     spec = importlib.util.spec_from_file_location(navn, sti)
     modul = importlib.util.module_from_spec(spec)
     _sys.modules[navn] = modul
@@ -294,9 +304,7 @@ class UdpegOplandeN(QgsProcessingAlgorithm):
         # release foerste gang. Uden dem bliver hver vejdaemning et kunstigt
         # vandskel, saa det er vaerd at vente paa.
         try:
-            om._hentet_datasaet('DHMLinje', 'DHMLinje.shp')
-            _gd = sys.modules.get('_grunddata_' + os.path.basename(
-                om.PLUGIN_ROOT).lower())
+            _gd = om.grunddata_modul()
             if _gd is not None:
                 _gd.sikr('DHMLinje', feedback=feedback)
         except Exception as e:
@@ -427,10 +435,20 @@ class UdpegOplandeN(QgsProcessingAlgorithm):
         import importlib.util
         import sys
 
-        navn = '_deloplande_' + os.path.basename(om.PLUGIN_ROOT).lower()
-        if navn in sys.modules:
-            return sys.modules[navn]
         sti = os.path.join(om.SCRIPTS, 'deloplande.py')
+        # Fingeraftrykket i navnet: efter en plugin-opdatering laeser
+        # Processing scripterne paa ny, men et modul der ligger i
+        # sys.modules bliver hentet fra cachen — og saa koerer ny kode mod
+        # gammel kerne. Med stoerrelse og tidsstempel i navnet bliver en
+        # aendret fil et andet modul og indlaeses forfra.
+        try:
+            _st = os.stat(sti)
+            _mrk = f'_{_st.st_size}_{int(_st.st_mtime)}'
+        except OSError:
+            _mrk = ''
+        navn = '_deloplande_' + os.path.basename(om.PLUGIN_ROOT).lower() + _mrk
+        if sys.modules.get(navn) is not None:
+            return sys.modules[navn]
         if not os.path.isfile(sti):
             raise QgsProcessingException(f'deloplande.py mangler: {sti}')
         spec = importlib.util.spec_from_file_location(navn, sti)

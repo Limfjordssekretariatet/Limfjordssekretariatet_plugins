@@ -145,12 +145,12 @@ def vandloeb_standard():
     return _standard_sti(VANDLOEB_REL)
 
 
-def _hentet_datasaet(navn, filnavn):
-    """Sti til et datasæt der hentes fra en release, hvis pluginnet gør det.
+def grunddata_modul():
+    """Modulet der henter de store referencedata — eller None.
 
-    N-regnearkspluginnet henter sine store referencedata og lægger dem i
-    QGIS-profilen; Udpeg opland har dem liggende lokalt. Modulet er derfor
-    valgfrit — findes det ikke, er der bare ikke noget hentet datasæt.
+    N-regnearkspluginnet henter dem fra en release og lægger dem i QGIS-profilen;
+    Udpeg opland har dem liggende lokalt og har ikke modulet. Det er derfor
+    valgfrit.
     """
     sti = os.path.join(SCRIPTS, 'grunddata.py')
     if not os.path.isfile(sti):
@@ -158,13 +158,27 @@ def _hentet_datasaet(navn, filnavn):
     try:
         import importlib.util
 
-        modulnavn = '_grunddata_' + os.path.basename(PLUGIN_ROOT).lower()
+        # Fingeraftryk i navnet, saa en opdateret fil ikke hentes fra cachen.
+        st = os.stat(sti)
+        modulnavn = (f'_grunddata_{os.path.basename(PLUGIN_ROOT).lower()}'
+                     f'_{st.st_size}_{int(st.st_mtime)}')
         modul = sys.modules.get(modulnavn)
         if modul is None:
             spec = importlib.util.spec_from_file_location(modulnavn, sti)
             modul = importlib.util.module_from_spec(spec)
             sys.modules[modulnavn] = modul
             spec.loader.exec_module(modul)
+        return modul
+    except Exception:
+        return None
+
+
+def _hentet_datasaet(navn, filnavn):
+    """Sti til et datasæt der hentes fra en release, hvis pluginnet gør det."""
+    modul = grunddata_modul()
+    if modul is None:
+        return None
+    try:
         return modul.sti(navn, filnavn)
     except Exception:
         return None
@@ -202,10 +216,20 @@ def indlaes_oplande():
     """
     import importlib.util
 
-    navn = '_oplande_' + os.path.basename(PLUGIN_ROOT).lower()
-    if navn in sys.modules:
-        return sys.modules[navn]
     sti = os.path.join(SCRIPTS, 'oplande.py')
+    # Fingeraftrykket i navnet: efter en plugin-opdatering laeser
+    # Processing scripterne paa ny, men et modul der ligger i
+    # sys.modules bliver hentet fra cachen — og saa koerer ny kode mod
+    # gammel kerne. Med stoerrelse og tidsstempel i navnet bliver en
+    # aendret fil et andet modul og indlaeses forfra.
+    try:
+        _st = os.stat(sti)
+        _mrk = f'_{_st.st_size}_{int(_st.st_mtime)}'
+    except OSError:
+        _mrk = ''
+    navn = '_oplande_' + os.path.basename(PLUGIN_ROOT).lower() + _mrk
+    if sys.modules.get(navn) is not None:
+        return sys.modules[navn]
     if not os.path.isfile(sti):
         raise ImportError(f'beregningskoden mangler: {sti}')
     spec = importlib.util.spec_from_file_location(navn, sti)

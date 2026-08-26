@@ -86,10 +86,20 @@ def _fælles():
     import importlib.util
 
     rod = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-    navn = '_oplandsmodel_' + os.path.basename(rod).lower()
-    if navn in _sys.modules:
-        return _sys.modules[navn]
     sti = os.path.join(rod, 'Scripts', 'oplandsmodel.py')
+    # Fingeraftrykket i navnet: efter en plugin-opdatering laeser
+    # Processing scripterne paa ny, men et modul der ligger i
+    # sys.modules bliver hentet fra cachen — og saa koerer ny kode mod
+    # gammel kerne. Med stoerrelse og tidsstempel i navnet bliver en
+    # aendret fil et andet modul og indlaeses forfra.
+    try:
+        _st = os.stat(sti)
+        _mrk = f'_{_st.st_size}_{int(_st.st_mtime)}'
+    except OSError:
+        _mrk = ''
+    navn = '_oplandsmodel_' + os.path.basename(rod).lower() + _mrk
+    if _sys.modules.get(navn) is not None:
+        return _sys.modules[navn]
     spec = importlib.util.spec_from_file_location(navn, sti)
     modul = importlib.util.module_from_spec(spec)
     _sys.modules[navn] = modul
@@ -277,9 +287,7 @@ class BeregnStroemningsveje(QgsProcessingAlgorithm):
         # release foerste gang. Uden dem bliver hver vejdaemning et kunstigt
         # vandskel, saa det er vaerd at vente paa.
         try:
-            om._hentet_datasaet('DHMLinje', 'DHMLinje.shp')
-            _gd = sys.modules.get('_grunddata_' + os.path.basename(
-                om.PLUGIN_ROOT).lower())
+            _gd = om.grunddata_modul()
             if _gd is not None:
                 _gd.sikr('DHMLinje', feedback=feedback)
         except Exception as e:

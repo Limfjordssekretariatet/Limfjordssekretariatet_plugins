@@ -76,11 +76,17 @@ def _grunddata_modul():
     import sys
 
     rod = os.path.dirname(os.path.realpath(__file__))
-    navn = '_grunddata_' + os.path.basename(os.path.dirname(rod)).lower()
-    if navn in sys.modules:
+    sti = os.path.join(rod, 'grunddata.py')
+    # Fingeraftryk i navnet, saa en opdateret fil ikke hentes fra cachen.
+    try:
+        _st = os.stat(sti)
+        _mrk = f'_{_st.st_size}_{int(_st.st_mtime)}'
+    except OSError:
+        _mrk = ''
+    navn = '_grunddata_' + os.path.basename(os.path.dirname(rod)).lower() + _mrk
+    if sys.modules.get(navn) is not None:
         return sys.modules[navn]
-    spec = importlib.util.spec_from_file_location(
-        navn, os.path.join(rod, 'grunddata.py'))
+    spec = importlib.util.spec_from_file_location(navn, sti)
     modul = importlib.util.module_from_spec(spec)
     sys.modules[navn] = modul
     spec.loader.exec_module(modul)
