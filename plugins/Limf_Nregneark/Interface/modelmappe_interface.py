@@ -1728,9 +1728,13 @@ class ModelMappeDialog(QtWidgets.QDialog):
             # projektområder der blev valgt før auto-fixet blev tilføjet).
             fil = self._fix_geometri(fil)
             def efter_succes(_result):
+                # Deloplandene foerst: det er dét lag man arbejder i. De to
+                # samlede er leverancen, regnearket laeser — de vises stadig,
+                # men deloplandene ligger oeverst.
                 self._tilfoej_lag_til_projekt([
                     (f'Vandoplandet_{navn}',   os.path.join(outputfiler_sti, 'Vandoplandet.gpkg')),
                     (f'Direkte_Opland_{navn}', os.path.join(outputfiler_sti, 'Direkte_Opland.gpkg')),
+                    (f'Deloplande_{navn}',     os.path.join(outputfiler_sti, 'Deloplande.gpkg')),
                 ])
             return self._kør_model(
                 model_filnavn    = None,

@@ -2,7 +2,7 @@
 name=Vandprojekter – N-regneark
 qgisMinimumVersion=3.38
 description=Automatisk udfyldning af kvælstof-regneark (N) for vådområdeprojekter
-version=2.8
+version=2.9
 author=Limfjordssekretariatet
 email=henrik.rosenskjold@aalborg.dk
 homepage=https://limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/
@@ -21,7 +21,12 @@ about=Et samlet interface der styrer hele vådområde-arbejdsgangen fra ét vind
  .
  De store referencedata (jordbundskort, marker, befæstet areal, vandløb, DHMLinje) fylder 4 GB og følger IKKE med pakken. De hentes fra en GitHub release første gang et trin skal bruge dem, og gemmes i QGIS-profilen, så de kun hentes én gang og overlever en plugin-opdatering.
 
-changelog=2.8
+changelog=2.9
+ - Deloplandene laegges nu paa kortet efter "Beregn oplande". Laget blev skrevet,
+   men aldrig vist, saa man skulle vide at det laa der for at finde det.
+   Det ligger oeverst — det er dét lag man arbejder i.
+
+ 2.8
  - En opdatering af pluginnet kunne give "grundlag_mappe() got an unexpected
    keyword argument". Processing laeser scripterne paa ny efter en opdatering,
    men beregningskernen laa i sys.modules og blev hentet fra cachen — saa koerte
