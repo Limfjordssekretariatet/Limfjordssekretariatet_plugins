@@ -2,7 +2,7 @@
 name=Vandprojekter – N-regneark
 qgisMinimumVersion=3.38
 description=Automatisk udfyldning af kvælstof-regneark (N) for vådområdeprojekter
-version=2.5
+version=2.6
 author=Limfjordssekretariatet
 email=henrik.rosenskjold@aalborg.dk
 homepage=https://limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/
@@ -21,7 +21,16 @@ about=Et samlet interface der styrer hele vådområde-arbejdsgangen fra ét vind
  .
  De store referencedata (jordbundskort, marker, befæstet areal, vandløb, DHMLinje) fylder 4 GB og følger IKKE med pakken. De hentes fra en GitHub release første gang et trin skal bruge dem, og gemmes i QGIS-profilen, så de kun hentes én gang og overlever en plugin-opdatering.
 
-changelog=2.5
+changelog=2.6
+ - Knappen ligger nu i den faelles Vandprojekter-menu og paa den faelles
+   vaerktoejslinje sammen med de oevrige plugins i samlingen. Foer lagde den sig
+   i QGIS' generelle plugin-linje og i sin egen menu, saa den stod for sig selv.
+ - Vaerktoejslinjens ikon er nu det samme som pluginlisten viser. Der laa en
+   aeldre kopi i Interface/, og den var det billede knappen brugte.
+ - Pluginnet hedder "Vandprojekter – N-regneark" i menu, vaerktoejslinje og
+   dialogtitel — samme navn som i pluginlisten.
+
+ 2.5
  - Nyt lag: Deloplande.gpkg. Modellen delte allerede oplandet op — vandløbsoplandene
    ét pr. kortlagt vandløb, det direkte opland efter hvordan vandet kommer ind — men
    opdelingen forsvandt i to samlede polygoner. Nu ligger alle deloplande i ét lag med

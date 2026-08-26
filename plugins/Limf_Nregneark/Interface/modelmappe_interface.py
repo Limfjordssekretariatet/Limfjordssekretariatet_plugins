@@ -175,11 +175,12 @@ class ModelMappeDialog(QtWidgets.QDialog):
         super().__init__(parent)
         # Indlæs UI-filen frisk ved hver oprettelse fra projektmappen hvis muligt
         uic.loadUi(_find_ui_fil(), self)
-        self.setWindowTitle("Automatisk udfyldning af N-regneark (LIMF)")
+        self.setWindowTitle("Vandprojekter – N-regneark")
 
-        # Sæt regneark-ikon i dialogens titellinje
-        _ikon_sti = os.path.join(os.path.dirname(__file__), 'icon.png')
-        if os.path.exists(_ikon_sti):
+        # Ikonet i titellinjen er det samme som paa vaerktoejslinjen og i
+        # pluginlisten — det ligger i plugin-roden.
+        _ikon_sti = os.path.join(_PLUGIN_ROOT, 'icon.png')
+        if os.path.isfile(_ikon_sti):
             self.setWindowIcon(QIcon(_ikon_sti))
 
         # Forbind knapper
