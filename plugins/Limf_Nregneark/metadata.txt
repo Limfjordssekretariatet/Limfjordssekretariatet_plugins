@@ -2,7 +2,7 @@
 name=Vandprojekter – N-regneark
 qgisMinimumVersion=3.38
 description=Automatisk udfyldning af kvælstof-regneark (N) for vådområdeprojekter
-version=2.6
+version=2.7
 author=Limfjordssekretariatet
 email=henrik.rosenskjold@aalborg.dk
 homepage=https://limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/
@@ -21,7 +21,19 @@ about=Et samlet interface der styrer hele vådområde-arbejdsgangen fra ét vind
  .
  De store referencedata (jordbundskort, marker, befæstet areal, vandløb, DHMLinje) fylder 4 GB og følger IKKE med pakken. De hentes fra en GitHub release første gang et trin skal bruge dem, og gemmes i QGIS-profilen, så de kun hentes én gang og overlever en plugin-opdatering.
 
-changelog=2.6
+changelog=2.7
+ - Det praeberegnede grundlag virkede kun paa den maskine fliserne var bygget paa.
+   Konditioneringsnoeglen indeholdt referencelagenes TIDSSTEMPEL, og det skifter
+   naar en fil kopieres eller hentes. Alle andre fik derfor aldrig et flisetraef —
+   uden fejl, men med terraenet hentet og konditioneret forfra hver gang. Noeglen
+   bygger nu paa filernes indhold. Maalt paa en frisk installation: 17,7 s mod
+   minutters download og konditionering.
+ - Fliserne laa foer under HVERT projektomraades egen outputmappe, saa de samme
+   30-100 MB blev hentet igen for hvert nyt omraade. De ligger nu ét sted pr.
+   maskine, under QGIS-profilen, og deles af alle projekter.
+ - Praeberegnet grundlag: version 5. Gamle fliser afvises, fordi noeglen er aendret.
+
+ 2.6
  - Knappen ligger nu i den faelles Vandprojekter-menu og paa den faelles
    vaerktoejslinje sammen med de oevrige plugins i samlingen. Foer lagde den sig
    i QGIS' generelle plugin-linje og i sin egen menu, saa den stod for sig selv.

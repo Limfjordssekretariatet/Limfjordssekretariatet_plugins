@@ -505,17 +505,11 @@ class BeregnStroemningsveje(QgsProcessingAlgorithm):
             sti = Path(valgt)
             sti.mkdir(parents=True, exist_ok=True)
             return sti
-        lokalt = om.grundlag_mappe()
-        if lokalt is not None:
-            return lokalt
-        # Ingen mappe sat, men skal der hentes online, skal fliserne kunne lande et
-        # sted. Under projektets egen outputmappe er de tættest paa der hvor de bruges.
-        if (self.parameterAsString(parameters, self.GRUNDLAG_URL, context)
-                or om.grundlag_url()):
-            sti = om.output_mappe() / 'Oplandsgrundlag'
-            sti.mkdir(parents=True, exist_ok=True)
-            return sti
-        return None
+        # Uden en valgt mappe bruges den under QGIS-profilen — ét bibliotek pr.
+        # maskine, saa en flise kun hentes én gang og deles af alle projekter.
+        skal_hente = bool(self.parameterAsString(parameters, self.GRUNDLAG_URL,
+                                                 context) or om.grundlag_url())
+        return om.grundlag_mappe(opret=skal_hente)
 
     @staticmethod
     def _har_valgt_hoejdemodel():

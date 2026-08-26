@@ -786,11 +786,48 @@ def linjedele(geometri):
 # 3: udvidelsen sporer fra ét punkt pr. hul i flere runder, saa nettet daekker
 #    de kortlagte forloeb uden at flette sig til parallelle traade.
 # Fliser fra en aeldre version genbruges ikke — indholdet er et andet.
-GRUNDLAG_VERSION = 4
+GRUNDLAG_VERSION = 5
 GRUNDLAG_RASTERE = ('00_dem_analyse.tif', '01_dem_hydro.tif', '02_d8_pointer.tif',
                     '02_d8_akkumulering.tif', '02_streams.tif')
 MANIFEST = 'manifest.json'
 DAEKNING = 'daekning.gpkg'
+
+
+# Indholdshash pr. proces. En 100 MB-fil tager under et sekund at laese, og
+# noeglen regnes faa gange pr. koersel — men ikke én gang for meget.
+_HASH_HUSKET = {}
+
+
+def _filhash(sti, st=None):
+    """sha1 af filens INDHOLD — ikke dens tidsstempel.
+
+    Tidsstemplet skiftede med maskinen: en kopieret eller hentet fil fik et nyt,
+    noeglen blev en anden, og de praeberegnede fliser passede saa kun paa den
+    maskine de var bygget paa. Alle andre hentede terraenet forfra hver gang uden
+    at noget sagde fra.
+    """
+    import hashlib
+
+    sti = str(sti)
+    if st is None:
+        try:
+            st = os.stat(sti)
+        except OSError:
+            return None
+    noegle = (sti, st.st_size, int(st.st_mtime))
+    husket = _HASH_HUSKET.get(noegle)
+    if husket is not None:
+        return husket
+    h = hashlib.sha1()
+    try:
+        with open(sti, 'rb') as f:
+            for blok in iter(lambda: f.read(1 << 20), b''):
+                h.update(blok)
+    except OSError:
+        return None
+    kort = h.hexdigest()[:16]
+    _HASH_HUSKET[noegle] = kort
+    return kort
 
 
 def konditioneringsnoegle(konf: dict) -> str:
@@ -809,9 +846,9 @@ def konditioneringsnoegle(konf: dict) -> str:
             return None
         try:
             st = os.stat(str(sti))
-            return [os.path.basename(str(sti)), st.st_size, int(st.st_mtime)]
         except OSError:
             return [str(sti), None, None]
+        return [os.path.basename(str(sti)), st.st_size, _filhash(sti, st)]
 
     relevant = {
         'version': GRUNDLAG_VERSION,
@@ -970,12 +1007,26 @@ def vaelg_fill(oplande, konf, log=None):
         log.skriv(f'  fill: {nyt} i stedet for fill_depressions')
     return metode
 
-def grundlag_mappe():
-    """Biblioteket med præberegnede fliser, eller None hvis det ikke er sat op."""
-    from qgis.core import QgsSettings
+def grundlag_mappe(opret=False):
+    """Biblioteket med præberegnede fliser.
+
+    Er der ikke sat en mappe, bruges én under QGIS-profilen. Den ligger med vilje
+    ét sted pr. maskine og ikke under projektets outputmappe: fliserne er
+    uafhængige af projektet, og med én mappe pr. projektområde blev de samme
+    30-100 MB hentet forfra for hvert nyt område.
+    """
+    from qgis.core import QgsApplication, QgsSettings
 
     sti = QgsSettings().value('vaadomraade_modeller/grundlag_mappe', '')
-    return Path(sti) if sti and os.path.isdir(sti) else None
+    if sti and os.path.isdir(sti):
+        return Path(sti)
+    standard = Path(QgsApplication.qgisSettingsDirPath()) / 'oplandsgrundlag'
+    if standard.is_dir():
+        return standard
+    if opret:
+        standard.mkdir(parents=True, exist_ok=True)
+        return standard
+    return None
 
 
 def laes_manifest(flise: Path):
