@@ -2,7 +2,7 @@
 name=Vandprojekter – N-regneark
 qgisMinimumVersion=3.38
 description=Automatisk udfyldning af kvælstof-regneark (N) for vådområdeprojekter
-version=2.9
+version=2.10
 author=Limfjordssekretariatet
 email=henrik.rosenskjold@aalborg.dk
 homepage=https://limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/
@@ -21,7 +21,12 @@ about=Et samlet interface der styrer hele vådområde-arbejdsgangen fra ét vind
  .
  De store referencedata (jordbundskort, marker, befæstet areal, vandløb, DHMLinje) fylder 4 GB og følger IKKE med pakken. De hentes fra en GitHub release første gang et trin skal bruge dem, og gemmes i QGIS-profilen, så de kun hentes én gang og overlever en plugin-opdatering.
 
-changelog=2.9
+changelog=2.10
+ - En afbrudt download efterlod en halvt udpakket mappe i flisebiblioteket, og
+   den kunne blive valgt som flise. Den optraadte i loggen som
+   "opland_391.udpakker". Udpakningsmapper springes nu over og ryddes.
+
+ 2.9
  - Deloplandene laegges nu paa kortet efter "Beregn oplande". Laget blev skrevet,
    men aldrig vist, saa man skulle vide at det laa der for at finde det.
    Det ligger oeverst — det er dét lag man arbejder i.

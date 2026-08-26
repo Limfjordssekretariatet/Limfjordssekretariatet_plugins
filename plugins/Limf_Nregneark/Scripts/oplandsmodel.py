@@ -1080,6 +1080,12 @@ def find_flise(bibliotek: Path, omraade_geom, noegle: str, feedback=None):
     for mappe in sorted(Path(bibliotek).iterdir()):
         if not mappe.is_dir():
             continue
+        if mappe.name.endswith(UDPAKNING_SUFFIKS):
+            # En afbrudt download. Den kan vaere halvt udpakket og maa ikke
+            # forveksles med en faerdig flise — den ryddes i stedet.
+            import shutil as _sh
+            _sh.rmtree(mappe, ignore_errors=True)
+            continue
         m = laes_manifest(mappe)
         if not m:
             continue
@@ -1155,6 +1161,11 @@ def hent_flise(flise: Path, derived: Path, feedback=None, log=None):
         feedback.pushInfo(besked)
     return kopieret
 
+
+# Midlertidig mappe under udpakning. En flise pakkes ud her og omdoebes
+# foerst bagefter, saa en afbrudt download ikke efterlader noget der
+# ligner en faerdig flise.
+UDPAKNING_SUFFIKS = '.udpakker'
 
 MAERKE = 'grundlag.json'
 
@@ -1984,7 +1995,7 @@ def hent_flise_online(url, post, bibliotek, feedback=None, afbryd=None):
                 'Prøv igen, eller lad terrænet konditionere lokalt.')
         return None
 
-    udpakning = bibliotek / (post['flise_id'] + '.udpakker')
+    udpakning = bibliotek / (post['flise_id'] + UDPAKNING_SUFFIKS)
     if udpakning.exists():
         shutil.rmtree(udpakning, ignore_errors=True)
     udpakning.mkdir(parents=True)
