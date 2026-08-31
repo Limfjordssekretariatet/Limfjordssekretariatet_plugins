@@ -54,7 +54,7 @@ def _log(msg):
     """Skriv diagnostik til loggen under fanen 'Atlas Mapbook'."""
     QgsMessageLog.logMessage(str(msg), "Atlas Mapbook", Qgis.Info)
 
-from .template_spec import PLACEHOLDERS
+from .template_spec import PLACEHOLDERS, postnr_par
 
 # Map-item id'er i skabelonen (jf. mapbook_skabelon.qpt).
 MAIN_MAP_ID = "Kort 1"        # atlas-styret hovedkort
@@ -295,7 +295,14 @@ class AtlasBuilder:
     def _ensure_postnr_field(self, layer, addr_field):
         if layer.fields().indexFromName(GENERATED_POSTNR_FIELD) >= 0:
             return
-        if not addr_field or layer.fields().indexFromName(addr_field) < 0:
+        par = postnr_par([f.name() for f in layer.fields()])
+        if par:
+            # Postnummer og by staar i hver sin kolonne (Lodsejerudtraek
+            # leverer dem saadan) — sæt dem sammen til "9000 Aalborg".
+            expr = (
+                "trim(coalesce(\"{p}\", '') || ' ' || coalesce(\"{b}\", ''))"
+            ).format(p=par[0], b=par[1])
+        elif not addr_field or layer.fields().indexFromName(addr_field) < 0:
             expr = "''"
         else:
             expr = (

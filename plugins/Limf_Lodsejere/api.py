@@ -47,6 +47,9 @@ class DatafordelerClient:
         self.session.headers['User-Agent'] = (
             'Lodsejere QGIS Plugin / Limfjordssekretariatet'
         )
+        #: Sat hvis serveren afviser cprAdresse-feltet — så spørges der uden
+        #: postnummer resten af kørslen (se get_ejer).
+        self._uden_cpradresse = False
 
     # ------------------------------------------------------------------
     # Fejlhåndtering
@@ -228,18 +231,32 @@ class DatafordelerClient:
     # Ejeroplysninger — EJF GraphQL
     # ------------------------------------------------------------------
 
-    def get_ejer(self, bfe_nummer: str, only_companies: bool = True) -> dict:
-        if not bfe_nummer:
-            return self._tomt_ejer()
+    #: Adressen på ejeren ligger i cprAdresse — standardadresse alene er
+    #: kun vej og husnummer, uden postnummer og by. Feltnavnene følger
+    #: Datafordelerens transitionsguide for EJF.
+    CPR_ADRESSE = """
+                        cprAdresse {
+                            vejadresseringsnavn
+                            husnummer
+                            etage
+                            sidedoer
+                            postnummer
+                            postdistrikt
+                        }"""
 
-        token = self._get_token()
-        headers = {
-            'Authorization': f'Bearer {token}',
-            'Content-Type':  'application/json',
-        }
+    @staticmethod
+    def _er_ukendt_felt(fejl: list) -> bool:
+        """Klager GraphQL over et felt vi har spurgt om, frem for om data?"""
+        for f in fejl or []:
+            besked = (f.get('message') or '').lower()
+            if 'cpradresse' in besked:
+                return True
+            if 'unknown field' in besked or 'ukendt felt' in besked:
+                return True
+        return False
 
-        nu = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+00:00')
-        query = """
+    def _ejer_query(self, nu: str, bfe_nummer: str, med_postnr: bool) -> str:
+        return """
         query {
             EJFCustom_EjerskabBegraenset(
                 virkningstid: "%s"
@@ -255,26 +272,51 @@ class DatafordelerClient:
                     }
                     ejendePersonBegraenset {
                         navn { navn }
-                        standardadresse
+                        standardadresse%s
                         beskyttelser { beskyttelsestype }
                         status
                     }
                 }
             }
         }
-        """ % (nu, bfe_nummer)
+        """ % (nu, bfe_nummer, self.CPR_ADRESSE if med_postnr else '')
 
-        resp = self.session.post(
-            self.GRAPHQL_URL,
-            json={'query': query},
-            headers=headers,
-            timeout=15,
-        )
-        self._tjek_svar(resp, 'Opslag af ejeroplysninger (Ejerfortegnelsen)')
-        data = resp.json()
+    def get_ejer(self, bfe_nummer: str, only_companies: bool = True) -> dict:
+        if not bfe_nummer:
+            return self._tomt_ejer()
 
-        if 'errors' in data:
-            raise RuntimeError(f'GraphQL fejl: {data["errors"][0].get("message", "")}')
+        token = self._get_token()
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Content-Type':  'application/json',
+        }
+
+        nu = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+00:00')
+
+        data = None
+        for med_postnr in (True, False):
+            if med_postnr and self._uden_cpradresse:
+                continue
+            query = self._ejer_query(nu, bfe_nummer, med_postnr)
+            resp = self.session.post(
+                self.GRAPHQL_URL,
+                json={'query': query},
+                headers=headers,
+                timeout=15,
+            )
+            self._tjek_svar(resp, 'Opslag af ejeroplysninger (Ejerfortegnelsen)')
+            svar = resp.json()
+            fejl = svar.get('errors')
+            if not fejl:
+                data = svar
+                break
+            # Er cprAdresse ikke aabnet paa den begraensede persontype, saa
+            # svarer serveren 'ukendt felt'. Så spoerger vi uden postnummer
+            # resten af koerslen i stedet for at fejle paa hver eneste matrikel.
+            if med_postnr and self._er_ukendt_felt(fejl):
+                self._uden_cpradresse = True
+                continue
+            raise RuntimeError(f'GraphQL fejl: {fejl[0].get("message", "")}')
 
         nodes = (data.get('data') or {}).get('EJFCustom_EjerskabBegraenset', {}).get('nodes', [])
 
@@ -285,12 +327,34 @@ class DatafordelerClient:
 
         return self._parse_nodes(gaeldende, only_companies)
 
+    @staticmethod
+    def _vejadresse(cpr_adr: dict) -> str:
+        """Vej, husnummer, etage og dør som én linje — uden postnr og by.
+
+        Holdes adskilt fra postnummeret, så atlasset kan sætte adressen på
+        én linje og postnr. + by på den næste.
+        """
+        vej = (cpr_adr.get('vejadresseringsnavn') or '').strip()
+        if not vej:
+            return ''
+        husnr = (cpr_adr.get('husnummer') or '').strip()
+        linje = ' '.join(p for p in (vej, husnr) if p)
+        etage = (cpr_adr.get('etage') or '').strip()
+        doer  = (cpr_adr.get('sidedoer') or '').strip()
+        if etage or doer:
+            sal = ' '.join(p for p in (
+                f'{etage}.' if etage else '', doer) if p)
+            linje = f'{linje}, {sal}'
+        return linje
+
     def _parse_nodes(self, nodes: list, only_companies: bool) -> dict:
         # Alle gældende ejere (kan være flere ved sameje)
         ejerforhold = str(nodes[0].get('ejerforholdskode') or '')
 
         navne    = []
         adresser = []
+        postnumre = []
+        byer      = []
         cvr_numre = []
         adrbeskyt = 'Nej'
 
@@ -311,9 +375,17 @@ class DatafordelerClient:
                 navn_obj = person.get('navn') or {}
                 navn = navn_obj.get('navn', '') if isinstance(navn_obj, dict) else ''
                 navne.append(navn)
-                adr = person.get('standardadresse', '')
+                cpr_adr = person.get('cprAdresse') or {}
+                adr = self._vejadresse(cpr_adr) or person.get(
+                    'standardadresse', '')
                 if adr and adr not in adresser:
                     adresser.append(adr)
+                postnr = str(cpr_adr.get('postnummer') or '').strip()
+                if postnr and postnr not in postnumre:
+                    postnumre.append(postnr)
+                by = (cpr_adr.get('postdistrikt') or '').strip()
+                if by and by not in byer:
+                    byer.append(by)
                 # Adressebeskyttelse kun ved fuld beskyttelse
                 beskyttelser = person.get('beskyttelser') or []
                 if any(b.get('beskyttelsestype') == 'adressebeskyttelse' for b in beskyttelser):
@@ -327,6 +399,8 @@ class DatafordelerClient:
         return {
             'ejernavn':           ejernavn,
             'ejeradresse':        ', '.join(adresser),
+            'postnr':             ' / '.join(postnumre),
+            'postby':             ' / '.join(byer),
             'ejerforhold':        ejerforhold,
             'ejerforhold_tekst':  self.EJERFORHOLD.get(ejerforhold, ejerforhold),
             'cvr_nummer':         ' / '.join(cvr_numre),
@@ -337,6 +411,8 @@ class DatafordelerClient:
         return {
             'ejernavn':           '',
             'ejeradresse':        '',
+            'postnr':             '',
+            'postby':             '',
             'ejerforhold':        '',
             'ejerforhold_tekst':  '',
             'cvr_nummer':         '',

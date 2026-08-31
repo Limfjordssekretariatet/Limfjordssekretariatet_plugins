@@ -67,6 +67,39 @@ PLACEHOLDERS = [
 ]
 
 
+# Feltnavne der peger paa hhv. postnummeret og bynavnet, naar de staar i
+# hver sin kolonne. Lodsejerudtraek leverer dem som "postnr" og "postby";
+# aeldre udtraek kan hedde noget andet. Sammenlignes med lowercase-navne.
+POSTNR_FELTER = ["postnr", "postnummer", "post_nr", "postnr_"]
+BY_FELTER = ["postby", "postdistrikt", "postdist", "bynavn", "by", "post_by"]
+
+
+def postnr_par(field_names):
+    """Findes postnummer og by i hver sin kolonne? Returnér (postnr, by).
+
+    Bruges to steder: dialogen lader være med at auto-vælge det bare
+    postnummer-felt (så ville byen forsvinde fra etiketten), og byggeren
+    sætter i stedet de to kolonner sammen til "9000 Aalborg".
+    """
+    lowered = {n.lower(): n for n in field_names}
+
+    def find(kandidater):
+        for k in kandidater:
+            if k in lowered:
+                return lowered[k]
+        for k in kandidater:
+            for low, org in lowered.items():
+                if low.startswith(k):
+                    return org
+        return None
+
+    post = find(POSTNR_FELTER)
+    by = find(BY_FELTER)
+    if post and by and post != by:
+        return post, by
+    return None
+
+
 def placeholder_by_key(key):
     for ph in PLACEHOLDERS:
         if ph.key == key:

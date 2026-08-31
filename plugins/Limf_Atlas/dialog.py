@@ -34,7 +34,7 @@ from qgis.gui import QgsColorButton
 
 from . import faelles_ui
 from .atlas_builder import STANDARD_FYLD, STANDARD_KANT, STANDARD_OMRAADE
-from .template_spec import PLACEHOLDERS
+from .template_spec import PLACEHOLDERS, postnr_par
 
 # Værdi i felt-combo der betyder "intet felt – lad pluginnet generere".
 GENERATE_SENTINEL = "__generate__"
@@ -344,6 +344,11 @@ class AtlasDialog(QDialog):
                 combo.addItem(name, name)
 
             guess = self._auto_match(ph, field_names)
+            if ph.key == "postnr" and postnr_par(field_names):
+                # Postnummer og by ligger i hver sin kolonne. Vaelges den
+                # bare postnummer-kolonne, falder byen ud af etiketten —
+                # generatoren saetter de to sammen i stedet.
+                guess = None
             self._apply_guess(ph, combo, guess)
             combo.blockSignals(False)
 
