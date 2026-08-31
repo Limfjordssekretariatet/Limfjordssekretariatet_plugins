@@ -2,7 +2,7 @@
 name=Vandprojekter – N-regneark
 qgisMinimumVersion=3.38
 description=Automatisk udfyldning af kvælstof-regneark (N) for vådområdeprojekter
-version=2.11
+version=2.12
 author=Limfjordssekretariatet
 email=henrik.rosenskjold@aalborg.dk
 homepage=https://limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/

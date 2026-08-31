@@ -965,7 +965,7 @@ Håndterer FLERE vandløb der løber ind i projektområdet: hvert indløb med et
                <cursorShape>WhatsThisCursor</cursorShape>
               </property>
               <property name="toolTip">
-               <string>Beregner kvælstof-fjernelsesgraden (omsætningen) for det direkte opland ud fra jordbund og arealanvendelse. Kræver at "Udvælg oplande" er kørt først, da beregningen bruger Direkte_Opland-laget. Resultaterne indsættes i regnearket under "2. Omsætning".</string>
+               <string>Beregner kvælstof-fjernelsesgraden (omsætningen) for det direkte opland ud fra jordbund og arealanvendelse. Kræver at "Udpeg oplande" er kørt først, da beregningen bruger Direkte_Opland-laget. Resultaterne indsættes i regnearket under "2. Omsætning".</string>
               </property>
               <property name="styleSheet">
                <string>QLabel { color: white; background-color: #1565C0; border-radius: 7px; padding: 0px 5px; font-weight: bold; }</string>

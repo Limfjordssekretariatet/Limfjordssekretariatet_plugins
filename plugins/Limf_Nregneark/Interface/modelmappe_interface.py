@@ -1980,7 +1980,7 @@ class ModelMappeDialog(QtWidgets.QDialog):
             if not os.path.isfile(vandopland_fil):
                 QMessageBox.warning(self, 'Fil mangler',
                     f'Vandoplandet.gpkg blev ikke fundet for {navn}:\n{vandopland_fil}\n\n'
-                    f'Kør først "Udvælg oplande model" for {navn}.')
+                    f'Kør først "Udpeg oplande" for {navn}.')
                 return False
             return self._kør_model(
                 model_filnavn = 'model_grids_vandloeb_ny.model3',
@@ -2126,6 +2126,41 @@ class ModelMappeDialog(QtWidgets.QDialog):
             result.append((fil, navn, sti))
         return result
 
+    def _log_fejl(self, label, navn, fejl):
+        """Skriv grunden til at et trin fejlede i QGIS' log.
+
+        Beskeden i statuslinjen har kun plads til navnet på området.
+        Grunden kender vi allerede — uden dette stod brugeren med
+        "fejlede på 1" og ingen forklaring.
+        """
+        try:
+            from qgis.core import QgsMessageLog, Qgis
+            QgsMessageLog.logMessage(f'{label} ({navn}) fejlede: {fejl}',
+                                     'N-regneark (LIMF)', Qgis.Critical)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _fejl_resume(fejlede):
+        """Halen til den samlede besked: hvilke områder fejlede, og hvorfor.
+
+        Listen indeholder "navn (grund)". Er der kun ét fejlet område, er
+        der plads til grunden i statuslinjen — og den er det eneste i
+        beskeden, man kan handle på. Er der flere, henvises til loggen,
+        hvor de alle står.
+        """
+        if not fejlede:
+            return ''
+        navne = [n.split(' (')[0] for n in fejlede]
+        hale = ' — fejlede på %d: %s' % (len(fejlede), ', '.join(navne))
+        med_grund = [f for f, n in zip(fejlede, navne) if f != n]
+        if len(fejlede) == 1 and med_grund:
+            hale += ' — ' + med_grund[0][len(navne[0]):].strip().strip('()')
+        elif med_grund:
+            hale += (' (grundene står i Log-panelet under '
+                     '"N-regneark (LIMF)")')
+        return hale
+
     def _kør_for_alle_aktive(self, label, byg_kor_funktion, status_label=None,
                              valgt_model_test=None):
         """
@@ -2155,6 +2190,9 @@ class ModelMappeDialog(QtWidgets.QDialog):
         self._sidste_meldinger = []
         koerte = []
         fejlede = []
+        # navn -> grunden til at netop det område fejlede. Bruges til
+        # loggen og til fluebenets tooltip.
+        aarsager = {}
         brugte_valgt_model = False
         for fil, navn, outputfiler_sti in aktive:
             QgsSettings().setValue('vaadomraade_modeller/projektomraade_navn', navn)
@@ -2168,12 +2206,19 @@ class ModelMappeDialog(QtWidgets.QDialog):
                     fejlede.append(navn)
             except Exception as e:
                 fejlede.append(f'{navn} ({e})')
+                aarsager[navn] = str(e)
+                self._log_fejl(label, navn, e)
 
         # Sæt det "aktive" projektomraade tilbage til seneste succesfulde, eller bevar oprindelige
         if koerte:
             QgsSettings().setValue('vaadomraade_modeller/projektomraade_navn', koerte[-1])
         elif oprindeligt_aktiv:
             QgsSettings().setValue('vaadomraade_modeller/projektomraade_navn', oprindeligt_aktiv)
+
+        # Grundene hører med i det, der hænges på fluebenet — de er ofte
+        # det eneste, der siger hvad man skal gøre nu.
+        for navn, aarsag in aarsager.items():
+            self._sidste_meldinger.append(f'{navn}: {aarsag}')
 
         if status_label:
             self._sæt_status(status_label, koerte=koerte, fejlede=fejlede,
@@ -2192,8 +2237,7 @@ class ModelMappeDialog(QtWidgets.QDialog):
 
         if not getattr(self, '_skjul_samlet_besked', False):
             besked = f'{label} kørte på {len(koerte)} projektområde(r)'
-            if fejlede:
-                besked += f' — fejlede på {len(fejlede)}: ' + ', '.join(n.split(" (")[0] for n in fejlede)
+            besked += self._fejl_resume(fejlede)
             self._vis_status_besked('Færdig', besked, fejl=bool(fejlede))
 
     def _kor_ekstensivering(self):
@@ -2240,8 +2284,7 @@ class ModelMappeDialog(QtWidgets.QDialog):
         self._sæt_status('lblStatusEkstensivering', koerte=koerte, fejlede=fejlede)
         if not getattr(self, '_skjul_samlet_besked', False):
             besked = f'Ekstensivering ({vaerdi}) skrevet til {len(koerte)} projektområde(r)'
-            if fejlede:
-                besked += f' — fejlede på {len(fejlede)}: ' + ', '.join(n.split(" (")[0] for n in fejlede)
+            besked += self._fejl_resume(fejlede)
             self._vis_status_besked('Færdig', besked, fejl=bool(fejlede))
 
     def _kor_overrisling(self):
@@ -2277,7 +2320,7 @@ class ModelMappeDialog(QtWidgets.QDialog):
                        for l in QgsProject.instance().mapLayers().values()):
                 raise RuntimeError(
                     f"Laget '{forventet_lagnavn}' findes ikke. "
-                    f"Kør 'Udvælg oplande' først."
+                    f"Kør 'Udpeg oplande' først."
                 )
 
             modificeret = original_indhold.replace(
