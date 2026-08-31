@@ -48,8 +48,12 @@ class DatafordelerClient:
             'Lodsejere QGIS Plugin / Limfjordssekretariatet'
         )
         #: Sat hvis serveren afviser cprAdresse-feltet — så spørges der uden
-        #: postnummer resten af kørslen (se get_ejer).
+        #: personens postnummer resten af kørslen (se get_ejer).
         self._uden_cpradresse = False
+        #: Hvilken form virksomhedens adresse-join skal have. Se
+        #: VIRK_ADRESSE_FORMER; skrues ned ét trin ad gangen, hvis
+        #: serveren afviser den.
+        self._virk_adresse_form = 0
 
     # ------------------------------------------------------------------
     # Fejlhåndtering
@@ -244,18 +248,78 @@ class DatafordelerClient:
                             postdistrikt
                         }"""
 
+    #: Virksomhedens adresse hentes gennem CVR-joinet. Feltnavnene og
+    #: filteret på "beliggenhedsadresse" følger Datafordelerens
+    #: transitionsguide (afsnit 4.4.2).
+    VIRK_ADRESSE_FELTER = """
+                                AdresseringAnvendelse
+                                Adresse
+                                CVRAdresse_vejnavn
+                                CVRAdresse_husnummerFra
+                                CVRAdresse_etagebetegnelse
+                                CVRAdresse_doerbetegnelse
+                                CVRAdresse_postnummer
+                                CVRAdresse_postdistrikt"""
+
+    #: To former af det samme join. Guiden viser den første; den anden er
+    #: den flade form, som navne-joinet allerede bruger i praksis. Kan
+    #: serveren ingen af dem, spørges der slet ikke om adressen.
+    VIRK_ADRESSE_FORMER = (
+        """
+                        id_CVR_Adressering_CVREnhedsId_ref(
+                            where: {{ AdresseringAnvendelse: {{
+                                eq: "beliggenhedsadresse" }} }}
+                        ) {{
+                            nodes {{{felter}
+                            }}
+                        }}""",
+        """
+                        id_CVR_Adressering_CVREnhedsId_ref {{{felter}
+                        }}""",
+        "",
+    )
+
     @staticmethod
-    def _er_ukendt_felt(fejl: list) -> bool:
-        """Klager GraphQL over et felt vi har spurgt om, frem for om data?"""
+    def _klager_over(fejl: list, navn: str) -> bool:
+        """Klager GraphQL over et felt vi har spurgt om, frem for om data?
+
+        Datafordeleren svarer fx "Unknown field 'cprAdresse' on type ...".
+        Nævnes feltet i beskeden, er det vores forespørgsel den er gal
+        med — ikke adgangen eller dataen.
+        """
+        navn = navn.lower()
         for f in fejl or []:
             besked = (f.get('message') or '').lower()
-            if 'cpradresse' in besked:
+            if navn in besked:
                 return True
-            if 'unknown field' in besked or 'ukendt felt' in besked:
+            sti = [str(p).lower() for p in (f.get('path') or [])]
+            if any(navn in p for p in sti) and (
+                    'unknown' in besked or 'ukendt' in besked
+                    or 'does not exist' in besked or 'findes ikke' in besked):
                 return True
         return False
 
-    def _ejer_query(self, nu: str, bfe_nummer: str, med_postnr: bool) -> str:
+    def _skru_ned(self, fejl: list) -> bool:
+        """Sluk den del af forespørgslen serveren ikke vil svare på.
+
+        Returnerer True hvis der blev skruet ned, så opslaget kan prøves
+        igen. Valget huskes resten af kørslen — ellers ville hver eneste
+        matrikel koste et spildt opslag.
+        """
+        if not self._uden_cpradresse and self._klager_over(fejl, 'cpradresse'):
+            self._uden_cpradresse = True
+            return True
+        naeste = self._virk_adresse_form + 1
+        if naeste < len(self.VIRK_ADRESSE_FORMER) and self._klager_over(
+                fejl, 'adressering'):
+            self._virk_adresse_form = naeste
+            return True
+        return False
+
+    def _ejer_query(self, nu: str, bfe_nummer: str) -> str:
+        virk_adresse = self.VIRK_ADRESSE_FORMER[self._virk_adresse_form]
+        if virk_adresse:
+            virk_adresse = virk_adresse.format(felter=self.VIRK_ADRESSE_FELTER)
         return """
         query {
             EJFCustom_EjerskabBegraenset(
@@ -268,7 +332,7 @@ class DatafordelerClient:
                     status
                     ejendeVirksomhedCVRNr_20_Virksomhed_CVRNummer_ref {
                         CVRNummer
-                        id_CVR_Navn_CVREnhedsId_ref { vaerdi }
+                        id_CVR_Navn_CVREnhedsId_ref { vaerdi }%s
                     }
                     ejendePersonBegraenset {
                         navn { navn }
@@ -279,7 +343,8 @@ class DatafordelerClient:
                 }
             }
         }
-        """ % (nu, bfe_nummer, self.CPR_ADRESSE if med_postnr else '')
+        """ % (nu, bfe_nummer, virk_adresse,
+               '' if self._uden_cpradresse else self.CPR_ADRESSE)
 
     def get_ejer(self, bfe_nummer: str, only_companies: bool = True) -> dict:
         if not bfe_nummer:
@@ -293,11 +358,13 @@ class DatafordelerClient:
 
         nu = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+00:00')
 
+        # Adressefelterne er ikke nødvendigvis åbne på alle adgange. Er de
+        # ikke, svarer serveren 'ukendt felt' — så slukkes den del af
+        # forespørgslen, og opslaget prøves igen. Højst ét forsøg pr. del,
+        # og valget huskes resten af kørslen.
         data = None
-        for med_postnr in (True, False):
-            if med_postnr and self._uden_cpradresse:
-                continue
-            query = self._ejer_query(nu, bfe_nummer, med_postnr)
+        for _ in range(len(self.VIRK_ADRESSE_FORMER) + 2):
+            query = self._ejer_query(nu, bfe_nummer)
             resp = self.session.post(
                 self.GRAPHQL_URL,
                 json={'query': query},
@@ -310,13 +377,12 @@ class DatafordelerClient:
             if not fejl:
                 data = svar
                 break
-            # Er cprAdresse ikke aabnet paa den begraensede persontype, saa
-            # svarer serveren 'ukendt felt'. Så spoerger vi uden postnummer
-            # resten af koerslen i stedet for at fejle paa hver eneste matrikel.
-            if med_postnr and self._er_ukendt_felt(fejl):
-                self._uden_cpradresse = True
+            if self._skru_ned(fejl):
                 continue
             raise RuntimeError(f'GraphQL fejl: {fejl[0].get("message", "")}')
+        if data is None:
+            raise RuntimeError(
+                'Ejerfortegnelsen svarede ikke på opslaget af ejeroplysninger.')
 
         nodes = (data.get('data') or {}).get('EJFCustom_EjerskabBegraenset', {}).get('nodes', [])
 
@@ -326,6 +392,71 @@ class DatafordelerClient:
             return self._tomt_ejer()
 
         return self._parse_nodes(gaeldende, only_companies)
+
+    @staticmethod
+    def _joinraekker(vaerdi) -> list:
+        """Raekkerne i et CVR-join, uanset om svaret er fladt eller pakket.
+
+        Joinet svarer enten med selve raekken, med en liste, eller med en
+        connection ({nodes: [...]}) alt efter hvilken form forespoergslen
+        brugte. Her haandteres alle tre, saa laesningen ikke afhaenger af
+        hvilken form serveren tog imod.
+        """
+        if not vaerdi:
+            return []
+        if isinstance(vaerdi, list):
+            return [r for r in vaerdi if isinstance(r, dict)]
+        if isinstance(vaerdi, dict):
+            if 'nodes' in vaerdi:
+                return [r for r in (vaerdi.get('nodes') or [])
+                        if isinstance(r, dict)]
+            return [vaerdi]
+        return []
+
+    @classmethod
+    def _virksomhedsnavn(cls, virk: dict) -> str:
+        raekker = cls._joinraekker(virk.get('id_CVR_Navn_CVREnhedsId_ref'))
+        for r in raekker:
+            navn = (r.get('vaerdi') or '').strip()
+            if navn:
+                return navn
+        return ''
+
+    @classmethod
+    def _virksomhedsadresse(cls, virk: dict):
+        """Virksomhedens beliggenhedsadresse: (vejlinje, postnr, by).
+
+        Har virksomheden flere adresser, foretraekkes beliggenhedsadressen
+        - ellers tages den foerste. Vejlinjen holdes fri for postnummer og
+        by, praecis som for personejere, saa atlassets to linjer passer.
+        """
+        raekker = cls._joinraekker(
+            virk.get('id_CVR_Adressering_CVREnhedsId_ref'))
+        if not raekker:
+            return '', '', ''
+        valgt = raekker[0]
+        for r in raekker:
+            if (r.get('AdresseringAnvendelse') or '') == 'beliggenhedsadresse':
+                valgt = r
+                break
+
+        vej   = (valgt.get('CVRAdresse_vejnavn') or '').strip()
+        husnr = (valgt.get('CVRAdresse_husnummerFra') or '').strip()
+        etage = (valgt.get('CVRAdresse_etagebetegnelse') or '').strip()
+        doer  = (valgt.get('CVRAdresse_doerbetegnelse') or '').strip()
+        linje = ' '.join(p for p in (vej, husnr) if p)
+        if linje and (etage or doer):
+            sal = ' '.join(p for p in (
+                f'{etage}.' if etage else '', doer) if p)
+            linje = f'{linje}, {sal}'
+        if not linje:
+            # Nogle virksomheder har kun adressen som fritekst eller postboks.
+            linje = (valgt.get('Adresse')
+                     or valgt.get('CVRAdresse_adresseFritekst') or '').strip()
+
+        postnr = str(valgt.get('CVRAdresse_postnummer') or '').strip()
+        by     = (valgt.get('CVRAdresse_postdistrikt') or '').strip()
+        return linje, postnr, by
 
     @staticmethod
     def _vejadresse(cpr_adr: dict) -> str:
@@ -362,9 +493,16 @@ class DatafordelerClient:
             virk = node.get('ejendeVirksomhedCVRNr_20_Virksomhed_CVRNummer_ref')
             if virk:
                 cvr  = str(virk.get('CVRNummer', ''))
-                navn = (virk.get('id_CVR_Navn_CVREnhedsId_ref') or {}).get('vaerdi', '')
+                navn = self._virksomhedsnavn(virk)
                 navne.append(navn)
                 cvr_numre.append(cvr)
+                adr, postnr, by = self._virksomhedsadresse(virk)
+                if adr and adr not in adresser:
+                    adresser.append(adr)
+                if postnr and postnr not in postnumre:
+                    postnumre.append(postnr)
+                if by and by not in byer:
+                    byer.append(by)
                 continue
 
             person = node.get('ejendePersonBegraenset')
