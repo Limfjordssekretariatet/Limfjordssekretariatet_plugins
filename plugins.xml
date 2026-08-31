@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <plugins>
 
-  <pyqgis_plugin name="Vandprojekter – Lodsejeratlas" version="0.2.8">
+  <pyqgis_plugin name="Vandprojekter – Lodsejeratlas" version="0.2.9">
     <description>Genererer et lodsejer-atlas (mapbook) ud fra en QGIS layout-skabelon. Mapper automatisk datafelter til skabelonens dynamiske tekst og åbner atlasset klar i Layout Designer.</description>
     <about>Tag et lodsejerlag (shapefil/GeoPackage) og byg et atlas baseret på den medfølgende mapbook-skabelon. Pluginnet auto-matcher felter (navn, adresse, postnummer m.m.) til skabelonens dynamiske tekst, genererer manglende felter (løbenummer, postnummer) og sætter atlasset op pr. lodsejer.</about>
-    <version>0.2.8</version>
+    <version>0.2.9</version>
     <qgis_minimum_version>3.40</qgis_minimum_version>
     <homepage>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins</homepage>
     <file_name>Limf_Atlas.zip</file_name>
     <icon>icon.png</icon>
     <author_name>Limfjordssekretariatet</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_Atlas.zip</download_url>
-    <update_date>2026-08-26T11:34:50Z</update_date>
+    <update_date>2026-08-31T08:41:15Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
@@ -27,23 +27,23 @@
     <icon>icon.png</icon>
     <author_name>Limfjordssekretariatet</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_DrainOutletAnalysis.zip</download_url>
-    <update_date>2026-08-26T11:34:50Z</update_date>
+    <update_date>2026-08-31T08:41:16Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
     <repository>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins</repository>
   </pyqgis_plugin>
-  <pyqgis_plugin name="Vandprojekter – Lodsejerudtræk" version="0.1.10">
+  <pyqgis_plugin name="Vandprojekter – Lodsejerudtræk" version="0.1.11">
     <description>Henter matrikler og ejeroplysninger for et valgt polygon-område via Datafordeleren</description>
     <about>Vælg et polygon i QGIS og hent alle matrikler med ejeroplysninger (navn, adresse, ejerforhold) via Datafordeleren og CVR.</about>
-    <version>0.1.10</version>
+    <version>0.1.11</version>
     <qgis_minimum_version>3.40</qgis_minimum_version>
     <homepage>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins</homepage>
     <file_name>Limf_Lodsejere.zip</file_name>
     <icon>icon.png</icon>
     <author_name>Limfjordssekretariatet</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_Lodsejere.zip</download_url>
-    <update_date>2026-08-26T11:34:50Z</update_date>
+    <update_date>2026-08-31T08:41:16Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
@@ -59,7 +59,7 @@
     <icon>icon.png</icon>
     <author_name>Limfjordssekretariatet</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_Nregneark.zip</download_url>
-    <update_date>2026-08-26T11:34:50Z</update_date>
+    <update_date>2026-08-31T08:41:16Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
@@ -75,7 +75,7 @@
     <icon>icon.png</icon>
     <author_name>Limfjordssekretariatet</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_SoilSurvey.zip</download_url>
-    <update_date>2026-08-26T11:34:52Z</update_date>
+    <update_date>2026-08-31T08:41:17Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
@@ -91,7 +91,7 @@
     <icon>icon.png</icon>
     <author_name>Limfjordssekretariatet</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_VASP.zip</download_url>
-    <update_date>2026-08-26T11:34:52Z</update_date>
+    <update_date>2026-08-31T08:41:18Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
@@ -107,7 +107,7 @@
     <icon>icon.png</icon>
     <author_name>Limfjordssekretariatet</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_WetlandTools.zip</download_url>
-    <update_date>2026-08-26T11:34:52Z</update_date>
+    <update_date>2026-08-31T08:41:18Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
