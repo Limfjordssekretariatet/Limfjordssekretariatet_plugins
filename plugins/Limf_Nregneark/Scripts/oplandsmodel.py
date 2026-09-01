@@ -596,12 +596,16 @@ def tjek_forudsaetninger(feedback=None):
         if fundet is None:
             nl = chr(10)
             raise QgsProcessingException(
-                'Udvidelsen "Whitebox Workflows for QGIS" blev ikke fundet. '
+                'Udvidelsen "Whitebox Workflows" blev ikke fundet. '
                 'Den leverer den hydrologiske beregning (breaching, fill, D8, '
                 'oplandssporing), så uden den kan trinnet ikke køre.'
                 + nl + nl +
-                'Installér den under Udvidelser > Administrer og installér '
-                'udvidelser > Alle, og sæt flueben ved den under Installeret.')
+                'Sådan får du den: Udvidelser > Administrer og installér '
+                'udvidelser > fanen Alle > søg efter "Whitebox Workflows" '
+                '(af Whitebox Geospatial Inc.) > Installér udvidelse.'
+                + nl + nl +
+                'Har du den allerede, mangler den blot at være slået til: '
+                'samme sted, fanen Installeret, sæt flueben ved den.')
         if feedback is not None:
             feedback.pushInfo('Whitebox fundet i ' + str(fundet) + ' — registreres.')
 

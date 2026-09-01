@@ -34,7 +34,7 @@ vandløbspolygoner, cosinus-rende langs DHMLinje, sagang:fillsinkswangliu og
 sagang:channelnetworkanddrainagebasins. Modelfilen ligger stadig i Modeller/ som
 reference, men interfacet kalder dette script.
 
-Kræver plugin'et "Whitebox Workflows for QGIS" (Udvidelser > Hent flere).
+Kræver plugin'et "Whitebox Workflows" (Udvidelser > Hent flere).
 """
 
 import datetime as dt
@@ -164,7 +164,7 @@ class BeregnStroemningsveje(QgsProcessingAlgorithm):
             'Strahler-orden i feltet <code>ORDER</code>) i '
             'Outputfiler_&lt;omraade&gt;. "Beregn oplande" genbruger '
             'mellemresultaterne, så kør det trin bagefter.</p>'
-            '<p>Kræver plugin\'et <b>Whitebox Workflows for QGIS</b> og et '
+            '<p>Kræver plugin\'et <b>Whitebox Workflows</b> og et '
             'Dataforsyningen-token, medmindre du selv peger på en terrænmodel.</p>'
         )
 

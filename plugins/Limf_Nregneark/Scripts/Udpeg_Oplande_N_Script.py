@@ -32,7 +32,7 @@ derfor tælles som direkte opland), og modellens beregnede vandveje. Log, QA-res
 og de faktisk brugte parametre skrives til Outputfiler_<omraade>/Oplandsmodel/log/,
 så en kørsel kan reproduceres.
 
-Kræver plugin'et "Whitebox Workflows for QGIS" (Udvidelser > Hent flere).
+Kræver plugin'et "Whitebox Workflows" (Udvidelser > Hent flere).
 
 Erstatter den tidligere beregning, der kørte sagang:upslopearea fra ét frø-punkt pr.
 indløb og udledte det direkte opland fra udløbets totalopland. Algoritme-id
@@ -181,7 +181,7 @@ class UdpegOplandeN(QgsProcessingAlgorithm):
             'det kortlagte vandløbslag, tæller som direkte opland; de leveres som '
             'punkter med <code>type=terraen</code> i Oplande.gpkg. Kloak- og '
             'regnvandsoplande er ikke i scope.</p>'
-            '<p>Kræver plugin\'et <b>Whitebox Workflows for QGIS</b>.</p>'
+            '<p>Kræver plugin\'et <b>Whitebox Workflows</b>.</p>'
         )
 
     # ── parametre ────────────────────────────────────────────────────────────
