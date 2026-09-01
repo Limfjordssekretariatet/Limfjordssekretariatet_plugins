@@ -16,7 +16,7 @@ videregive dem. Se [Licens og kreditering](#licens-og-kreditering).
 | **Vandprojekter – Lodsejeratlas** | 0.2.11 | Genererer et lodsejer-atlas (mapbook) ud fra en layout-skabelon med auto-mapping af felter |
 | **Vandprojekter – Lodsejerudtræk** | 0.1.14 | Henter matrikler og ejeroplysninger for et valgt polygon via Datafordeleren/CVR |
 | **Vandprojekter – VASP** | 1.2.19 | Integration mellem VASP Access-database og QGIS – henter terræn-/profildata ind som lag |
-| **Vandprojekter – N-regneark** | 2.15 | Udfylder kvælstof-regnearket (N) for et vådområdeprojekt: oplande, arealer og tilførsel |
+| **Vandprojekter – N-regneark** | 2.16 | Udfylder kvælstof-regnearket (N) for et vådområdeprojekt: oplande, arealer og tilførsel |
 
 ---
 

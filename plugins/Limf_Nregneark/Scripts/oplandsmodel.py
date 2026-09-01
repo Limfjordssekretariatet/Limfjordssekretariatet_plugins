@@ -561,15 +561,19 @@ def felt(navn: str, slags: str):
         return QgsField(navn, typer[slags])
 
 
-def tjek_forudsaetninger(feedback=None):
+def tjek_forudsaetninger(feedback=None, kraev_whitebox=True):
     """Kontrollerer at alt beregningen skal bruge, er der — FØR den tunge del.
 
     Uden tjekket opdages en manglende pakke eller en manglende udvidelse først
     efter minutters resampling og konditionering, og fejlen kommer som en
     traceback midt i kæden. Her fejler den med det samme, og med noget man kan
     handle på.
+
+    ``kraev_whitebox=False`` springer Whitebox-tjekket over. Det bruges når
+    kørslen kan klare sig med et præberegnet grundlag — så skal udvidelsen
+    ikke stå i vejen for noget, den alligevel ikke bliver brugt til.
     """
-    from qgis.core import QgsApplication, QgsProcessingException
+    from qgis.core import QgsProcessingException
 
     manglende = []
     for modul, forklaring in (
@@ -587,10 +591,20 @@ def tjek_forudsaetninger(feedback=None):
             "Beregningen kan ikke køre — disse Python-pakker mangler i QGIS:\n  "
             + "\n  ".join(manglende))
 
-    # Whitebox leverer selve hydrologien. Er provideren registreret, er alt godt —
-    # det er den i QGIS når udvidelsen er aktiveret. Ellers ledes der på disken, og
-    # først hvis den ikke findes NOGEN steder, er det en fejl. Selve registreringen
-    # overlades til oplande.py.
+    if kraev_whitebox:
+        tjek_whitebox(feedback)
+
+
+def tjek_whitebox(feedback=None):
+    """Er Whitebox til rådighed? Kaldes kun når der skal beregnes hydrologi.
+
+    Er provideren registreret, er alt godt — det er den i QGIS når udvidelsen
+    er aktiveret. Ellers ledes der på disken, og først hvis den ikke findes
+    NOGEN steder, er det en fejl. Selve registreringen overlades til
+    oplande.py.
+    """
+    from qgis.core import QgsApplication, QgsProcessingException
+
     if QgsApplication.processingRegistry().providerById("whitebox_workflows") is None:
         fundet = find_whitebox()
         if fundet is None:

@@ -250,7 +250,9 @@ class BeregnStroemningsveje(QgsProcessingAlgorithm):
 
     def processAlgorithm(self, parameters, context: QgsProcessingContext,
                          feedback: QgsProcessingFeedback):
-        om.tjek_forudsaetninger(feedback)
+        # Whitebox kraeves foerst naar vi ved om der skal beregnes noget —
+        # et daekkende, praeberegnet grundlag gør udvidelsen overflødig.
+        om.tjek_forudsaetninger(feedback, kraev_whitebox=False)
         self._flise_channel_networks = None
         oplande = om.indlaes_oplande()
         ud_mappe = om.output_mappe()
@@ -373,10 +375,21 @@ class BeregnStroemningsveje(QgsProcessingAlgorithm):
                           ekstra=feedback.pushInfo)
 
         # ── 4) trin 0-2: konditionering og strømning ─────────────────────────
+        # Ligger baade rasterne og linjelaget i flisen, udfoeres der ikke ét
+        # eneste Whitebox-vaerktoej i denne koersel. Saa skal udvidelsen heller
+        # ikke kraeves — ellers spaerrer den for et resultat der er hentet
+        # faerdigberegnet.
+        kun_flise = flise is not None and (flise / om.CHANNEL_NETWORKS).is_file()
+        if kun_flise:
+            om.meld(feedback, 'Hele grundlaget kommer fra flisen — '
+                    'Whitebox bruges ikke i denne kørsel.')
+
         try:
-            oplande.registrer_whitebox(log)
-            om.vaelg_fill(oplande, konf, log)
-            om.haardfoer_whitebox(oplande, log)
+            if not kun_flise:
+                om.tjek_whitebox(feedback)
+                oplande.registrer_whitebox(log)
+                om.vaelg_fill(oplande, konf, log)
+                om.haardfoer_whitebox(oplande, log)
 
             if flise is not None:
                 om.hent_flise(flise, stier['derived'], feedback, log)
