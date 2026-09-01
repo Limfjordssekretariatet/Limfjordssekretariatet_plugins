@@ -149,8 +149,9 @@ Pluginnene henter og videredistribuerer data, vi ikke har ophavsret til.
 |------|------------|---------|
 | Højdemodel (DHM) | Klimadatastyrelsen, Dataforsyningen | hentes live via WCS med din egen token |
 | Matrikler, ejeroplysninger, CVR | Datafordeleren | hentes live med din egen API-nøgle |
-| Markkort, Marker 2024, jordbundskort, befæstet areal, vandløb, DHM-linjer | offentlige danske grunddata | følger med som release-assets, bearbejdet af os |
-| Referencekort 2021-2023 (satskort) | offentlige danske grunddata | følger med som release-asset |
+| Markkort og Marker 2024 (markblokke, afgrøder, grundbetaling) | Landbrugsstyrelsen | følger med som release-assets, bearbejdet af os |
+| Referencekort 2021-2023 (satskort) | Landbrugsstyrelsen | følger med som release-asset |
+| Jordbundskort, befæstet areal, vandløb, DHM-linjer | offentlige danske grunddata | følger med som release-assets, bearbejdet af os |
 | N-beregningsarket `mst_n_beregning_jul2023.xlsx` | Miljøstyrelsen | følger med N-regneark-pluginnet |
 
 De datasæt, vi videredistribuerer, er **bearbejdede** udgaver — klippet til
