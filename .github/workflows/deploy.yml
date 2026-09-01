@@ -52,6 +52,9 @@ jobs:
             # Byg zip
             mkdir -p "dist_tmp/$NAME"
             rsync -a "$PLUGIN_DIR" "dist_tmp/$NAME/"
+            # Licensteksten skal med i hver zip: et installeret plugin ligger
+            # for sig selv i QGIS-profilen, uden adgang til repoets rod.
+            cp LICENSE "dist_tmp/$NAME/LICENSE"
             cd dist_tmp
             zip -r "../dist/${ZIP_NAME}" "$NAME/"
             cd ..

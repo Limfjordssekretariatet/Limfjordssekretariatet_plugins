@@ -2,17 +2,20 @@
 
 Fælles plugin-repository med værktøjer udviklet af Limfjordssekretariatet til brug i QGIS.
 
+Værktøjerne er **frie** — GNU GPL v2 eller nyere. Enhver må bruge, ændre og
+videregive dem. Se [Licens og kreditering](#licens-og-kreditering).
+
 ## Tilgængelige plugins
 
 | Plugin (vises i QGIS) | Version | Beskrivelse |
 |-----------------------|---------|-------------|
-| **Vandprojekter – Jordbund** | 3.2.7 | Håndtering af jordprøver – grid (markkort-baseret), centerpunkter, QField-klargøring og rapporteksport |
-| **Vandprojekter – Vådområder** | 4.0.11 | Diverse GIS-værktøjer (jordberegning, terræninterpolation m.m.) |
-| **Vandprojekter – Dræn** | 0.2.9 | Find drænudløbspunkter baseret på fald og DEM |
-| **Vandprojekter – Lodsejeratlas** | 0.2.1 | Genererer et lodsejer-atlas (mapbook) ud fra en layout-skabelon med auto-mapping af felter |
-| **Vandprojekter – Lodsejerudtræk** | 0.1 | Henter matrikler og ejeroplysninger for et valgt polygon via Datafordeleren/CVR |
-| **Vandprojekter – VASP** | 1.0.1 | Integration mellem VASP Access-database og QGIS – henter terræn-/profildata ind som lag |
-| **Vandprojekter – N-regneark** | 2.10 | Udfylder kvælstof-regnearket (N) for et vådområdeprojekt: oplande, arealer og tilførsel |
+| **Vandprojekter – Jordbund** | 3.2.14 | Håndtering af jordprøver – grid (markkort-baseret), centerpunkter, QField-klargøring og rapporteksport |
+| **Vandprojekter – Vådområder** | 4.0.20 | Diverse GIS-værktøjer (jordberegning, terræninterpolation m.m.) |
+| **Vandprojekter – Dræn** | 0.2.17 | Find drænudløbspunkter baseret på fald og DEM |
+| **Vandprojekter – Lodsejeratlas** | 0.2.10 | Genererer et lodsejer-atlas (mapbook) ud fra en layout-skabelon med auto-mapping af felter |
+| **Vandprojekter – Lodsejerudtræk** | 0.1.13 | Henter matrikler og ejeroplysninger for et valgt polygon via Datafordeleren/CVR |
+| **Vandprojekter – VASP** | 1.2.18 | Integration mellem VASP Access-database og QGIS – henter terræn-/profildata ind som lag |
+| **Vandprojekter – N-regneark** | 2.13 | Udfylder kvælstof-regnearket (N) for et vådområdeprojekt: oplande, arealer og tilførsel |
 
 ---
 
@@ -86,6 +89,62 @@ Når en ny version er udgivet, vil QGIS vise en opdateringsknap under
 - Store datasæt distribueres som **release-assets** (op til 2 GB), ikke i
   plugin-zippen (GitHub Pages-grænse er 100 MB pr. fil). Pluginnet downloader
   dem ved første brug.
+
+---
+
+## Licens og kreditering
+
+### Koden er fri
+
+Pluginnene er frit tilgængelige under **GNU General Public License v2 eller
+nyere** — hele teksten står i [LICENSE](LICENSE). Kort fortalt: enhver må
+bruge, kopiere, ændre og videregive dem, også i en anden organisation og til
+egne projekter. Videregiver du en ændret udgave, skal den følge samme licens,
+og ophavsretserklæringerne skal med. Der er ingen garanti — værktøjerne
+leveres som de er.
+
+Licensen er ikke et frit valg. Et QGIS-plugin bygger på QGIS' egne
+GPL-licenserede API'er og skal derfor selv være GPL-kompatibelt.
+Vådområder-pluginnet har erklæret GPL v2+ siden det blev oprettet; nu står
+det udtrykkeligt for hele repositoriet.
+
+### Kreditering
+
+Bruger du værktøjerne — eller resultater fra dem — i en rapport, et projekt
+eller et andet plugin, må du meget gerne kreditere:
+
+> *Vandprojekter — QGIS-plugins, Limfjordssekretariatet.*
+> https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins
+
+Det er en venlig anmodning, ikke et krav. Licensen kræver kun kreditering,
+hvis du videregiver selve koden.
+
+### Data er ikke vores
+
+Pluginnene henter og videredistribuerer data, vi ikke har ophavsret til.
+**Vilkårene for de data er leverandørens — ikke pluginnets licens.**
+
+| Data | Kommer fra | Hvordan |
+|------|------------|---------|
+| Højdemodel (DHM) | Klimadatastyrelsen, Dataforsyningen | hentes live via WCS med din egen token |
+| Matrikler, ejeroplysninger, CVR | Datafordeleren | hentes live med din egen API-nøgle |
+| Markkort, Marker 2024, jordbundskort, befæstet areal, vandløb, DHM-linjer | offentlige danske grunddata | følger med som release-assets, bearbejdet af os |
+| Referencekort 2021-2023 (satskort) | offentlige danske grunddata | følger med som release-asset |
+| N-beregningsarket `mst_n_beregning_jul2023.xlsx` | Miljøstyrelsen | følger med N-regneark-pluginnet |
+
+De datasæt, vi videredistribuerer, er **bearbejdede** udgaver — klippet til
+Limfjordsoplandet, forenklet, og for markkortets vedkommende renset for
+sliver-polygoner. De er lavet til at virke i disse værktøjer. Skal data
+bruges til andet, så hent dem hos kilden og følg kildens vilkår, også for
+kreditering.
+
+Baggrundskort (ortofoto m.m.) leveres ikke af pluginnene — de kommer fra det,
+du selv har i dit QGIS-projekt.
+
+### Kode fra andre
+
+`plugins/Limf_WetlandTools/test/qgis_interface.py` stammer fra QGIS Plugin
+Builder-skabelonen — © Ivan Mincik, German Carrillo og Tim Sutton, under GPL.
 
 ---
 

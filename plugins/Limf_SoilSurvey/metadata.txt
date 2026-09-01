@@ -2,7 +2,7 @@
 name=Vandprojekter – Jordbund
 qgisMinimumVersion=3.0
 description=Plugin til håndtering af jordprøver
-version=3.2.13
+version=3.2.14
 author=Limfjordssekretariatet
 email=henrik.rosenskjold@aalborg.dk
 about=Plugin med værktøjer til grid (Markkort-baseret), centerpunkter, QField-klargøring og rapporteksport.
