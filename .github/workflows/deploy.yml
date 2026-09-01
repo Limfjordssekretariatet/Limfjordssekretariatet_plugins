@@ -44,6 +44,11 @@ jobs:
             [ -z "$DISPLAY_NAME" ] && DISPLAY_NAME="$NAME"
 
             OWNER="${{ github.repository_owner }}"
+            # Forfatteren skal komme fra pluginnet selv, ikke fra
+            # organisationsnavnet — ellers ses hovedudvikleren ikke i QGIS'
+            # plugin-håndtering.
+            AUTHOR=$(grep '^author=' "$META" | cut -d'=' -f2-)
+            [ -z "$AUTHOR" ] && AUTHOR="$OWNER"
             REPO="${{ github.event.repository.name }}"
             BASE_URL="https://${OWNER}.github.io/${REPO}"
             DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -69,7 +74,7 @@ jobs:
               <homepage>${BASE_URL}</homepage>
               <file_name>${ZIP_NAME}</file_name>
               <icon>icon.png</icon>
-              <author_name>${OWNER}</author_name>
+              <author_name>${AUTHOR}</author_name>
               <download_url>${BASE_URL}/${ZIP_NAME}</download_url>
               <update_date>${DATE}</update_date>
               <experimental>False</experimental>
