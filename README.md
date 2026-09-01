@@ -1,6 +1,7 @@
 # Limfjordssekretariatet QGIS Plugins
 
-Fælles plugin-repository med værktøjer udviklet af Limfjordssekretariatet til brug i QGIS.
+Fælles plugin-repository med værktøjer til QGIS, udviklet af Henrik Rosenskjold
+for Limfjordsrådets sekretariat.
 
 Værktøjerne er **frie** — GNU GPL v2 eller nyere. Enhver må bruge, ændre og
 videregive dem. Se [Licens og kreditering](#licens-og-kreditering).
@@ -9,13 +10,13 @@ videregive dem. Se [Licens og kreditering](#licens-og-kreditering).
 
 | Plugin (vises i QGIS) | Version | Beskrivelse |
 |-----------------------|---------|-------------|
-| **Vandprojekter – Jordbund** | 3.2.14 | Håndtering af jordprøver – grid (markkort-baseret), centerpunkter, QField-klargøring og rapporteksport |
-| **Vandprojekter – Vådområder** | 4.0.20 | Diverse GIS-værktøjer (jordberegning, terræninterpolation m.m.) |
-| **Vandprojekter – Dræn** | 0.2.17 | Find drænudløbspunkter baseret på fald og DEM |
-| **Vandprojekter – Lodsejeratlas** | 0.2.10 | Genererer et lodsejer-atlas (mapbook) ud fra en layout-skabelon med auto-mapping af felter |
-| **Vandprojekter – Lodsejerudtræk** | 0.1.13 | Henter matrikler og ejeroplysninger for et valgt polygon via Datafordeleren/CVR |
-| **Vandprojekter – VASP** | 1.2.18 | Integration mellem VASP Access-database og QGIS – henter terræn-/profildata ind som lag |
-| **Vandprojekter – N-regneark** | 2.13 | Udfylder kvælstof-regnearket (N) for et vådområdeprojekt: oplande, arealer og tilførsel |
+| **Vandprojekter – Jordbund** | 3.2.15 | Håndtering af jordprøver – grid (markkort-baseret), centerpunkter, QField-klargøring og rapporteksport |
+| **Vandprojekter – Vådområder** | 4.0.21 | Diverse GIS-værktøjer (jordberegning, terræninterpolation m.m.) |
+| **Vandprojekter – Dræn** | 0.2.18 | Find drænudløbspunkter baseret på fald og DEM |
+| **Vandprojekter – Lodsejeratlas** | 0.2.11 | Genererer et lodsejer-atlas (mapbook) ud fra en layout-skabelon med auto-mapping af felter |
+| **Vandprojekter – Lodsejerudtræk** | 0.1.14 | Henter matrikler og ejeroplysninger for et valgt polygon via Datafordeleren/CVR |
+| **Vandprojekter – VASP** | 1.2.19 | Integration mellem VASP Access-database og QGIS – henter terræn-/profildata ind som lag |
+| **Vandprojekter – N-regneark** | 2.14 | Udfylder kvælstof-regnearket (N) for et vådområdeprojekt: oplande, arealer og tilførsel |
 
 ---
 
@@ -108,16 +109,36 @@ GPL-licenserede API'er og skal derfor selv være GPL-kompatibelt.
 Vådområder-pluginnet har erklæret GPL v2+ siden det blev oprettet; nu står
 det udtrykkeligt for hele repositoriet.
 
+### Hvem der har lavet dem
+
+Værktøjerne er udviklet af **Henrik Rosenskjold**, hovedudvikler, for
+**Limfjordsrådets sekretariat** — bygget til at løse og forenkle sekretariatets
+egne arbejdsgange.
+
 ### Kreditering
 
-Bruger du værktøjerne — eller resultater fra dem — i en rapport, et projekt
-eller et andet plugin, må du meget gerne kreditere:
+**Bygger du videre på værktøjerne, så kreditér.** Det gælder både en ændret
+udgave af et plugin, kode lånt herfra ind i et andet værktøj, og resultater
+brugt i en rapport eller et projekt:
 
-> *Vandprojekter — QGIS-plugins, Limfjordssekretariatet.*
+> *Vandprojekter — QGIS-plugins. Henrik Rosenskjold, Limfjordsrådets
+> sekretariat.*
 > https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins
 
-Det er en venlig anmodning, ikke et krav. Licensen kræver kun kreditering,
-hvis du videregiver selve koden.
+Licensen kræver under alle omstændigheder, at ophavsretserklæringerne i
+kildekoden bliver stående, når du videregiver koden — også i ændret form.
+Krediteringen ovenfor er den læsbare udgave af det samme.
+
+### Ansvar
+
+Værktøjerne er bygget til Limfjordsrådets sekretariats egne arbejdsgange og
+stilles frit til rådighed, som de er. **Anvendelse og fortolkning af
+resultaterne er på eget ansvar** — der følger ingen garanti med, hverken for
+at et resultat er rigtigt, eller for at et værktøj passer til dit formål.
+
+Der kommer løbende opdateringer. QGIS giver besked under **Plugins → Manage
+and Install Plugins → Upgradeable**, men det er dit eget ansvar at hente dem.
+Rettelser, forslag og ønsker tages løbende — [opret en sag](https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues).
 
 ### Data er ikke vores
 

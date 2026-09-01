@@ -22,7 +22,7 @@ Kopiér plugin-mappen til QGIS' plugin-mappe og aktiver pluginnet i QGIS' plugin
 
 ## Forfatter
 
-Henrik Rosenskjold — henrikrosenskjold@gmail.com
+Henrik Rosenskjold — henrik.rosenskjold@aalborg.dk
 
 ## Changelog
 

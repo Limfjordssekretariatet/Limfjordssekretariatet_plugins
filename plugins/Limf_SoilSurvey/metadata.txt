@@ -2,8 +2,8 @@
 name=Vandprojekter – Jordbund
 qgisMinimumVersion=3.0
 description=Plugin til håndtering af jordprøver
-version=3.2.14
-author=Limfjordssekretariatet
+version=3.2.15
+author=Henrik Rosenskjold, Limfjordsrådets sekretariat
 email=henrik.rosenskjold@aalborg.dk
 about=Plugin med værktøjer til grid (Markkort-baseret), centerpunkter, QField-klargøring og rapporteksport.
 tracker=https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues

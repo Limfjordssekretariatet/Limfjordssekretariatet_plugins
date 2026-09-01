@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 # Vandprojekter — Dræn
-# Copyright (C) 2026 Limfjordssekretariatet
+# Copyright (C) 2026 Limfjordsrådets sekretariat
+# Hovedudvikler: Henrik Rosenskjold <henrik.rosenskjold@aalborg.dk>
+# Krediteres ved videreudvikling — se LICENSE og README.
 #
 # Dette program er fri software: du må videredistribuere det og/eller ændre
 # det under betingelserne i GNU General Public License, som udgivet af Free
