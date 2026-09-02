@@ -7,7 +7,7 @@ qgisMinimumVersion=3.38
 # det midt i en kørsel.
 plugin_dependencies=Whitebox Workflows
 description=Automatisk udfyldning af kvælstof-regneark (N) for vådområdeprojekter
-version=2.17
+version=2.18
 author=Henrik Rosenskjold, Limfjordsrådets sekretariat
 email=henrik.rosenskjold@aalborg.dk
 homepage=https://limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/

@@ -1956,9 +1956,13 @@ def trin4_vandloebsoplande(konf: dict, graf: Stroemningsgraf, trin3: dict, log: 
     log.skriv(f"  {len(valgt)} selvstaendige tilloeb over {rapport_ha:g} ha "
               f"(mindste indbyrdes afstand {min_afstand_m:g} m)")
     if not valgt:
-        raise OplandsFejl(
+        # Ikke en fejl: et lille eller hoejtliggende omraade kan sagtens kun have
+        # diffus tilstroemning. Saa er der ingen vandloebsoplande, og alt bliver
+        # direkte opland — det haandteres samlet nedenfor.
+        log.advar(
             f"Ingen tilloeb over {rapport_ha} ha paa projektgraensen, selv om "
-            f"{int(indloeb.sum()):,} celler stroemmer ind. Kontrollér akkumuleringsrasteret.")
+            f"{int(indloeb.sum()):,} celler stroemmer ind. Tilstroemningen er diffus, "
+            "og hele totaloplandet bliver direkte opland.")
 
     # 3. Klassificér: sker tilloebet gennem et KORTLAGT vandloeb? Afstanden maales i
     #    vektorrummet mod den faktiske linje, ikke mod en rasterisering af den — en
@@ -1997,10 +2001,27 @@ def trin4_vandloebsoplande(konf: dict, graf: Stroemningsgraf, trin3: dict, log: 
         log.skriv(f"    {d['navn']:<22s} ({d['x']:.0f}, {d['y']:.0f})  "
                   f"{d['akk_ha']:9.1f} ha, {d['afstand_m']:.1f} m fra det kortlagte forloeb")
     if not vandloebstilloeb:
-        raise OplandsFejl(
-            "Intet kortlagt vandloeb loeber ind i projektomraadet. Enten er der reelt ingen "
-            "vandloebstilloeb — og saa er hele totaloplandet direkte opland — eller ogsaa "
-            "daekker vandloebslaget ikke omraadet. Kontrollér foer du gaar videre.")
+        # Der loeber intet kortlagt vandloeb ind. Det er en gyldig tilstand — saa er
+        # hele totaloplandet direkte opland — og den haandteres praecis som naar
+        # ingen af indloebene tilfoerer nyt opland (se genindloeb nedenfor).
+        # At rejse her ville spaerre for et resultat der er rigtigt.
+        log.advar(
+            "Intet kortlagt vandloeb loeber ind i projektomraadet. Hele totaloplandet "
+            "leveres som direkte opland.\n"
+            "     Er det uventet, daekker vandloebslaget maaske ikke omraadet — eller "
+            "det kortlagte forloeb ligger laengere end snap_radius_celler fra modellens "
+            "kanal, saa tilloebet er havnet blandt de ukortlagte tilloeb i stedet.")
+        tom = np.zeros(graf.n, dtype=np.int32)
+        _skriv_raster(tom, graf, derived / "04_vandloebsoplande.tif", gdal.GDT_Int32)
+        _skriv_raster(tom, graf, derived / "04_vandloebsoplande_dele.tif",
+                      gdal.GDT_Int32)
+        return {"etiketter": tom, "indloeb": [], "celletal": {},
+                "ukortlagte": ukortlagte, "genindloeb": [],
+                "dele": tom, "delliste": [],
+                "fragmenter": {},
+                "min_polygon_m2": float(
+                    hent(konf, "oplande.min_polygon_areal_m2", 100.0)),
+                "celletal_dele": {}}
 
     if ukortlagte:
         # Det er ikke en fejl: definitionen i CLAUDE.md siger KORTLAGT vandloeb, og AIS
