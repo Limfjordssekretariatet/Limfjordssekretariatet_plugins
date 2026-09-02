@@ -364,6 +364,12 @@ class AtlasBuilder:
         navn_f = resolved.get("navn")
         adr_f = resolved.get("adresse")
         post_f = resolved.get("postnr")
+        # Har brugeren peget på sit eget løbenummer-felt, skal det bruges.
+        # Det genererede felt er @id og skal derimod IKKE læses: numrene
+        # tildeles løbende nedenfor, så de bliver 1..n uden huller efter
+        # arealfiltret.
+        lob_f = resolved.get("lobenr")
+        eget_lobenr = lob_f if lob_f and lob_f != GENERATED_LOBENR_FIELD else None
 
         # Saml geometrier og attributter pr. ejer.
         groups = {}
@@ -382,6 +388,7 @@ class AtlasBuilder:
                     COV_NAVN: feat[navn_f] if navn_f else owner_key,
                     COV_ADRESSE: feat[adr_f] if adr_f else "",
                     COV_POSTNR: feat[post_f] if post_f else "",
+                    COV_LOBENR: feat[eget_lobenr] if eget_lobenr else None,
                 }
 
         out_feats = []
@@ -414,7 +421,18 @@ class AtlasBuilder:
             f.setAttribute(COV_NAVN, self._to_str(attrs.get(COV_NAVN)))
             f.setAttribute(COV_ADRESSE, self._to_str(attrs.get(COV_ADRESSE)))
             f.setAttribute(COV_POSTNR, self._to_str(attrs.get(COV_POSTNR)))
-            f.setAttribute(COV_LOBENR, lobenr)
+            # Brugerens eget nummer, hvis han har valgt et felt — ellers det
+            # løbende. Kan værdien ikke læses som et tal, bruges det løbende:
+            # atlasset sorterer og navngiver sider efter feltet.
+            nummer = lobenr
+            if eget_lobenr:
+                raa = attrs.get(COV_LOBENR)
+                try:
+                    nummer = int(self._to_str(raa))
+                except (TypeError, ValueError):
+                    _log("  loebenummer {!r} for {!r} kunne ikke laeses som tal "
+                         "— bruger {}".format(raa, owner_key[:30], lobenr))
+            f.setAttribute(COV_LOBENR, nummer)
 
             # Arealtabel pr. ejer (ha) ud fra referencekortet, hvis givet.
             omdrift_ha, graes_ha, natur_ha = self._owner_area_table(
@@ -612,7 +630,22 @@ class AtlasBuilder:
 
     @staticmethod
     def _to_str(value):
-        return "" if value is None else str(value)
+        """Tekst fra en celle - tom hvis der ikke staar noget.
+
+        feat[felt] giver QGIS' NULL for en tom celle, ikke None, og
+        str(NULL) er teksten "NULL". Den stod ordret paa etiketten i
+        atlasset for hver lodsejer uden adresse.
+        """
+        if value is None:
+            return ""
+        try:
+            from qgis.core import QgsVariantUtils
+            if QgsVariantUtils.isNull(value):
+                return ""
+        except Exception:
+            pass
+        tekst = str(value)
+        return "" if tekst == "NULL" else tekst
 
     # ----------------------------------------------- matrikellag (highlight)
     def _build_highlight_layer(self, parcel_layer, name, matrikel_field=None,
