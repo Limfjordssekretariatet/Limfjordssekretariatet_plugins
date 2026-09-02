@@ -97,9 +97,15 @@ class IndsaetGridnummerVandloeb(QgsProcessingAlgorithm):
 
         features = list(lag.getFeatures())
         if not features:
-            raise QgsProcessingException(
-                'Ingen features i det udtrukne grid-lag.'
-            )
+            # Uden vandloebsopland er der ingen DMI-celle at slaa op. Det er ikke
+            # en fejl: arealet er nul, og nedboeren indgaar ikke i regnestykket.
+            # At stoppe her ville forhindre resten af regnearket i at blive fyldt ud.
+            feedback.pushWarning(
+                'Ingen DMI-celle rammer vandløbsoplandet — det er 0 ha, fordi der '
+                'ikke løber et kortlagt vandløb ind i projektområdet. '
+                f'Cellen {CELLE} i "{ARK_NAVN}" lades urørt; vandløbsoplandets '
+                'areal skrives som nul.')
+            return {}
 
         gridnummer = features[0][GRID_FELT]
         if isinstance(gridnummer, str) and gridnummer.startswith(PRÆFIKS):

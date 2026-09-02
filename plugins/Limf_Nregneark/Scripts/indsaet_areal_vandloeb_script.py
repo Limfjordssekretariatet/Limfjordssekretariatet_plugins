@@ -136,6 +136,11 @@ class IndsaetArealVandloeb(QgsProcessingAlgorithm):
         )
 
         feedback.pushInfo(f'Areal beregnet: {areal_ha} ha')
+        if not areal_ha:
+            feedback.pushWarning(
+                'Vandløbsoplandet er 0 ha — der løber intet kortlagt vandløb ind i '
+                'projektområdet. Nul skrives i regnearket; hele oplandet står som '
+                'direkte opland.')
 
         if feedback.isCanceled():
             return {}

@@ -486,15 +486,19 @@ class UdpegOplandeN(QgsProcessingAlgorithm):
                 f'Totaloplandet mangler i leverancen {gpkg} — beregningen nåede ikke '
                 'at skrive det. Se loggen.')
         if vand_raa is None:
-            raise QgsProcessingException(
-                'Der blev ikke beregnet ét eneste vandløbsopland. Enten løber der '
-                'reelt intet kortlagt vandløb ind i projektområdet — og så er hele '
-                'totaloplandet direkte opland — eller vandløbslaget dækker ikke '
-                f'området. Kontrollér det i {gpkg} (lagene indloebspunkter og '
-                'vandveje_beregnet) før du går videre; regnearket kan ikke udfyldes '
-                'uden et vandopland.')
+            # Ikke en fejl. Løber der intet kortlagt vandløb ind, er hele
+            # totaloplandet direkte opland, og vandoplandet er nul — laget
+            # skrives tomt, så regnearket kan udfyldes med 0.
+            feedback.pushWarning(
+                'Der blev ikke beregnet ét eneste vandløbsopland. Løber der reelt '
+                'intet kortlagt vandløb ind i projektområdet, er hele totaloplandet '
+                'direkte opland, og vandoplandet er 0 ha — regnearket udfyldes med '
+                'nul. Dækker vandløbslaget derimod ikke området, kan det ses i '
+                f'{gpkg} (lagene indloebspunkter og vandveje_beregnet); '
+                'kontrollér det før du går videre.')
 
-        vandoplandet_geom = vand_raa.difference(omraade_geom)
+        vandoplandet_geom = (vand_raa.difference(omraade_geom)
+                             if vand_raa is not None else QgsGeometry())
         direkte_geom = (direkte_raa.difference(omraade_geom)
                         if direkte_raa is not None else QgsGeometry())
         klippe_geom = total_geom.combine(omraade_geom)
