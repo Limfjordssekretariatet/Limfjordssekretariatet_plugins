@@ -205,6 +205,20 @@ def registrer_whitebox(log: Log) -> None:
     log.skriv(f"Whitebox Workflows registreret: {antal} algoritmer")
 
 
+def har_whitebox(log: Log) -> bool:
+    """Er Whitebox til raadighed? Rejser ikke.
+
+    Bruges de steder hvor udvidelsen kan undvaeres — saa maa en manglende
+    udvidelse koste det ene lag, ikke hele koerslen.
+    """
+    try:
+        registrer_whitebox(log)
+        return True
+    except Exception as e:
+        log.advar(f"Whitebox er ikke til raadighed: {e}")
+        return False
+
+
 def kraev_algoritme(vaerktoej: str) -> str:
     """
     Verificerer at et Whitebox-vaerktoej findes, og returnerer dets fulde ID.
@@ -2567,7 +2581,7 @@ def trin6_leverance(konf: dict, graf: Stroemningsgraf, trin3: dict, trin4: dict,
                [(projekt_geom, [projekt_geom.area() / 1e4, navn, koersel_id])], log)
 
     # -- lag 6: modellens vandveje, til visuel kontrol -------------------
-    if bool(hent(konf, "output.vandveje_lag", True)):
+    if bool(hent(konf, "output.vandveje_lag", True)) and har_whitebox(log):
         veje = derived / "06_vandveje.gpkg"
         _frigiv(veje)
         koer(kraev_algoritme("raster_streams_to_vector"), {
@@ -2586,6 +2600,10 @@ def trin6_leverance(konf: dict, graf: Stroemningsgraf, trin3: dict, trin4: dict,
         if linjer:
             _skriv_lag(gpkg, "vandveje_beregnet", "MultiLineString", epsg,
                        [("koersel_id", "tekst"), ("taerskel_ha", "tal")], linjer, log)
+    elif bool(hent(konf, "output.vandveje_lag", True)):
+        log.advar("laget 'modellens vandveje' springes over — det kraever "
+                  "Whitebox. Det er et kontrollag; oplandene og tallene i "
+                  "leverancen er upaavirkede.")
 
     # -- QA ---------------------------------------------------------------
     qa = _qa(konf, graf, trin3, trin4, trin5, total_geom, direkte_geom, vl_geom, log)
@@ -2753,7 +2771,11 @@ def koer_analyse(konf: dict, log: Log, koersel_id: str, foerste_trin: int = 0,
         if afbryd is not None and afbryd():
             raise Afbrudt("koerslen blev afbrudt")
 
-    registrer_whitebox(log)
+    # Whitebox bruges i trin 0-2 (breaching, fill, D8) og til ét kontrollag i
+    # trin 6. Genbruges konditioneringen, er trin 3-5 ren Python paa
+    # stroemningsgrafen — saa skal udvidelsen ikke kraeves her.
+    if foerste_trin <= 2:
+        registrer_whitebox(log)
     log_dir = absolut(hent(konf, "output.log_dir"))
     gem_parameterlog(konf, log_dir, koersel_id)
 

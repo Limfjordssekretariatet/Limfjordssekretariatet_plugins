@@ -268,7 +268,9 @@ class UdpegOplandeN(QgsProcessingAlgorithm):
 
     def processAlgorithm(self, parameters, context: QgsProcessingContext,
                          feedback: QgsProcessingFeedback):
-        om.tjek_forudsaetninger(feedback)
+        # Whitebox kraeves foerst naar vi ved om konditioneringen skal
+        # laves om — trin 3-5 klarer sig uden.
+        om.tjek_forudsaetninger(feedback, kraev_whitebox=False)
         oplande = om.indlaes_oplande()
         ud_mappe = om.output_mappe()
         stier = om.arbejdsstier(ud_mappe)
@@ -356,6 +358,9 @@ class UdpegOplandeN(QgsProcessingAlgorithm):
             om.meld(feedback,
                     'Genbrugte konditioneringen fra '
                     + str(maerke.get('kilde', 'ukendt kilde')))
+        else:
+            # Terraenet skal konditioneres — og DET er Whitebox' arbejde.
+            om.tjek_whitebox(feedback)
 
         if om.gem_konfiguration(konf, stier['konf_fil']) and not maerke:
             feedback.pushInfo(
