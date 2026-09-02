@@ -1790,23 +1790,36 @@ class ModelMappeDialog(QtWidgets.QDialog):
 
         projekt = QgsProject.instance()
         tilfoejet = []
+        sprunget = []
         for navn, sti in lag_liste:
             if not os.path.isfile(sti):
+                sprunget.append(f'{navn} (filen findes ikke: {sti})')
                 continue
-            # Fjern eksisterende lag der peger på samme fil, så vi ikke får dubletter
-            sti_norm = os.path.normpath(sti).lower()
-            for lag in list(projekt.mapLayers().values()):
-                kilde = lag.source().split('|', 1)[0]
-                if os.path.normpath(kilde).lower() == sti_norm:
-                    projekt.removeMapLayer(lag.id())
+            # Indlæs FØRST. Blev det gamle lag fjernet inden, og kunne det nye
+            # ikke læses, stod projektet tilbage uden nogen af dem — og næste
+            # trin meldte at laget ikke fandtes.
             if os.path.splitext(sti)[1].lower() in RASTER_EXT:
                 lag = QgsRasterLayer(sti, navn)
             else:
                 lag = QgsVectorLayer(sti, navn, 'ogr')
-            if lag.isValid():
-                projekt.addMapLayer(lag)
-                tilfoejet.append(navn)
-                self._stil_lag(lag)
+            if not lag.isValid():
+                sprunget.append(f'{navn} (kunne ikke læses: {sti})')
+                continue
+            # Erstat eksisterende lag der peger på samme fil, så vi ikke får dubletter
+            sti_norm = os.path.normpath(sti).lower()
+            for gammelt in list(projekt.mapLayers().values()):
+                kilde = gammelt.source().split('|', 1)[0]
+                if os.path.normpath(kilde).lower() == sti_norm:
+                    projekt.removeMapLayer(gammelt.id())
+            projekt.addMapLayer(lag)
+            tilfoejet.append(navn)
+            self._stil_lag(lag)
+
+        if sprunget:
+            # Et lag der stille udebliver, viser sig foerst som en fejl to trin
+            # senere. Sig det med det samme.
+            self._log_fejl('Lag til projektet', ', '.join(sprunget),
+                           'kunne ikke tilføjes')
 
         # Gem projektet hvis der er en projektfil knyttet
         projekt_fil = projekt.fileName()
@@ -2316,11 +2329,26 @@ class ModelMappeDialog(QtWidgets.QDialog):
 
         def byg(fil, navn, outputfiler_sti):
             forventet_lagnavn = f'Direkte_Opland_{navn}'
-            if not any(l.name() == forventet_lagnavn
-                       for l in QgsProject.instance().mapLayers().values()):
+
+            def i_projektet():
+                return any(l.name() == forventet_lagnavn
+                           for l in QgsProject.instance().mapLayers().values())
+
+            if not i_projektet():
+                # Laget kan ligge færdigt på disken uden at være i lagpanelet:
+                # fjernet i hånden, projektet åbnet igen, eller en tilføjelse
+                # der ikke gik igennem. Formlen slår op på lagnavn, så hent
+                # filen ind — frem for at sende brugeren tilbage til et trin,
+                # der allerede er kørt.
+                fil_sti = os.path.join(outputfiler_sti, 'Direkte_Opland.gpkg')
+                if os.path.isfile(fil_sti):
+                    self._tilfoej_lag_til_projekt(
+                        [(forventet_lagnavn, fil_sti)])
+            if not i_projektet():
                 raise RuntimeError(
-                    f"Laget '{forventet_lagnavn}' findes ikke. "
-                    f"Kør 'Udpeg oplande' først."
+                    f"Laget '{forventet_lagnavn}' findes ikke, og "
+                    f"Direkte_Opland.gpkg kunne ikke hentes fra "
+                    f"{outputfiler_sti}. Kør 'Udpeg oplande' først."
                 )
 
             modificeret = original_indhold.replace(
