@@ -12,6 +12,66 @@ from qgis.core import (
 )
 
 
+# Sørg for at scriptets egen mappe er på sys.path, så 'utils' altid kan
+# importeres uanset hvordan QGIS' script-provider loader filen.
+import os as _os, sys as _sys
+try:
+    _d = _os.path.dirname(_os.path.abspath(__file__))
+    if _d and _d not in _sys.path:
+        _sys.path.insert(0, _d)
+except NameError:
+    pass
+from utils import find_resultater_mappe, get_resultat_excel_navn
+
+
+def find_regneark():
+    """Resultater/Resultat_<omraade>.xlsx, eller None hvis den ikke findes."""
+    resultater = find_resultater_mappe()
+    if not resultater:
+        return None
+    sti = os.path.join(resultater, get_resultat_excel_navn())
+    return sti if os.path.isfile(sti) else None
+
+
+def genberegn_i_excel(excel_sti, feedback):
+    """Faa Excel til at regne arkets formler igennem og gemme.
+
+    openpyxl skriver tal, men beregner ikke formler. Cellen med N-tabet er en
+    formel, og dens gemte vaerdi staar derfor tom, indtil regnearket har
+    vaeret aabnet i Excel. Er Excel paa maskinen, ordnes det her; ellers maa
+    brugeren aabne og gemme filen én gang.
+
+    Returnerer True hvis genberegningen lykkedes.
+    """
+    try:
+        import win32com.client
+    except ImportError:
+        feedback.pushInfo(
+            "Excel kunne ikke fjernstyres herfra (pywin32 mangler) — "
+            "formlerne skal regnes ud ved at åbne regnearket.")
+        return False
+    excel = None
+    try:
+        excel = win32com.client.DispatchEx("Excel.Application")
+        excel.Visible = False
+        excel.DisplayAlerts = False
+        bog = excel.Workbooks.Open(os.path.abspath(excel_sti))
+        excel.CalculateFullRebuild()
+        bog.Save()
+        bog.Close(SaveChanges=False)
+        feedback.pushInfo("Regnearkets formler blev regnet igennem i Excel.")
+        return True
+    except Exception as e:
+        feedback.pushWarning(f"Kunne ikke regne formlerne igennem i Excel: {e}")
+        return False
+    finally:
+        if excel is not None:
+            try:
+                excel.Quit()
+            except Exception:
+                pass
+
+
 EXCEL_ARK_TILFOERSEL  = "1. Tilførsel"
 EXCEL_ARK_OMSAETNING  = "2. Omsætning"
 TN_BELASTNING_CELLE   = "C30"   # kg N/ha/år  — Tilførsel, vandoplandet
@@ -72,17 +132,21 @@ class BeregnOmsaetningsrate(QgsProcessingAlgorithm):
                 "QGIS-projektet er ikke gemt. Gem projektet og prøv igen."
             )
 
-        output_mappe = os.path.join(projekt_mappe, f"Outputfiler_{lag_navn}")
-        if not os.path.isdir(output_mappe):
+        # Regnearket ligger i <projektområde>/Resultater — samme opslag som de
+        # øvrige regnearkstrin bruger. Den gamle sti under QGIS-projektmappen
+        # prøves bagefter, så en ældre projektmappe stadig virker.
+        excel_filnavn = get_resultat_excel_navn()
+        excel_sti = find_regneark()
+        if not excel_sti:
+            gammel_sti = os.path.join(projekt_mappe, f"Outputfiler_{lag_navn}",
+                                      f"Resultat_{lag_navn}.xlsx")
+            if os.path.isfile(gammel_sti):
+                excel_sti = gammel_sti
+        if not excel_sti:
             raise QgsProcessingException(
-                f'Mappen "Outputfiler_{lag_navn}" blev ikke fundet i: {projekt_mappe}'
-            )
-
-        excel_filnavn = f"Resultat_{lag_navn}.xlsx"
-        excel_sti = os.path.join(output_mappe, excel_filnavn)
-        if not os.path.isfile(excel_sti):
-            raise QgsProcessingException(
-                f'Excel-filen "{excel_filnavn}" blev ikke fundet i: {output_mappe}'
+                f'{excel_filnavn} blev ikke fundet.\n\n'
+                'Kør "Projektområde" i interfacet først — det opretter Excel-filen.\n'
+                'Tjek også at mappe, projektnavn og projektområde er udfyldt i boks 1.'
             )
 
         feedback.pushInfo(f"Læser Excel-fil: {excel_sti}")
@@ -97,9 +161,25 @@ class BeregnOmsaetningsrate(QgsProcessingAlgorithm):
 
         tn_raa = wb_read[EXCEL_ARK_TILFOERSEL][TN_BELASTNING_CELLE].value
         if tn_raa is None:
+            # Cellen er en formel. Pluginnet skriver tal ind, men regner ikke
+            # formler — så den gemte værdi står tom, til Excel har haft fat i
+            # filen. Prøv at få den regnet igennem frem for at give op.
+            wb_read.close()
+            feedback.pushInfo(
+                f"{EXCEL_ARK_TILFOERSEL}!{TN_BELASTNING_CELLE} har ingen beregnet "
+                "værdi — regnearkets formler regnes igennem.")
+            if genberegn_i_excel(excel_sti, feedback):
+                wb_read = openpyxl.load_workbook(excel_sti, data_only=True)
+                tn_raa = wb_read[EXCEL_ARK_TILFOERSEL][TN_BELASTNING_CELLE].value
+        if tn_raa is None:
             raise QgsProcessingException(
-                f"Cellen {EXCEL_ARK_TILFOERSEL}!{TN_BELASTNING_CELLE} er tom. "
-                f"Kør vandoplandet-beregningen først."
+                f"{EXCEL_ARK_TILFOERSEL}!{TN_BELASTNING_CELLE} (N-tab fra oplandet) "
+                "har ingen beregnet værdi.\n\n"
+                "Cellen er en formel, og formler regnes først ud når regnearket "
+                "åbnes i Excel — pluginnet skriver kun tal ind.\n\n"
+                f"Åbn regnearket, gem det, og kør trinnet igen:\n{excel_sti}\n\n"
+                "Er felterne for nedbør, sandjord og dyrket areal tomme, mangler "
+                'trinnene før dette — kør "Vandopland" og "Direkte opland".'
             )
 
         try:
