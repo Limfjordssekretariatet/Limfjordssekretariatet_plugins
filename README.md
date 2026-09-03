@@ -13,10 +13,10 @@ videregive dem. Se [Licens og kreditering](#licens-og-kreditering).
 | **Vandprojekter – Jordbund** | 3.2.15 | Håndtering af jordprøver – grid (markkort-baseret), centerpunkter, QField-klargøring og rapporteksport |
 | **Vandprojekter – Vådområder** | 4.0.21 | Diverse GIS-værktøjer (jordberegning, terræninterpolation m.m.) |
 | **Vandprojekter – Dræn** | 0.2.18 | Find drænudløbspunkter baseret på fald og DEM |
-| **Vandprojekter – Lodsejeratlas** | 0.2.12 | Genererer et lodsejer-atlas (mapbook) ud fra en layout-skabelon med auto-mapping af felter |
-| **Vandprojekter – Lodsejerudtræk** | 0.1.14 | Henter matrikler og ejeroplysninger for et valgt polygon via Datafordeleren/CVR |
+| **Vandprojekter – Lodsejeratlas** | 0.2.13 | Genererer et lodsejer-atlas (mapbook) ud fra en layout-skabelon med auto-mapping af felter |
+| **Vandprojekter – Lodsejerudtræk** | 0.1.15 | Henter matrikler og ejeroplysninger for et valgt polygon via Datafordeleren/CVR |
 | **Vandprojekter – VASP** | 1.2.19 | Integration mellem VASP Access-database og QGIS – henter terræn-/profildata ind som lag |
-| **Vandprojekter – N-regneark** | 2.21 | Udfylder kvælstof-regnearket (N) for et vådområdeprojekt: oplande, arealer og tilførsel |
+| **Vandprojekter – N-regneark** | 2.22 | Udfylder kvælstof-regnearket (N) for et vådområdeprojekt: oplande, arealer og tilførsel |
 
 ---
 

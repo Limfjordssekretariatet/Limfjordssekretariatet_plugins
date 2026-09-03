@@ -1,13 +1,13 @@
 [general]
 name=Vandprojekter – N-regneark
-qgisMinimumVersion=3.38
+qgisMinimumVersion=3.34
 # Whitebox leverer hydrologien i 'Beregn strømningsveje' og
 # 'Udpeg oplande'. Erklæres her, så QGIS' udvidelseshåndtering
 # selv gør opmærksom på den — frem for at brugeren først opdager
 # det midt i en kørsel.
 plugin_dependencies=Whitebox Workflows
 description=Automatisk udfyldning af kvælstof-regneark (N) for vådområdeprojekter
-version=2.21
+version=2.22
 author=Henrik Rosenskjold, Limfjordsrådets sekretariat
 email=henrik.rosenskjold@aalborg.dk
 homepage=https://limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/
