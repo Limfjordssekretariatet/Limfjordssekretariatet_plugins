@@ -22,6 +22,11 @@ videregive dem. Se [Licens og kreditering](#licens-og-kreditering).
 
 ## Installation i QGIS
 
+**Kræver QGIS 3.34 eller nyere.** Lodsejeratlas, Lodsejerudtræk og
+N-regneark vises ikke i udvidelseshåndteringen på ældre versioner — QGIS
+skjuler plugins, der kræver en nyere version end den, du kører. De fire
+øvrige (Dræn, Jordbund, VASP, Vådområder) går tilbage til QGIS 3.0.
+
 ### Trin 1 – Tilføj repository
 
 1. Åbn QGIS
