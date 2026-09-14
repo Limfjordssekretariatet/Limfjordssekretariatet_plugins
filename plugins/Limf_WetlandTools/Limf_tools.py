@@ -18,6 +18,7 @@ import os
 from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction
+from qgis.core import QgsApplication
 
 # Initialize Qt resources from file resources.py
 from .resources import *
@@ -60,6 +61,8 @@ class Limfjordssekretariatet_tools:
         # Declare instance attributes
         self.actions = []
         self.first_start = None
+        self.tegne_action = None
+        self.tegne_vaerktoej = None
 
     def tr(self, message):
         return QCoreApplication.translate('Limfjordssekretariatet_tools', message)
@@ -106,13 +109,53 @@ class Limfjordssekretariatet_tools:
             callback=self.run,
             parent=self.iface.mainWindow())
 
+        # Tegneværktøjet får sin egen knap. Det kan ikke ligge bag den
+        # modale dialog: man skal kunne tegne på kortet, mens knappen er
+        # trykket ned, og den skal blive nede mellem to forløb.
+        self.tegne_action = QAction(
+            QgsApplication.getThemeIcon('/mActionCapturePolyline.svg'),
+            self.tr(u'Tegn vandløbsforløb'),
+            self.iface.mainWindow())
+        self.tegne_action.setCheckable(True)
+        self.tegne_action.setStatusTip(
+            self.tr(u'Tegn et forløb ved at følge kanterne på de synlige lag'))
+        self.tegne_action.setToolTip(self.tr(
+            u'Tegn vandløbsforløb\n\n'
+            u'Følger kanterne på de synlige linje- og fladelag. Klik for at '
+            u'starte, før musen for at se forslaget, Enter eller højreklik '
+            u'for at gemme. Backspace fortryder sidste punkt, Esc kasserer.'))
+        self.tegne_action.triggered.connect(self.tegn_vandloebsforloeb)
+        faelles_gui.tilfoej(self.iface, self.tegne_action)
+        self.actions.append(self.tegne_action)
+
         self.first_start = True
+
+    def tegn_vandloebsforloeb(self):
+        """Slå tegneværktøjet til på kortet."""
+        if self.tegne_vaerktoej is None:
+            from .vandloebsforloeb import VandloebsforloebTool
+
+            self.tegne_vaerktoej = VandloebsforloebTool(self.iface)
+            # Uden dette bliver knappen hængende i trykket tilstand, når
+            # brugeren skifter til et andet kortværktøj.
+            self.tegne_vaerktoej.setAction(self.tegne_action)
+        self.iface.mapCanvas().setMapTool(self.tegne_vaerktoej)
 
     def unload(self):
         """Removes the plugin menu item and icon."""
+        # Kortværktøjet skal af kortet, før knappen forsvinder — ellers
+        # sidder QGIS tilbage med et værktøj fra et plugin der ikke findes.
+        if self.tegne_vaerktoej is not None:
+            canvas = self.iface.mapCanvas()
+            if canvas.mapTool() is self.tegne_vaerktoej:
+                canvas.unsetMapTool(self.tegne_vaerktoej)
+            self.tegne_vaerktoej.cleanup()
+            self.tegne_vaerktoej = None
+
         for action in self.actions:
             faelles_gui.fjern(self.iface, action)
         self.actions = []
+        self.tegne_action = None
 
     def run(self):
         """Run whenever user clicks icon/menu."""
