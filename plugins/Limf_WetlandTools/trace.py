@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Tegn vandløbsforløb ved at følge kanterne på eksisterende lag.
+"""Trace — tegn et forløb ved at følge kanterne på eksisterende lag.
 
 Et vandløbsforløb skal typisk følge noget, der allerede er kortlagt — en
 eksisterende vandløbslinje, en grøft, kanten af en sø eller et
@@ -34,7 +34,7 @@ from qgis.core import (
 from qgis.gui import QgsMapToolAdvancedDigitizing, QgsRubberBand, QgsSnapIndicator
 
 
-class VandloebsforloebTool(QgsMapToolAdvancedDigitizing):
+class TraceTool(QgsMapToolAdvancedDigitizing):
     """Korttegneværktøj der sporer langs eksisterende linjer og flader.
 
     Sådan bruges det:

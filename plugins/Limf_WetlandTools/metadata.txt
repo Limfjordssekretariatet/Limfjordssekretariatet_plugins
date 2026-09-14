@@ -6,7 +6,7 @@
 name=Vandprojekter – Vådområder
 qgisMinimumVersion=3.0
 description=Værktøjer til vådområde- og lavbundsprojekter: afvanding, terræn og jordberegning
-version=4.0.22
+version=4.0.23
 author=Henrik Rosenskjold, Limfjordsrådets sekretariat
 email=henrik.rosenskjold@aalborg.dk
 

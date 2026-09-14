@@ -18,7 +18,6 @@ import os
 from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction
-from qgis.core import QgsApplication
 
 # Initialize Qt resources from file resources.py
 from .resources import *
@@ -113,29 +112,30 @@ class Limfjordssekretariatet_tools:
         # modale dialog: man skal kunne tegne på kortet, mens knappen er
         # trykket ned, og den skal blive nede mellem to forløb.
         self.tegne_action = QAction(
-            QgsApplication.getThemeIcon('/mActionCapturePolyline.svg'),
-            self.tr(u'Tegn vandløbsforløb'),
+            QIcon(os.path.join(self.plugin_dir, 'ikon_trace.png')),
+            self.tr(u'Trace'),
             self.iface.mainWindow())
         self.tegne_action.setCheckable(True)
         self.tegne_action.setStatusTip(
-            self.tr(u'Tegn et forløb ved at følge kanterne på de synlige lag'))
+            self.tr(u'Trace: tegn et forløb langs kanterne på de synlige lag'))
         self.tegne_action.setToolTip(self.tr(
-            u'Tegn vandløbsforløb\n\n'
-            u'Følger kanterne på de synlige linje- og fladelag. Klik for at '
-            u'starte, før musen for at se forslaget, Enter eller højreklik '
-            u'for at gemme. Backspace fortryder sidste punkt, Esc kasserer.'))
-        self.tegne_action.triggered.connect(self.tegn_vandloebsforloeb)
+            u'Trace\n\n'
+            u'Tegn et vandløbsforløb ved at følge kanterne på de synlige '
+            u'linje- og fladelag. Klik for at starte, før musen for at se '
+            u'forslaget, Enter eller højreklik for at gemme. Backspace '
+            u'fortryder sidste punkt, Esc kasserer.'))
+        self.tegne_action.triggered.connect(self.trace)
         faelles_gui.tilfoej(self.iface, self.tegne_action)
         self.actions.append(self.tegne_action)
 
         self.first_start = True
 
-    def tegn_vandloebsforloeb(self):
-        """Slå tegneværktøjet til på kortet."""
+    def trace(self):
+        """Slå Trace-værktøjet til på kortet."""
         if self.tegne_vaerktoej is None:
-            from .vandloebsforloeb import VandloebsforloebTool
+            from .trace import TraceTool
 
-            self.tegne_vaerktoej = VandloebsforloebTool(self.iface)
+            self.tegne_vaerktoej = TraceTool(self.iface)
             # Uden dette bliver knappen hængende i trykket tilstand, når
             # brugeren skifter til et andet kortværktøj.
             self.tegne_vaerktoej.setAction(self.tegne_action)
