@@ -20,13 +20,21 @@ import math
 
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QColor
+from qgis.PyQt.QtWidgets import QApplication
 
 from qgis.core import (
     Qgis,
     QgsCoordinateTransform,
+    QgsCsException,
+    QgsFeature,
+    QgsFeatureRequest,
+    QgsFields,
     QgsGeometry,
+    QgsMemoryProviderUtils,
+    QgsPointLocator,
     QgsPointXY,
     QgsProject,
+    QgsRectangle,
     QgsSnappingConfig,
     QgsSnappingUtils,
     QgsTolerance,
@@ -61,11 +69,11 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
     intet blev husket imellem, så en lige streg kunne erstatte hele sporet.
     """
 
-    #: Hvor mange objekter sporingsgrafen højst bygges af. Et helt
-    #: vandløbstema kan være hundredtusinder af linjer, og grafen bygges
-    #: forfra hver gang kortudsnittet flytter sig.
+    #: Hvor mange objekter sporingsnettet højst bygges af. Et helt
+    #: vandløbstema kan være hundredtusinder af linjer, og nettet bygges
+    #: forfra, hver gang man panorerer ud af det.
     MAKS_OBJEKTER = 30000
-    #: Grafen bygges af lidt mere end det synlige udsnit, så sporingen ikke
+    #: Nettet bygges af lidt mere end det synlige udsnit, så sporingen ikke
     #: stopper ved kanten af skærmen.
     UDSNIT_MARGIN = 1.5
     #: Snapafstand i skærmpixels.
@@ -77,8 +85,19 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
         self.iface = iface
         self.canvas = canvas
 
+        # Nettet der spores langs: de synlige linjer og fladekanter i
+        # udsnittet, knudet i skæringerne. Se _byg_net.
+        self.net = QgsMemoryProviderUtils.createMemoryLayer(
+            'Sporingsnet', QgsFields(), QgsWkbTypes.LineString,
+            canvas.mapSettings().destinationCrs())
+        self.net_finder = None        # QgsPointLocator på nettet
+        self._net_omfang = None       # det udsnit, nettet dækker
+        self._net_foraeldet = True
+        self._fejlet_behov = None     # udsnit, hvor nettet ikke kunne bygges
+        self._kildelag = []           # lag, hvis ændringer gør nettet forældet
+
         self.tracer = QgsTracer()
-        self.tracer.setMaxFeatureCount(self.MAKS_OBJEKTER)
+        self.tracer.setLayers([self.net])
 
         # Egen snapmotor, uafhængig af projektets snapindstillinger, så der
         # altid kan spores langs ethvert synligt lag — også når projektet er
@@ -102,9 +121,10 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
         # Markøren er væk fra nettet: forslaget får en lige hale hen til den.
         self._fri_hale = False
         self._sidste_punkt = None     # senest opsnappede markørposition
-        # Beskeden om for mange objekter gives én gang pr. opbygning af
-        # grafen — ellers ville den komme for hver musebevægelse.
-        self._for_mange_meldt = False
+        self._markoer = None          # markørens position, før snap
+        # En besked om, at der ikke kan spores, gives én gang pr. udsnit —
+        # ellers ville den komme for hver musebevægelse.
+        self._meldt = False
 
         self.baand_laast = QgsRubberBand(canvas, QgsWkbTypes.LineGeometry)
         self.baand_laast.setColor(QColor(255, 80, 0, 220))
@@ -117,14 +137,26 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
 
         self.snapmarkering = QgsSnapIndicator(canvas)
 
-        self.canvas.extentsChanged.connect(self._opdater_omfang)
+        for signal, slot in self._kortsignaler():
+            signal.connect(slot)
+
+    def _kortsignaler(self):
+        return (
+            (self.canvas.extentsChanged, self._kort_flyttet),
+            (self.canvas.layersChanged, self._net_er_foraeldet),
+            (self.canvas.destinationCrsChanged, self._net_er_foraeldet),
+        )
 
     def cleanup(self):
         """Kaldes når pluginnet aflæsses."""
-        try:
-            self.canvas.extentsChanged.disconnect(self._opdater_omfang)
-        except (TypeError, RuntimeError):
-            pass
+        for signal, slot in self._kortsignaler():
+            try:
+                signal.disconnect(slot)
+            except (TypeError, RuntimeError):
+                pass
+        self._afkobl_kildelag()
+        self.tracer.setLayers([])
+        self.net_finder = None
         self.baand_laast.reset(QgsWkbTypes.LineGeometry)
         self.baand_forslag.reset(QgsWkbTypes.LineGeometry)
 
@@ -153,7 +185,8 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
         self.lag = lag
         self.geometritype = type_
         self._nulstil_skitse()
-        self._opdater_omfang()
+        self._net_foraeldet = True
+        self._kort_flyttet()
 
     def deactivate(self):
         self._nulstil_skitse()
@@ -164,6 +197,11 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
     def _sig_til(self, besked):
         self.iface.messageBar().pushMessage(
             'Trace', besked, level=Qgis.Warning, duration=6)
+
+    def _meld(self, besked):
+        if not self._meldt:
+            self._meldt = True
+            self._sig_til(besked)
 
     @staticmethod
     def _lag_type(lag):
@@ -177,7 +215,7 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
         return False, None
 
     # ------------------------------------------------------------------
-    # sporingsgrafens omfang
+    # sporingsnettet
     # ------------------------------------------------------------------
 
     def _sporbare_lag(self):
@@ -201,63 +239,229 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
             lag.append(l)
         return lag
 
-    def _opdater_omfang(self):
-        """Byg sporingsgrafen for det udsnit, der skal kunne spores i.
+    def _kort_flyttet(self):
+        # Snapafstanden i pixels regnes om til kortenheder ud fra udsnittet.
+        self.snap.setMapSettings(self.canvas.mapSettings())
+        self._meldt = False
 
-        Det er skærmudsnittet — og det sidst låste punkt. Uden punktet
-        holdt sporingen op, så snart man panorerede langs et langt
-        vandløb: punktet gled ud af grafen, der kunne ikke spores fra det,
-        og værktøjet tegnede lige linjer i stedet. Rektanglet om begge
-        dækker også strækningen imellem.
+    def _net_er_foraeldet(self, *_):
+        self._net_foraeldet = True
+
+    def _afkobl_kildelag(self):
+        for lag in self._kildelag:
+            try:
+                lag.layerModified.disconnect(self._net_er_foraeldet)
+                lag.dataChanged.disconnect(self._net_er_foraeldet)
+            except (TypeError, RuntimeError):
+                pass
+        self._kildelag = []
+
+    def _sikr_net(self):
+        """Sørg for, at nettet dækker skærmen og sporets ende.
+
+        Sporets ende skal med, også når man har panoreret væk fra den —
+        ellers holder sporingen op, så snart den glider ud af udsnittet.
         """
-        kortopsaetning = self.canvas.mapSettings()
-
-        self.tracer.setDestinationCrs(
-            kortopsaetning.destinationCrs(),
-            QgsProject.instance().transformContext())
-        self.tracer.setLayers(self._sporbare_lag())
-        udsnit = self.canvas.extent()
-        # Der spores fra sporets ende — den skal ligge i grafen, også når
-        # man har panoreret væk fra den.
+        behov = self.canvas.extent()
         ende = self.spor[-1] if self.spor else (
             self.punkter[-1] if self.punkter else None)
         if ende is not None:
-            udsnit.combineExtentWith(ende.x(), ende.y())
-        udsnit.scale(self.UDSNIT_MARGIN)
-        self.tracer.setExtent(udsnit)
-        self._for_mange_meldt = False
+            behov.combineExtentWith(ende.x(), ende.y())
 
-        self.snap.setMapSettings(kortopsaetning)
+        if not self._net_foraeldet:
+            if self._net_omfang is not None and self._net_omfang.contains(behov):
+                return
+            if self._fejlet_behov is not None and self._fejlet_behov == behov:
+                return        # ikke et nyt forsøg ved hver musebevægelse
+
+        omfang = QgsRectangle(behov)
+        omfang.scale(self.UDSNIT_MARGIN)
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            ok = self._byg_net(omfang)
+        finally:
+            QApplication.restoreOverrideCursor()
+        self._net_foraeldet = False
+        self._net_omfang = omfang if ok else None
+        self._fejlet_behov = None if ok else QgsRectangle(behov)
+
+    def _byg_net(self, omfang):
+        """Byg nettet for ``omfang`` (kortets CRS). False, hvis det ikke går.
+
+        QgsTracer knuder selv linjerne med GEOS, men kontrollerer ikke
+        resultatet. Giver GEOS op — det sker, når linjer ligger næsten oven i
+        hinanden, fx flere udgaver af det samme vandløbsforløb — bliver
+        grafen tom, og så kan der slet ikke spores, heller ikke langs alt det
+        andet i udsnittet. Værktøjet snappede stadig til linjerne, så det så
+        ud, som om sporingen bare ikke ville følge med.
+
+        Derfor knudes linjerne her først med unaryUnion, der klarer sig
+        igennem den slags, og både sporing og snap arbejder på resultatet —
+        så et snappet punkt altid også ligger i grafen.
+        """
+        projekt = QgsProject.instance()
+        kort_crs = self.canvas.mapSettings().destinationCrs()
+        self._afkobl_kildelag()
+        self.net_finder = None
+        self.net.dataProvider().truncate()
+        self.tracer.invalidateGraph()
+
+        geometrier = []
+        antal = 0
+        for lag in self._sporbare_lag():
+            lag.layerModified.connect(self._net_er_foraeldet)
+            lag.dataChanged.connect(self._net_er_foraeldet)
+            self._kildelag.append(lag)
+
+            til_kort = None
+            lagomfang = omfang
+            if lag.crs() != kort_crs:
+                til_kort = QgsCoordinateTransform(lag.crs(), kort_crs, projekt)
+                try:
+                    lagomfang = QgsCoordinateTransform(
+                        kort_crs, lag.crs(), projekt).transformBoundingBox(omfang)
+                except QgsCsException:
+                    continue
+
+            anmodning = QgsFeatureRequest().setFilterRect(
+                lagomfang).setNoAttributes()
+            for objekt in lag.getFeatures(anmodning):
+                antal += 1
+                if antal > self.MAKS_OBJEKTER:
+                    graense = '{:,}'.format(self.MAKS_OBJEKTER).replace(',', '.')
+                    self._meld(
+                        'Der er over {} objekter i udsnittet, så der spores '
+                        'ikke. Zoom ind, eller sluk tunge lag som matrikler og '
+                        'markkort — alle synlige linje- og fladelag tæller '
+                        'med.'.format(graense))
+                    return False
+                geom = self._som_linjer(objekt.geometry())
+                if geom is None:
+                    continue
+                if til_kort is not None:
+                    try:
+                        geom.transform(til_kort)
+                    except QgsCsException:
+                        continue
+                geometrier.append(geom)
+
+        if not geometrier:
+            return True       # intet at spore langs her — ikke en fejl
+
+        dele = [d for d in self._knyt(geometrier, kort_crs).asGeometryCollection()
+                if not d.isEmpty()]
+        objekter = []
+        for del_ in dele:
+            objekt = QgsFeature()
+            objekt.setGeometry(del_)
+            objekter.append(objekt)
+        self.net.setCrs(kort_crs)
+        self.net.dataProvider().addFeatures(objekter)
+        self.net.updateExtents()
+        self.net_finder = QgsPointLocator(self.net)
+        self.tracer.setDestinationCrs(kort_crs, projekt.transformContext())
+        self.tracer.invalidateGraph()
+
+        if dele and not self.tracer.isPointSnapped(QgsPointXY(dele[0].vertexAt(0))):
+            self._meld(
+                'Linjerne i udsnittet kunne ikke samles til et net, så der '
+                'spores ikke her. Det sker, når linjer ligger næsten oven i '
+                'hinanden — sluk de lag, det gælder, eller zoom et andet sted hen.')
+            return False
+        return True
+
+    @staticmethod
+    def _som_linjer(geom):
+        """Geometrien som 2D-linjer: linjer, som de er, og flader som kanter."""
+        if geom is None or geom.isNull() or geom.isEmpty():
+            return None
+        if QgsWkbTypes.isCurvedType(geom.wkbType()):
+            geom.convertToStraightSegment()
+        type_ = QgsWkbTypes.geometryType(geom.wkbType())
+        if type_ == QgsWkbTypes.PolygonGeometry:
+            kant = geom.constGet().boundary()
+            if kant is None:
+                return None
+            geom = QgsGeometry(kant)
+        elif type_ != QgsWkbTypes.LineGeometry:
+            return None
+        abstrakt = geom.get()
+        abstrakt.dropZValue()
+        abstrakt.dropMValue()
+        return geom
+
+    @staticmethod
+    def _knyt(geometrier, crs):
+        """Linjerne knudet i alle skæringer.
+
+        unaryUnion falder selv tilbage på snapning, når de flydende tal ikke
+        slår til. Slår den alligevel fejl, lægges linjerne på et fint gitter
+        og knudes igen. Som sidste udvej gives linjerne, som de er, og
+        QgsTracer forsøger selv.
+        """
+        samlet = QgsGeometry.collectGeometry(geometrier)
+        gitter = 1e-9 if crs.isGeographic() else 1e-4
+        for forsoeg in (
+                lambda: QgsGeometry.unaryUnion(geometrier),
+                lambda: samlet.snappedToGrid(gitter, gitter).node()):
+            knudet = forsoeg()
+            if knudet is not None and not knudet.isNull() and not knudet.isEmpty():
+                return knudet
+        return samlet
 
     def _spor_sti(self, fra, til):
         """Korteste vej langs nettet, eller None hvis der ikke er nogen."""
         if fra == til:
             return None
+        self._sikr_net()
+        if self.net_finder is None:
+            return None
         punkter, fejl = self.tracer.findShortestPath(fra, til)
         if fejl == QgsTracer.ErrNone and punkter:
             return list(punkter)
-        if fejl == QgsTracer.ErrTooManyFeatures and not self._for_mange_meldt:
-            # Uden beskeden tegner værktøjet bare lige linjer, og man tror,
-            # sporingen er gået i stykker.
-            self._for_mange_meldt = True
-            antal = '{:,}'.format(self.MAKS_OBJEKTER).replace(',', '.')
-            self._sig_til(
-                'Der er over {} objekter i udsnittet, så der spores ikke. '
-                'Zoom ind, eller sluk tunge lag som matrikler og markkort — '
-                'alle synlige linje- og fladelag tæller med.'.format(antal))
         return None
 
     def _afklar_punkt(self, e):
-        """Markørens position, snappet med værktøjets egen motor.
+        """Markørens position — snappet, og lagt på nettet, hvis den er der.
 
+        Der snappes med værktøjets egen motor til alle synlige lag;
         ``e.mapPoint()`` ville følge projektets snapindstillinger og kunne
-        være begrænset til det aktive lag.
+        være begrænset til det aktive lag. Punktet flyttes derefter over på
+        nettet (højst en pixel), for kun fra punkter i nettet kan der spores.
         """
-        traef = self.snap.snapToMap(e.originalMapPoint())
+        kortpunkt = QgsPointXY(e.originalMapPoint())
+        self._markoer = kortpunkt
+        traef = self.snap.snapToMap(kortpunkt)
         self.snapmarkering.setMatch(traef)
-        if traef.isValid():
-            return QgsPointXY(traef.point())
-        return QgsPointXY(e.originalMapPoint())
+        punkt = QgsPointXY(traef.point()) if traef.isValid() else kortpunkt
+        return self._paa_nettet(punkt) or punkt
+
+    def _paa_nettet(self, punkt):
+        self._sikr_net()
+        if self.net_finder is None:
+            return None
+        tolerance = self.canvas.mapUnitsPerPixel()
+        traef = self.net_finder.nearestVertex(punkt, tolerance)
+        if not traef.isValid():
+            traef = self.net_finder.nearestEdge(punkt, tolerance)
+        return QgsPointXY(traef.point()) if traef.isValid() else None
+
+    def _naboer(self, markoer):
+        """Det nærmeste punkt på hvert stykke af nettet inden for snapafstanden."""
+        if self.net_finder is None:
+            return []
+        r = self.canvas.mapUnitsPerPixel() * self.SNAP_TOLERANCE_PX
+        rektangel = QgsRectangle(markoer.x() - r, markoer.y() - r,
+                                 markoer.x() + r, markoer.y() + r)
+        stykker = {m.featureId() for m in self.net_finder.edgesInRect(rektangel)}
+        markoer_geom = QgsGeometry.fromPointXY(markoer)
+        ud = []
+        for fid in stykker:
+            geom = self.net.getFeature(fid).geometry()
+            punkt = geom.nearestPoint(markoer_geom).asPoint()
+            if punkt.distance(markoer) <= r:
+                ud.append(QgsPointXY(punkt))
+        return ud
 
     # ------------------------------------------------------------------
     # mus og tastatur
@@ -341,33 +545,74 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
         return max(self.canvas.mapUnitsPerPixel() * 2.0, 1e-9)
 
     def _foelg(self, punkt):
-        """Før sporet frem til ``punkt`` — eller træk det ind.
+        """Før sporet frem mod markøren — eller træk det ind.
 
-        Ligger punktet på det sporede, før enden, er brugeren gået tilbage,
-        og sporet afkortes dertil. Ellers spores der fra sporets ende frem til
-        punktet. Kan det ikke lade sig gøre — markøren er væk fra nettet —
-        står sporet urørt, og forslaget får en fri hale.
+        Kandidaterne er det snappede ``punkt`` og det nærmeste punkt på hvert
+        stykke af nettet inden for snapafstanden. For hver kandidat:
+
+          * ligger den på det sporede, før enden, er brugeren gået tilbage,
+            og sporet kan afkortes dertil;
+          * ligger den ved sporets ende, kan sporet blive, hvor det er;
+          * ellers kan der spores fra sporets ende frem til den.
+
+        Prisen er afstanden til markøren plus den omvej, sporet skal tage.
+        Det gør sporet klæbende: ligger en anden linje tættere på markøren,
+        men kun kan nås ad en omvej, fortsætter sporet ad den linje, det
+        følger. Uden det hoppede sporet frem og tilbage mellem linjer, der
+        ligger tæt — en grøft og et matrikelskel langs vandløbet — og fik
+        lange sløjfer med.
+
+        Er der ingen kandidat — markøren er væk fra nettet — står sporet
+        urørt, og forslaget får en fri hale.
         """
         if not self.spor:
             return
         tol = self._tolerance()
+        markoer = self._markoer if self._markoer is not None else punkt
+        ende = self.spor[-1]
+        linje = (QgsGeometry.fromPolylineXY(self.spor)
+                 if len(self.spor) >= 2 else None)
+        # Længere omveje end dette tages ikke — så bliver sporet stående.
+        maks_omvej = self.canvas.mapUnitsPerPixel() * 25
 
-        if len(self.spor) >= 2:
-            linje = QgsGeometry.fromPolylineXY(self.spor)
-            pg = QgsGeometry.fromPointXY(punkt)
-            if linje.distance(pg) <= tol:
+        bedst = None                  # (pris, handling, data)
+        for kandidat in [punkt] + self._naboer(markoer):
+            valg = None
+            afstand = markoer.distance(kandidat)
+            pg = QgsGeometry.fromPointXY(kandidat)
+            if kandidat.distance(ende) <= tol:
+                valg = (afstand, 'bliv', None)
+            elif linje is not None and linje.distance(pg) <= tol:
                 pos = linje.lineLocatePoint(pg)
                 if pos < linje.length() - tol:
-                    self.spor = self._afkort(self.spor, pos)
-                    self._fri_hale = False
-                    return
+                    valg = (afstand, 'tilbage', pos)
+            if valg is None:
+                sti = self._spor_sti(ende, kandidat)
+                if not sti:
+                    continue
+                lige = ende.distance(kandidat)
+                omvej = QgsGeometry.fromPolylineXY(sti).length() - lige
+                if omvej > 3 * lige + maks_omvej:
+                    continue
+                valg = (afstand + omvej, 'frem', sti)
+            if bedst is None or valg[0] < bedst[0]:
+                bedst = valg
 
-        sti = self._spor_sti(self.spor[-1], punkt)
-        if sti:
-            self.spor.extend(sti[1:])
-            self._fri_hale = False
-        else:
-            self._fri_hale = (punkt.distance(self.spor[-1]) > tol)
+        if bedst is None:
+            self._fri_hale = (punkt.distance(ende) > tol)
+            return
+        _pris, handling, data = bedst
+        if handling == 'tilbage':
+            self.spor = self._afkort(self.spor, data)
+        elif handling == 'frem':
+            # Den gamle ende ligger som regel midt på et stykke, som sporet
+            # nu fortsætter ad — så er den et overflødigt knudepunkt.
+            if len(self.spor) >= 2 and QgsGeometry.fromPolylineXY(
+                    [self.spor[-2], data[1]]).distance(
+                    QgsGeometry.fromPointXY(ende)) <= tol / 200:
+                self.spor.pop()
+            self.spor.extend(data[1:])
+        self._fri_hale = False
 
     @staticmethod
     def _afkort(punkter, pos):
@@ -412,8 +657,6 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
     # ------------------------------------------------------------------
 
     def _opdater_baand(self):
-        # Sporets ende har flyttet sig — grafen skal dække den.
-        self._opdater_omfang()
         if len(self.punkter) >= 2:
             self.baand_laast.setToGeometry(
                 QgsGeometry.fromPolylineXY(self.punkter), None)
@@ -425,7 +668,7 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
         self.spor = []
         self._fri_hale = False
         self._sidste_punkt = None
-        self._for_mange_meldt = False
+        self._meldt = False
         self.baand_laast.reset(QgsWkbTypes.LineGeometry)
         self.baand_forslag.reset(QgsWkbTypes.LineGeometry)
 
@@ -457,7 +700,7 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
         self._nulstil_skitse()
         if ok:
             # Det nye forløb skal selv kunne spores langs med det samme.
-            self.tracer.invalidateGraph()
+            self._net_foraeldet = True
 
     def _til_lagets_crs(self, geom):
         kort_crs = self.canvas.mapSettings().destinationCrs()
