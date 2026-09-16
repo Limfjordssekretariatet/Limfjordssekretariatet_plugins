@@ -87,7 +87,24 @@
      </property>
     </widget>
    </item>
-   <item row="9" column="0" colspan="2">
+   <item row="9" column="0">
+    <widget class="QPushButton" name="StoettepunkterBtn">
+     <property name="text">
+      <string>Støttepunkter</string>
+     </property>
+    </widget>
+   </item>
+   <item row="9" column="1">
+    <widget class="QLabel" name="label_stoettepunkter">
+     <property name="text">
+      <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Opret støttepunkter til afvandingsanalysen og hent &lt;br/&gt;deres terrænkoter fra en højdemodel&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+     </property>
+     <property name="openExternalLinks">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item row="10" column="0" colspan="2">
     <widget class="QGroupBox" name="groupBox">
      <property name="title">
       <string />

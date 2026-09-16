@@ -29,9 +29,10 @@ from . import faelles_ui
 
 class Limfjordssekretariatet_toolsDialog(QtWidgets.QDialog, FORM_CLASS):
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, iface=None):
         """Constructor."""
         super(Limfjordssekretariatet_toolsDialog, self).__init__(parent)
+        self.iface = iface
 
         # Build UI
         self.setupUi(self)
@@ -41,6 +42,7 @@ class Limfjordssekretariatet_toolsDialog(QtWidgets.QDialog, FORM_CLASS):
         # Connect UI buttons to functions
         self.JordbalanceBtn.clicked.connect(self.jordberegning)
         self.GridTilLERBtn.clicked.connect(self.grid_til_ler)
+        self.StoettepunkterBtn.clicked.connect(self.stoettepunkter)
 
     # Afvandingsanalyse, "Brænd vandløb i terræn" og "Terræn til VASP" er
     # flyttet til VASP-pluginnet, hvor profiler, tværprofiler og vandspejl
@@ -55,6 +57,21 @@ class Limfjordssekretariatet_toolsDialog(QtWidgets.QDialog, FORM_CLASS):
         from .GridTilLER import GridTilLER
         alg = GridTilLER()
         processing.execAlgorithmDialog(alg)
+
+    def stoettepunkter(self):
+        """Åbn støttepunkt-panelet.
+
+        Denne dialog lukkes først. Panelets trin forudsætter, at man kan
+        arbejde på kortet imellem — indlæse højdemodellen, digitalisere
+        punkter — og det kan man ikke bag to modale dialoger.
+        """
+        from .stoettepunkter.panel import StoettepunktPanel
+
+        iface = self.iface
+        if iface is None:
+            from qgis.utils import iface
+        self.accept()
+        StoettepunktPanel(iface).aabn()
 
     def jordberegning(self):
         """Åbner QGIS' standard parameterdialog for jordbalance-modellen."""

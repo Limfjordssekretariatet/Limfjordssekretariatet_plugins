@@ -6,11 +6,11 @@
 name=Vandprojekter – Vådområder
 qgisMinimumVersion=3.0
 description=Værktøjer til vådområde- og lavbundsprojekter: afvanding, terræn og jordberegning
-version=4.0.24
+version=4.0.25
 author=Henrik Rosenskjold, Limfjordsrådets sekretariat
 email=henrik.rosenskjold@aalborg.dk
 
-about=Samling af værktøjer til vådområde- og lavbundsprojekter: afvandingsanalyse, terrænbearbejdning, grid til LER og jordberegning.
+about=Samling af værktøjer til vådområde- og lavbundsprojekter: støttepunkter til afvandingsanalysen, terrænbearbejdning, grid til LER, jordberegning og Trace-tegneredskabet.
 
 tracker=https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues
 repository=https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins
@@ -18,7 +18,7 @@ repository=https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plug
 
 # Recommended items:
 
-hasProcessingProvider=no
+hasProcessingProvider=yes
 # Uncomment the following line and add your changelog:
 # changelog=
 

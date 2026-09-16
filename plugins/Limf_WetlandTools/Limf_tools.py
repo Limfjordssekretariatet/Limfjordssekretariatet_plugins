@@ -62,6 +62,7 @@ class Limfjordssekretariatet_tools:
         self.first_start = None
         self.tegne_action = None
         self.tegne_vaerktoej = None
+        self.provider = None
 
     def tr(self, message):
         return QCoreApplication.translate('Limfjordssekretariatet_tools', message)
@@ -95,8 +96,31 @@ class Limfjordssekretariatet_tools:
         self.actions.append(action)
         return action
 
+    def initProcessing(self):
+        """Støttepunkternes algoritme i Processing-værktøjskassen.
+
+        Kaldes af QGIS selv (hasProcessingProvider=yes), også når der ikke er
+        en brugerflade — og fra initGui, så den er der uanset hvad.
+        """
+        if self.provider is not None:
+            return
+        from qgis.core import QgsApplication, QgsMessageLog, Qgis
+        from .stoettepunkter.provider import AfvandingProvider
+
+        provider = AfvandingProvider()
+        if QgsApplication.processingRegistry().addProvider(provider):
+            self.provider = provider
+        else:
+            # Samme id som det selvstændige plugin, værktøjet kom fra. Er det
+            # stadig installeret, afviser QGIS den anden udbyder.
+            QgsMessageLog.logMessage(
+                'Processing-udbyderen "afvanding" findes allerede — er det '
+                'gamle Afvandingspunkter-plugin stadig installeret? '
+                'Afinstallér det.', 'Vandprojekter', Qgis.Warning)
+
     def initGui(self):
         """Create the menu entries and toolbar icon inside QGIS."""
+        self.initProcessing()
         # Filen frem for Qt-ressourcen: ressourcen ligger indbagt i
         # resources.py og ville stadig vise det gamle ikon.
         icon_path = os.path.join(self.plugin_dir, 'icon.png')
@@ -158,11 +182,16 @@ class Limfjordssekretariatet_tools:
         self.actions = []
         self.tegne_action = None
 
+        if self.provider is not None:
+            from qgis.core import QgsApplication
+            QgsApplication.processingRegistry().removeProvider(self.provider)
+            self.provider = None
+
     def run(self):
         """Run whenever user clicks icon/menu."""
         if self.first_start:
             self.first_start = False
-            self.dlg = Limfjordssekretariatet_toolsDialog()
+            self.dlg = Limfjordssekretariatet_toolsDialog(iface=self.iface)
 
         self.dlg.show()
         self.dlg.exec_()
