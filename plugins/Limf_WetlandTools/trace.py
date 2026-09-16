@@ -16,6 +16,8 @@ en opsætning, der kun snapper til det aktive lag, gøre sporingen ubrugelig
 netop når man skal følge et andet lag.
 """
 
+import math
+
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QColor
 
@@ -39,18 +41,24 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
 
     Sådan bruges det:
 
-      * Klik én gang for at sætte startpunktet.
-      * Før musen: ligger både sidste punkt og markøren på nettet af
-        synlige linje- og fladelag, tegnes korteste vej derimellem som
-        forhåndsvisning, der følger markøren. Kan der ikke spores, vises
-        en almindelig ret linje i stedet.
-      * Enter eller højreklik afslutter og gemmer. Det, der lige nu spores
-        hen til markøren, kommer med — så et sammenhængende forløb koster
-        kun to klik: start og slut.
-      * Et venstreklik undervejs låser den sporede vej fast og starter en
-        ny sporing derfra. Brugbart ved forgreninger, eller hvis en del af
-        forløbet skal tegnes i fri hånd.
-      * Backspace fortryder sidste låste punkt, Esc kasserer det hele.
+      * Klik én gang på en linje for at sætte startpunktet.
+      * Før musen langs linjen. Sporet følger markøren skridt for skridt og
+        huskes — det bliver ikke glemt, fordi markøren et øjeblik glider af
+        linjen. Går du tilbage, trækkes sporet ind.
+      * Er markøren væk fra nettet, vises det sporede plus en stiplet, lige
+        linje hen til markøren.
+      * Venstreklik låser det sporede fast. Klikker du væk fra nettet,
+        kommer punktet med som fri hånd — sådan blandes sporing og
+        frihåndstegning.
+      * Enter eller højreklik gemmer det sporede. Frihåndshalen til
+        markøren kommer ikke med, kun et klik lægger et frit punkt.
+      * Backspace smider først det usikre spor efter sidste klik, derefter
+        ét låst punkt ad gangen. Esc kasserer det hele.
+
+    Hvorfor skridt for skridt: tidligere blev der ved hver musebevægelse
+    regnet korteste vej fra sidste klik. På et langt, bugtet vandløb tog
+    den så gerne en vej eller et matrikelskel, der gik mere direkte — og
+    intet blev husket imellem, så en lige streg kunne erstatte hele sporet.
     """
 
     #: Hvor mange objekter sporingsgrafen højst bygges af. Et helt
@@ -88,6 +96,11 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
         self.lag = None
         self.geometritype = None      # "linje" eller "flade"
         self.punkter = []             # låste punkter, i kortets CRS
+        # Det sporede efter sidste klik. Begynder i punkter[-1] og følger
+        # markøren; låses først fast ved næste klik eller ved afslutning.
+        self.spor = []
+        # Markøren er væk fra nettet: forslaget får en lige hale hen til den.
+        self._fri_hale = False
         self._sidste_punkt = None     # senest opsnappede markørposition
         # Beskeden om for mange objekter gives én gang pr. opbygning af
         # grafen — ellers ville den komme for hver musebevægelse.
@@ -204,9 +217,12 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
             QgsProject.instance().transformContext())
         self.tracer.setLayers(self._sporbare_lag())
         udsnit = self.canvas.extent()
-        if self.punkter:
-            sidst = self.punkter[-1]
-            udsnit.combineExtentWith(sidst.x(), sidst.y())
+        # Der spores fra sporets ende — den skal ligge i grafen, også når
+        # man har panoreret væk fra den.
+        ende = self.spor[-1] if self.spor else (
+            self.punkter[-1] if self.punkter else None)
+        if ende is not None:
+            udsnit.combineExtentWith(ende.x(), ende.y())
         udsnit.scale(self.UDSNIT_MARGIN)
         self.tracer.setExtent(udsnit)
         self._for_mange_meldt = False
@@ -255,10 +271,8 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
             self.baand_forslag.reset(QgsWkbTypes.LineGeometry)
             return
 
-        sti = self._spor_sti(self.punkter[-1], punkt)
-        forslag = sti if sti else [self.punkter[-1], punkt]
-        self.baand_forslag.setToGeometry(
-            QgsGeometry.fromPolylineXY(forslag), None)
+        self._foelg(punkt)
+        self._vis_forslag(punkt)
 
     def cadCanvasPressEvent(self, e):
         if self.lag is None:
@@ -269,17 +283,21 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
 
         if e.button() == Qt.RightButton:
             if self.punkter:
-                self._forlaeng_til(punkt)
-                self._opdater_baand()
+                self._foelg(punkt)
+                self._laas_spor()
             self._afslut_skitse()
             return
         if e.button() != Qt.LeftButton:
             return
 
         if not self.punkter:
-            self.punkter.append(punkt)
+            self.punkter = [punkt]
+            self.spor = [punkt]
+            self._fri_hale = False
         else:
-            self._forlaeng_til(punkt)
+            self._foelg(punkt)
+            # Et klik væk fra nettet er et frit punkt.
+            self._laas_spor(punkt if self._fri_hale else None)
 
         self._opdater_baand()
         self.baand_forslag.reset(QgsWkbTypes.LineGeometry)
@@ -291,26 +309,110 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
             e.ignore()
             return
         if tast in (Qt.Key_Return, Qt.Key_Enter):
-            if self.punkter and self._sidste_punkt is not None:
-                self._forlaeng_til(self._sidste_punkt)
-                self._opdater_baand()
+            if self.punkter:
+                self._laas_spor()
             self._afslut_skitse()
             e.ignore()
             return
         if tast in (Qt.Key_Backspace, Qt.Key_Delete):
-            if self.punkter:
+            if len(self.spor) > 1:
+                # Først det usikre spor efter sidste klik.
+                self.spor = [self.punkter[-1]]
+                self._fri_hale = False
+            elif self.punkter:
                 self.punkter.pop()
-                self._opdater_baand()
+                self.spor = [self.punkter[-1]] if self.punkter else []
+                self._fri_hale = False
+            self._opdater_baand()
+            if self._sidste_punkt is not None and self.punkter:
+                self._vis_forslag(self._sidste_punkt)
+            else:
+                self.baand_forslag.reset(QgsWkbTypes.LineGeometry)
             e.ignore()
             return
         super().keyPressEvent(e)
+
+    # ------------------------------------------------------------------
+    # sporet
+    # ------------------------------------------------------------------
+
+    def _tolerance(self):
+        """Hvor tæt på sporet markøren skal være for at trække det ind (kortenheder)."""
+        return max(self.canvas.mapUnitsPerPixel() * 2.0, 1e-9)
+
+    def _foelg(self, punkt):
+        """Før sporet frem til ``punkt`` — eller træk det ind.
+
+        Ligger punktet på det sporede, før enden, er brugeren gået tilbage,
+        og sporet afkortes dertil. Ellers spores der fra sporets ende frem til
+        punktet. Kan det ikke lade sig gøre — markøren er væk fra nettet —
+        står sporet urørt, og forslaget får en fri hale.
+        """
+        if not self.spor:
+            return
+        tol = self._tolerance()
+
+        if len(self.spor) >= 2:
+            linje = QgsGeometry.fromPolylineXY(self.spor)
+            pg = QgsGeometry.fromPointXY(punkt)
+            if linje.distance(pg) <= tol:
+                pos = linje.lineLocatePoint(pg)
+                if pos < linje.length() - tol:
+                    self.spor = self._afkort(self.spor, pos)
+                    self._fri_hale = False
+                    return
+
+        sti = self._spor_sti(self.spor[-1], punkt)
+        if sti:
+            self.spor.extend(sti[1:])
+            self._fri_hale = False
+        else:
+            self._fri_hale = (punkt.distance(self.spor[-1]) > tol)
+
+    @staticmethod
+    def _afkort(punkter, pos):
+        """De første ``pos`` kortenheder af en linje, som punktliste."""
+        ud = [punkter[0]]
+        gaaet = 0.0
+        for a, b in zip(punkter, punkter[1:]):
+            stykke = math.hypot(b.x() - a.x(), b.y() - a.y())
+            if stykke and gaaet + stykke >= pos:
+                t_ = (pos - gaaet) / stykke
+                p = QgsPointXY(a.x() + t_ * (b.x() - a.x()),
+                               a.y() + t_ * (b.y() - a.y()))
+                if p != ud[-1]:
+                    ud.append(p)
+                return ud
+            ud.append(b)
+            gaaet += stykke
+        return ud
+
+    def _laas_spor(self, frit_punkt=None):
+        """Lås det sporede fast — og eventuelt et frit punkt bagefter."""
+        if not self.punkter:
+            return
+        self.punkter.extend(self.spor[1:])
+        if frit_punkt is not None and frit_punkt != self.punkter[-1]:
+            self.punkter.append(frit_punkt)
+        self.spor = [self.punkter[-1]]
+        self._fri_hale = False
+
+    def _vis_forslag(self, punkt):
+        vis = list(self.spor)
+        if self._fri_hale and (not vis or punkt != vis[-1]):
+            vis.append(punkt)
+        if len(vis) >= 2:
+            self.baand_forslag.setToGeometry(
+                QgsGeometry.fromPolylineXY(vis), None)
+        else:
+            self.baand_forslag.reset(QgsWkbTypes.LineGeometry)
 
     # ------------------------------------------------------------------
     # skitsen
     # ------------------------------------------------------------------
 
     def _opdater_baand(self):
-        # Det sidst låste punkt har flyttet sig — grafen skal dække det.
+        # Sporets ende har flyttet sig — grafen skal dække den.
         self._opdater_omfang()
         if len(self.punkter) >= 2:
             self.baand_laast.setToGeometry(
@@ -318,18 +420,10 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
         else:
             self.baand_laast.reset(QgsWkbTypes.LineGeometry)
 
-    def _forlaeng_til(self, punkt):
-        """Lås vejen fra sidste punkt frem til ``punkt`` fast."""
-        if punkt == self.punkter[-1]:
-            return
-        sti = self._spor_sti(self.punkter[-1], punkt)
-        if sti:
-            self.punkter.extend(sti[1:])
-        else:
-            self.punkter.append(punkt)
-
     def _nulstil_skitse(self):
         self.punkter = []
+        self.spor = []
+        self._fri_hale = False
         self._sidste_punkt = None
         self._for_mange_meldt = False
         self.baand_laast.reset(QgsWkbTypes.LineGeometry)
