@@ -147,7 +147,7 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
 
     def _sig_til(self, besked):
         self.iface.messageBar().pushMessage(
-            'Vandløbsforløb', besked, level=Qgis.Warning, duration=6)
+            'Trace', besked, level=Qgis.Warning, duration=6)
 
     @staticmethod
     def _lag_type(lag):

@@ -26,6 +26,10 @@ TOOLBAR_ID = "VandprojekterToolbar"
 # Holder liv i værktøjslinjen — se _behold().
 _linje = None
 
+# Egenskab på en handling der skal stå efter pluginnenes egne knapper —
+# redskaber som Trace, der ikke er et plugin i sig selv.
+SIDST = "vandprojekter_sidst"
+
 
 def vaerktoejslinje(iface):
     """Den fælles værktøjslinje. Oprettes af det første plugin der beder om den.
@@ -74,10 +78,60 @@ def _behold(linje):
             pass
 
 
-def tilfoej(iface, action):
-    """Læg en handling i den fælles menu og på den fælles værktøjslinje."""
+def tilfoej(iface, action, sidst=False):
+    """Læg en handling i den fælles menu og på den fælles værktøjslinje.
+
+    ``sidst=True`` er til redskaber, der skal stå efter pluginnene. De
+    øvrige lægges foran dem. Det er ikke nok at lægge knapperne på i den
+    rækkefølge, QGIS indlæser pluginnene: Plugin Reloader og en opgradering
+    kalder initGui igen, og så ville et genindlæst plugin havne bag
+    redskaberne.
+    """
+    action.setProperty(SIDST, bool(sidst))
+
     iface.addPluginToMenu(MENU, action)
-    vaerktoejslinje(iface).addAction(action)
+    menu = _undermenu(iface)
+    if menu is not None:
+        foer = _foerste_sidst(menu.actions(), action)
+        if foer is not None:
+            menu.removeAction(action)
+            menu.insertAction(foer, action)
+
+    linje = vaerktoejslinje(iface)
+    foer = _foerste_sidst(linje.actions(), action)
+    if foer is not None:
+        linje.insertAction(foer, action)
+    else:
+        linje.addAction(action)
+
+
+def _foerste_sidst(handlinger, action):
+    """Den første handling der skal stå sidst — eller None.
+
+    Er ``action`` selv et redskab, skal den bare bagerst, og så er svaret
+    altid None.
+    """
+    if action.property(SIDST):
+        return None
+    for h in handlinger:
+        if h is not action and h.property(SIDST):
+            return h
+    return None
+
+
+def _undermenu(iface):
+    """Undermenuen "Vandprojekter" under Plugins, hvis den findes."""
+    try:
+        plugins = iface.pluginMenu()
+    except AttributeError:
+        return None
+    if plugins is None:
+        return None
+    navn = MENU.replace("&", "")
+    for h in plugins.actions():
+        if h.menu() is not None and h.text().replace("&", "") == navn:
+            return h.menu()
+    return None
 
 
 def fjern(iface, action):

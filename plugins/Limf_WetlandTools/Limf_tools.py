@@ -113,19 +113,20 @@ class Limfjordssekretariatet_tools:
         # trykket ned, og den skal blive nede mellem to forløb.
         self.tegne_action = QAction(
             QIcon(os.path.join(self.plugin_dir, 'ikon_trace.png')),
-            self.tr(u'Trace'),
+            self.tr(u'Trace – tegneredskab'),
             self.iface.mainWindow())
         self.tegne_action.setCheckable(True)
         self.tegne_action.setStatusTip(
-            self.tr(u'Trace: tegn et forløb langs kanterne på de synlige lag'))
+            self.tr(u'Trace – tegn langs kanterne på de synlige lag'))
         self.tegne_action.setToolTip(self.tr(
-            u'Trace\n\n'
-            u'Tegn et vandløbsforløb ved at følge kanterne på de synlige '
+            u'Trace – tegneredskab\n\n'
+            u'Tegn en linje eller flade ved at følge kanterne på de synlige '
             u'linje- og fladelag. Klik for at starte, før musen for at se '
             u'forslaget, Enter eller højreklik for at gemme. Backspace '
             u'fortryder sidste punkt, Esc kasserer.'))
         self.tegne_action.triggered.connect(self.trace)
-        faelles_gui.tilfoej(self.iface, self.tegne_action)
+        # Et redskab, ikke et plugin — det står efter pluginnenes knapper.
+        faelles_gui.tilfoej(self.iface, self.tegne_action, sidst=True)
         self.actions.append(self.tegne_action)
 
         self.first_start = True
