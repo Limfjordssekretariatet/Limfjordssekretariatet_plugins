@@ -89,6 +89,9 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
         self.geometritype = None      # "linje" eller "flade"
         self.punkter = []             # låste punkter, i kortets CRS
         self._sidste_punkt = None     # senest opsnappede markørposition
+        # Beskeden om for mange objekter gives én gang pr. opbygning af
+        # grafen — ellers ville den komme for hver musebevægelse.
+        self._for_mange_meldt = False
 
         self.baand_laast = QgsRubberBand(canvas, QgsWkbTypes.LineGeometry)
         self.baand_laast.setColor(QColor(255, 80, 0, 220))
@@ -186,7 +189,14 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
         return lag
 
     def _opdater_omfang(self):
-        """Byg sporingsgrafen for det udsnit der er på skærmen nu."""
+        """Byg sporingsgrafen for det udsnit, der skal kunne spores i.
+
+        Det er skærmudsnittet — og det sidst låste punkt. Uden punktet
+        holdt sporingen op, så snart man panorerede langs et langt
+        vandløb: punktet gled ud af grafen, der kunne ikke spores fra det,
+        og værktøjet tegnede lige linjer i stedet. Rektanglet om begge
+        dækker også strækningen imellem.
+        """
         kortopsaetning = self.canvas.mapSettings()
 
         self.tracer.setDestinationCrs(
@@ -194,8 +204,12 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
             QgsProject.instance().transformContext())
         self.tracer.setLayers(self._sporbare_lag())
         udsnit = self.canvas.extent()
+        if self.punkter:
+            sidst = self.punkter[-1]
+            udsnit.combineExtentWith(sidst.x(), sidst.y())
         udsnit.scale(self.UDSNIT_MARGIN)
         self.tracer.setExtent(udsnit)
+        self._for_mange_meldt = False
 
         self.snap.setMapSettings(kortopsaetning)
 
@@ -206,6 +220,15 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
         punkter, fejl = self.tracer.findShortestPath(fra, til)
         if fejl == QgsTracer.ErrNone and punkter:
             return list(punkter)
+        if fejl == QgsTracer.ErrTooManyFeatures and not self._for_mange_meldt:
+            # Uden beskeden tegner værktøjet bare lige linjer, og man tror,
+            # sporingen er gået i stykker.
+            self._for_mange_meldt = True
+            antal = '{:,}'.format(self.MAKS_OBJEKTER).replace(',', '.')
+            self._sig_til(
+                'Der er over {} objekter i udsnittet, så der spores ikke. '
+                'Zoom ind, eller sluk tunge lag som matrikler og markkort — '
+                'alle synlige linje- og fladelag tæller med.'.format(antal))
         return None
 
     def _afklar_punkt(self, e):
@@ -287,6 +310,8 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
     # ------------------------------------------------------------------
 
     def _opdater_baand(self):
+        # Det sidst låste punkt har flyttet sig — grafen skal dække det.
+        self._opdater_omfang()
         if len(self.punkter) >= 2:
             self.baand_laast.setToGeometry(
                 QgsGeometry.fromPolylineXY(self.punkter), None)
@@ -306,6 +331,7 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
     def _nulstil_skitse(self):
         self.punkter = []
         self._sidste_punkt = None
+        self._for_mange_meldt = False
         self.baand_laast.reset(QgsWkbTypes.LineGeometry)
         self.baand_forslag.reset(QgsWkbTypes.LineGeometry)
 
