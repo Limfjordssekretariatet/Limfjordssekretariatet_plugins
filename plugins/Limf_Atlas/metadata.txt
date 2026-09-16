@@ -4,7 +4,12 @@ qgisMinimumVersion=3.34
 qgisMaximumVersion=3.99
 description=Genererer et lodsejer-atlas (mapbook) ud fra en QGIS layout-skabelon. Mapper automatisk datafelter til skabelonens dynamiske tekst og åbner atlasset klar i Layout Designer.
 about=Tag et lodsejerlag (shapefil/GeoPackage) og byg et atlas baseret på den medfølgende mapbook-skabelon. Pluginnet auto-matcher felter (navn, adresse, postnummer m.m.) til skabelonens dynamiske tekst, genererer manglende felter (løbenummer, postnummer) og sætter atlasset op pr. lodsejer.
-version=0.2.14
+# UDVIKLINGSGREN - ikke en udgivelse. Versionen er sat hoejere end
+# enhver udgivet, saa QGIS' udvidelseshaandtering aldrig tilbyder at
+# "opgradere": installeren sletter plugin-mappen gennem junction'en og
+# rydder arbejdstraeet (sket 14. sept.). Saettes til den rigtige
+# version, naar grenen flettes ind i main.
+version=9.9.9
 author=Henrik Rosenskjold, Limfjordsrådets sekretariat
 email=henrik.rosenskjold@aalborg.dk
 tracker=https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues
