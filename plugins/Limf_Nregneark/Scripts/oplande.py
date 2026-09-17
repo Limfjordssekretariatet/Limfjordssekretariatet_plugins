@@ -274,6 +274,9 @@ def koer(alg_id: str, parametre: dict, log: Log, beskrivelse: str = "") -> dict:
             raise OplandsFejl(f"{alg_id} meldte ikke fejl, men skabte ikke sit output: {sti}")
         if sti.stat().st_size == 0:
             raise OplandsFejl(f"{alg_id} skabte en tom fil: {sti}")
+        if sti.suffix.lower() == ".tif" and not raster_kan_laeses(sti):
+            raise OplandsFejl(f"{alg_id} skabte et raster der ikke kan laeses: {sti}. "
+                              "Er der plads paa drevet, og var forbindelsen til det stabil?")
     return resultat
 
 
@@ -414,6 +417,32 @@ def raster_regn(ud: Path, funk, log: Log, beskrivelse: str, **rastere: Path) -> 
     return ud
 
 
+def raster_kan_laeses(sti: Path) -> bool:
+    """
+    Kan rasteret aabnes, og kan dets sidste raekke laeses?
+
+    En afbrudt koersel — QGIS lukket eller netvaerksdrevet vaek midt i en skrivning —
+    efterlader en fil med det rigtige navn og et nyt tidsstempel, men uden TIFF-
+    indholdsfortegnelsen, som Whitebox skriver til sidst. Den ligner et faerdigt
+    mellemresultat, og uden dette tjek blev den genbrugt ved hver ny koersel og
+    fejlede foerst i trin 4. Sidste raekke fanger ogsaa en fil, der er skaaret af
+    bagtil. Samme tjek findes i oplandsmodel.py, som ikke importerer dette modul.
+    """
+    from osgeo import gdal
+
+    ds = None
+    try:
+        ds = gdal.Open(str(sti))
+        if ds is None or ds.RasterCount < 1 or ds.RasterYSize < 1:
+            return False
+        return ds.GetRasterBand(1).ReadRaster(
+            0, ds.RasterYSize - 1, ds.RasterXSize, 1) is not None
+    except Exception:
+        return False
+    finally:
+        ds = None  # slip filen, saa den kan slettes eller overskrives
+
+
 def spring_over(output: Path, *input: Path) -> bool:
     """
     Sandt hvis output findes og er nyere end alle input. Kaeden indeholder trin der tager timer.
@@ -421,8 +450,16 @@ def spring_over(output: Path, *input: Path) -> bool:
     Konfigurationen OG selve scriptet regnes altid med som input: aendres en parameter eller
     et beregningstrin, er mellemresultaterne foraeldede. Uden det bliver en kodeaendring
     stiltiende ignoreret, og man fejlsoeger paa output fra den forrige version.
+
+    Et raster der ikke kan laeses, er ikke et mellemresultat — det slettes og regnes om.
     """
     if not output.exists():
+        return False
+    if output.suffix.lower() == ".tif" and not raster_kan_laeses(output):
+        try:
+            output.unlink()
+        except OSError:
+            pass
         return False
     ud_tid = output.stat().st_mtime
     for i in (*input, AKTIV_KONFIG, Path(__file__).resolve()):
@@ -2825,9 +2862,14 @@ def koer_analyse(konf: dict, log: Log, koersel_id: str, foerste_trin: int = 0,
     if foerste_trin <= 2:
         stroem = trin2_stroemning(konf, dem_hydro, log)
     else:
-        for sti in stroem.values():
+        for sti in (dem_hydro, *stroem.values()):
             if not sti.exists():
                 raise OplandsFejl(f"Trin {foerste_trin} kraever {sti}. Koer fra trin 2.")
+            if not raster_kan_laeses(sti):
+                raise OplandsFejl(
+                    f"{sti.name} kan ikke laeses — den er formentlig oedelagt af en "
+                    f"afbrudt koersel. Slet filen i {sti.parent} og koer igen, saa "
+                    "regnes den om.")
 
     # Trin 3-5 koeres altid samlet. De deler den samme stroemningsgraf i hukommelsen, og
     # delt i tre uafhaengige koersler ville man kunne komme til at blande et totalopland

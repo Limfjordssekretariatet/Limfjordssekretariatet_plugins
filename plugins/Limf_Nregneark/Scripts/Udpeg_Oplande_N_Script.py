@@ -352,7 +352,7 @@ class UdpegOplandeN(QgsProcessingAlgorithm):
         # springes de over. Mærket siger det direkte; tidsstempler ville lyve om
         # rastere der er kopieret ind fra biblioteket.
         noegle = om.konditioneringsnoegle(konf)
-        maerke = om.kan_springe_konditionering_over(stier, noegle)
+        maerke = om.kan_springe_konditionering_over(stier, noegle, feedback)
         foerste_trin = 3 if maerke else 0
         if maerke:
             om.meld(feedback,

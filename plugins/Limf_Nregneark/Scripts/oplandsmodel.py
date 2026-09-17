@@ -835,6 +835,29 @@ MANIFEST = 'manifest.json'
 DAEKNING = 'daekning.gpkg'
 
 
+def raster_kan_laeses(sti) -> bool:
+    """Kan rasteret aabnes, og kan dets sidste raekke laeses?
+
+    En afbrudt skrivning eller kopiering efterlader en fil med det rigtige navn,
+    der ikke kan aabnes. Den ligner et faerdigt mellemresultat og blev genbrugt
+    ved hver ny koersel, indtil trin 4 fejlede med "TIFFReadDirectory".
+    Samme tjek som oplande.raster_kan_laeses — modulerne importerer ikke hinanden.
+    """
+    from osgeo import gdal
+
+    ds = None
+    try:
+        ds = gdal.Open(str(sti))
+        if ds is None or ds.RasterCount < 1 or ds.RasterYSize < 1:
+            return False
+        return ds.GetRasterBand(1).ReadRaster(
+            0, ds.RasterYSize - 1, ds.RasterXSize, 1) is not None
+    except Exception:
+        return False
+    finally:
+        ds = None  # slip filen, saa den kan slettes eller overskrives
+
+
 # Indholdshash pr. proces. En 100 MB-fil tager under et sekund at laese, og
 # noeglen regnes faa gange pr. koersel — men ikke én gang for meget.
 _HASH_HUSKET = {}
@@ -1138,6 +1161,12 @@ def find_flise(bibliotek: Path, omraade_geom, noegle: str, feedback=None):
         elif not QgsGeometry.fromRect(
                 QgsRectangle(u[0], u[1], u[2], u[3])).contains(omraade_geom):
             grunde.append('dækker ikke projektområdet')
+        if not grunde:
+            # Til sidst: det er det eneste tjek, der læser i selve rasterne.
+            oedelagte = [r for r in GRUNDLAG_RASTERE
+                         if not raster_kan_laeses(mappe / r)]
+            if oedelagte:
+                grunde.append('kan ikke læses (' + ', '.join(oedelagte) + ')')
         if grunde:
             if feedback is not None:
                 feedback.pushInfo(f'  {mappe.name}: bruges ikke — ' + '; '.join(grunde))
@@ -1165,10 +1194,16 @@ def hent_flise(flise: Path, derived: Path, feedback=None, log=None):
         kilde = Path(flise) / navn
         maal = derived / navn
         if (maal.is_file() and maal.stat().st_size == kilde.stat().st_size
-                and int(maal.stat().st_mtime) >= int(kilde.stat().st_mtime)):
+                and int(maal.stat().st_mtime) >= int(kilde.stat().st_mtime)
+                and raster_kan_laeses(maal)):
             sprunget += 1
             continue
         shutil.copy2(kilde, maal)
+        if not raster_kan_laeses(maal):
+            from qgis.core import QgsProcessingException
+            raise QgsProcessingException(
+                f'{navn} kunne ikke læses efter kopieringen til {derived}. '
+                'Er der plads på drevet, og var forbindelsen til det stabil?')
         kopieret += 1
     besked = (f'Præberegnet grundlag hentet fra {Path(flise).name}: '
               f'{kopieret} raster(e) kopieret, {sprunget} var der i forvejen.')
@@ -1219,12 +1254,16 @@ def laes_maerke(arbejdsmappe: Path):
         return None
 
 
-def kan_springe_konditionering_over(stier, noegle: str):
+def kan_springe_konditionering_over(stier, noegle: str, feedback=None):
     """Er trin 0-2 allerede lavet med præcis de her parametre?
 
-    Kræver både mærket og at alle fem rastere ligger der. Er der tvivl, regnes der
-    forfra: en time ekstra er billigere end et opland regnet på et andet grundlag
-    end det man tror.
+    Kræver både mærket og at alle fem rastere ligger der og kan læses. Er der
+    tvivl, regnes der forfra: en time ekstra er billigere end et opland regnet på
+    et andet grundlag end det man tror.
+
+    Mærket overlever en senere kørsel, der bliver afbrudt midt i trin 0-2 — og så
+    ligger der et halvt skrevet raster under det rigtige navn. Det slettes her, så
+    genberegningen ikke også tager det for gyldigt.
     """
     maerke = laes_maerke(stier['arbejdsmappe'])
     if not maerke or maerke.get('konditioneringsnoegle') != noegle:
@@ -1232,6 +1271,19 @@ def kan_springe_konditionering_over(stier, noegle: str):
     if maerke.get('grundlag_version') != GRUNDLAG_VERSION:
         return None
     if not all((stier['derived'] / r).is_file() for r in GRUNDLAG_RASTERE):
+        return None
+    oedelagte = [r for r in GRUNDLAG_RASTERE
+                 if not raster_kan_laeses(stier['derived'] / r)]
+    if oedelagte:
+        if feedback is not None:
+            feedback.pushWarning(
+                'Mellemresultater kunne ikke læses — formentlig efter en afbrudt '
+                'kørsel: ' + ', '.join(oedelagte) + '. De slettes og regnes om.')
+        for r in oedelagte:
+            try:
+                (stier['derived'] / r).unlink()
+            except OSError:
+                pass
         return None
     return maerke
 
