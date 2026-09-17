@@ -25,7 +25,10 @@ from qgis.PyQt.QtWidgets import (
     QDialogButtonBox,
     QMessageBox,
     QWidget,
+    QListWidget,
+    QListWidgetItem,
 )
+from qgis.PyQt.QtCore import Qt
 from qgis.core import (
     QgsProject,
     QgsVectorLayer,
@@ -41,6 +44,9 @@ GENERATE_SENTINEL = "__generate__"
 NONE_SENTINEL = "__none__"
 # Baggrundskort: brug projektets rasterlag automatisk.
 AUTO_BACKGROUND_SENTINEL = "__auto_bg__"
+# Hvor i projektfilen valget af ekstra lag huskes til næste gang.
+PROJEKT_SCOPE = "Limf_Atlas"
+PROJEKT_EKSTRA_LAG = "ekstra_lag"
 
 
 class AtlasDialogResult:
@@ -60,6 +66,9 @@ class AtlasDialogResult:
         #: Baggrundskort: True = auto (rasterlag), None = intet, ellers et lag.
         self.background_auto = True
         self.background_layer = None
+        #: Projektets lag der skal med i kortene og signaturforklaringen,
+        #: top-først som i lagpanelet (fx genslyngning og andre tiltag).
+        self.extra_layers = []
         #: Farver på matrikler og projektgrænse (QColor).
         self.matrikel_kant = STANDARD_KANT
         self.matrikel_fyld = STANDARD_FYLD
@@ -164,8 +173,26 @@ class AtlasDialog(QDialog):
         grp_form.addRow(grp_hint)
         layout.addWidget(grp_box)
 
+        # --- Ekstra lag ------------------------------------------------
+        lag_boks = QGroupBox("4. Lag i kortet")
+        lag_layout = QVBoxLayout(lag_boks)
+        self.ekstra_liste = QListWidget()
+        self.ekstra_liste.setMaximumHeight(130)
+        lag_layout.addWidget(self.ekstra_liste)
+        lag_hint = QLabel(
+            "Sæt flueben ved de lag, der skal med i atlasset — fx "
+            "genslyngning eller andre tiltag. De tegnes oven på "
+            "baggrundskortet med den stil, de har i projektet, og kommer "
+            "med i signaturforklaringen sammen med projektgrænse og "
+            "matrikler. Baggrundskortet vises ikke i forklaringen."
+        )
+        lag_hint.setWordWrap(True)
+        lag_hint.setStyleSheet("color: gray;")
+        lag_layout.addWidget(lag_hint)
+        layout.addWidget(lag_boks)
+
         # --- Farver ----------------------------------------------------
-        farve_boks = QGroupBox("4. Farver")
+        farve_boks = QGroupBox("5. Farver")
         farve_form = QFormLayout(farve_boks)
 
         self.kant_btn = QgsColorButton()
@@ -252,6 +279,8 @@ class AtlasDialog(QDialog):
             if lyr.isValid():
                 self.background_combo.addItem(lyr.name(), lyr.id())
 
+        self._udfyld_ekstra_lag()
+
         # Auto-gæt de rigtige lag til hver menu ud fra lagnavnet.
         self._guess_into(self.layer_combo, vectors,
                          ["lodsejer", "ejer", "matrik", "jordstykke"])
@@ -268,6 +297,48 @@ class AtlasDialog(QDialog):
             lyr = QgsProject.instance().mapLayer(guessed_layer_id)
             if lyr is not None:
                 self._set_active_layer(lyr)
+
+    def _udfyld_ekstra_lag(self):
+        """Projektets vektorlag i lagpanelets rækkefølge, med afkrydsning.
+
+        Sidste valg huskes i projektfilen, så et nyt atlas over samme
+        projekt får de samme lag med.
+        """
+        projekt = QgsProject.instance()
+        husket, _ok = projekt.readListEntry(PROJEKT_SCOPE, PROJEKT_EKSTRA_LAG)
+        husket = set(husket or [])
+        self.ekstra_liste.clear()
+        for knude in projekt.layerTreeRoot().findLayers():
+            lyr = knude.layer()
+            if not isinstance(lyr, QgsVectorLayer) or not lyr.isValid():
+                continue
+            element = QListWidgetItem(lyr.name())
+            element.setData(Qt.UserRole, lyr.id())
+            element.setFlags(element.flags() | Qt.ItemIsUserCheckable)
+            element.setCheckState(
+                Qt.Checked if lyr.id() in husket else Qt.Unchecked)
+            if not knude.isVisible():
+                element.setToolTip("Laget er slukket i kortet lige nu, men "
+                                   "kommer med i atlasset, hvis det er valgt.")
+            self.ekstra_liste.addItem(element)
+
+    def _valgte_ekstra_lag(self):
+        """De afkrydsede lag, top-først, uden lodsejer- og projektområdelag."""
+        projekt = QgsProject.instance()
+        udelad = set()
+        if self._current_layer is not None:
+            udelad.add(self._current_layer.id())
+        if self.area_combo.currentData():
+            udelad.add(self.area_combo.currentData())
+        lag = []
+        for i in range(self.ekstra_liste.count()):
+            element = self.ekstra_liste.item(i)
+            if element.checkState() != Qt.Checked:
+                continue
+            lyr = projekt.mapLayer(element.data(Qt.UserRole))
+            if lyr is not None and lyr.id() not in udelad:
+                lag.append(lyr)
+        return lag
 
     @staticmethod
     def _guess_into(combo, candidate_layers, hints):
@@ -372,20 +443,25 @@ class AtlasDialog(QDialog):
 
         Matcher case-insensitivt mod placeholder.match_hints. Eksakt eller
         præfiks-match foretrækkes over delstrengs-match.
+
+        Korte hints ("nr", "id", "by") skal passe eksakt. Som delstreng
+        fandt "nr" feltet postnr, og Lodsejerudtrækkets lag fik postnumrene
+        som løbenumre — siderne hed 9000, 9240 osv.
         """
         lowered = {name.lower(): name for name in field_names}
+        lange = [h for h in placeholder.match_hints if len(h) > 2]
 
         # 1) eksakt match på et hint
         for hint in placeholder.match_hints:
             if hint in lowered:
                 return lowered[hint]
         # 2) feltnavn starter med et hint (DBF afkorter til 10 tegn)
-        for hint in placeholder.match_hints:
+        for hint in lange:
             for low, original in lowered.items():
-                if low.startswith(hint) or hint.startswith(low):
+                if low.startswith(hint) or (len(low) > 2 and hint.startswith(low)):
                     return original
         # 3) hint optræder som delstreng
-        for hint in placeholder.match_hints:
+        for hint in lange:
             for low, original in lowered.items():
                 if hint in low:
                     return original
@@ -473,6 +549,14 @@ class AtlasDialog(QDialog):
         self._result.project_area_layer = (
             QgsProject.instance().mapLayer(area_id) if area_id else None
         )
+
+        self._result.extra_layers = self._valgte_ekstra_lag()
+        valgte_id = [
+            self.ekstra_liste.item(i).data(Qt.UserRole)
+            for i in range(self.ekstra_liste.count())
+            if self.ekstra_liste.item(i).checkState() == Qt.Checked]
+        QgsProject.instance().writeEntry(
+            PROJEKT_SCOPE, PROJEKT_EKSTRA_LAG, valgte_id)
 
         bg = self.background_combo.currentData()
         if bg == AUTO_BACKGROUND_SENTINEL:
