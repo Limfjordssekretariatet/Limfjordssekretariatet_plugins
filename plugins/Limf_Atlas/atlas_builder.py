@@ -15,7 +15,10 @@ Fremgangsmåde:
      tegner DEN AKTUELLE ejers matrikler (filter mod atlas-featuren).
   4. Tilpas skabelonens XML (feltnavne, fjern arealtabel).
   5. Konfigurér de to kort: hovedkort = atlas-styret extent; oversigtskort =
-     fast extent fra projektområde-laget. Begge viser highlight-laget.
+     fast extent fra projektområde-laget. Begge viser highlight-laget og de
+     lag brugeren har valgt (fx genslyngning), oven på baggrundskortet.
+  6. Læg en signaturforklaring i den tomme plads nederst til højre: projekt-
+     grænse, matrikler og de valgte lag — ikke baggrundskortet.
 
 Eksport overlades til brugeren i Layout Designer.
 """
@@ -37,6 +40,14 @@ from qgis.core import (
     QgsVectorLayer,
     QgsMapLayer,
     QgsLayoutItemMap,
+    QgsLayoutItemLegend,
+    QgsLayoutPoint,
+    QgsLayoutSize,
+    QgsLayoutUtils,
+    QgsLegendRenderer,
+    QgsRectangle,
+    QgsLegendStyle,
+    QgsUnitTypes,
     QgsSingleSymbolRenderer,
     QgsRuleBasedRenderer,
     QgsFillSymbol,
@@ -59,6 +70,13 @@ from .template_spec import PLACEHOLDERS, postnr_par
 # Map-item id'er i skabelonen (jf. mapbook_skabelon.qpt).
 MAIN_MAP_ID = "Kort 1"        # atlas-styret hovedkort
 OVERVIEW_MAP_ID = "Kort 2"    # oversigtskort over hele projektområdet
+
+# Signaturforklaringen: den tomme plads under ejerteksten, til højre for
+# oversigtskortet (mm på side 1 i skabelonen).
+LEGEND_ID = "Signaturforklaring"
+LEGEND_X, LEGEND_Y = 109.6, 238.0
+LEGEND_W, LEGEND_H = 95.8, 53.0
+LEGEND_FONT = "MS Shell Dlg 2"   # samme skrift som skabelonens tekster
 
 # Standardfarver, hvis brugeren ikke vælger andet.
 STANDARD_KANT = QColor(255, 210, 0)      # gul matrikelkant
@@ -127,7 +145,8 @@ class AtlasBuilder:
     def build(self, coverage_layer, field_mapping, generate_lobenr,
               generate_postnr, layout_name, owner_field=None,
               project_area_layer=None, background_auto=True,
-              background_layer=None, reference_path=None):
+              background_layer=None, reference_path=None,
+              extra_layers=None):
         parcel_layer = coverage_layer  # input = matrikellag
         if parcel_layer is None or not parcel_layer.isValid():
             raise AtlasBuildError("Det valgte lodsejerlag er ugyldigt.")
@@ -155,6 +174,21 @@ class AtlasBuilder:
         else:
             existing_layers = []
             _log("Baggrundskort: intet")
+
+        # De lag brugeren vil have med (tiltag o.l.). Matrikel- og
+        # projektgrænselaget tegnes allerede i deres egen stil. Et lag der
+        # også er baggrundskort, forbliver baggrund — det tegnes nederst og
+        # står ikke i signaturforklaringen.
+        baggrund_ids = {l.id() for l in existing_layers}
+        extra = []
+        for lyr in extra_layers or []:
+            if lyr is None or not lyr.isValid():
+                continue
+            if lyr.id() in exclude or lyr.id() in baggrund_ids:
+                continue
+            if lyr.id() not in {l.id() for l in extra}:
+                extra.append(lyr)
+        _log("Ekstra lag: {}".format([l.name() for l in extra]))
 
         # Find matrikelnummer-feltet til etiketter (auto, ud fra feltnavn).
         matrikel_field = self._detect_matrikel_field(parcel_layer)
@@ -187,8 +221,9 @@ class AtlasBuilder:
             reference_layer, REFERENCE_CATEGORY_FIELD)
         # Hovedkort: geometrien klippes til ejeren via atlas-clipping (tegn alle),
         # men etiketter begrænses til ejerens matrikler (clipping rammer ikke labels).
+        # Navnet står i signaturforklaringen.
         main_parcels = self._build_highlight_layer(
-            parcel_layer, "Matrikler (ejer)", matrikel_field,
+            parcel_layer, "Matrikler", matrikel_field,
             render_filter=None, label_filter=owner_filter, with_labels=True)
         # Oversigtskort: kun ejerens matrikler tegnes (filtreret), INGEN labels.
         overview_parcels = self._build_highlight_layer(
@@ -251,10 +286,21 @@ class AtlasBuilder:
         # 5) Atlas + kort.
         self._configure_atlas(layout, owner_layer)
         self._configure_maps(
-            layout, main_parcels, overview_parcels, area_layer, existing_layers
+            layout, main_parcels, overview_parcels, area_layer, existing_layers,
+            extra
         )
 
-        # 6) Tilføj layoutet til projektet (unikt navn).
+        # 6) Signaturforklaring — uden baggrundskortet, og uden lag der ikke
+        #    har noget inden for atlassets område (de kan ikke komme på en side).
+        omraade = QgsRectangle(owner_layer.extent())
+        if area_layer is not None:
+            omraade.combineExtentWith(area_layer.extent())
+        omraade.scale(1.5)
+        i_omraadet = [l for l in extra
+                      if self._har_objekter_i(l, omraade, parcel_layer.crs())]
+        self._add_legend(layout, area_layer, main_parcels, i_omraadet)
+
+        # 7) Tilføj layoutet til projektet (unikt navn).
         manager = self.project.layoutManager()
         layout.setName(self._unique_name(manager, layout_name))
         manager.addLayout(layout)
@@ -910,11 +956,13 @@ class AtlasBuilder:
         atlas.setFilterFeatures(False)
 
     def _configure_maps(self, layout, main_parcels, overview_parcels,
-                        area_layer, background_layers):
+                        area_layer, background_layers, extra_layers=()):
         """Sæt hoved- og oversigtskort op.
 
         Lagrækkefølge i setLayers er top-først: projektgrænse → matrikler →
-        brugerens eksisterende projektlag (baggrundskort).
+        de valgte lag (i lagpanelets rækkefølge) → baggrundskort. De valgte
+        lag ligger under matriklerne, så en udfyldt tiltagsflade ikke skjuler
+        matrikelkanten, og over baggrunden, så fx genslyngningen ses.
 
         Hovedkort: atlas-styret extent (zoomer til aktuel ejer); matriklerne
             klippes til ejeren via atlas-clipping (uklippet lag).
@@ -931,7 +979,7 @@ class AtlasBuilder:
             if area_layer is not None:
                 layers.append(area_layer)
             layers.append(parcels)
-            return layers + list(background_layers)
+            return layers + list(extra_layers) + list(background_layers)
 
         if main_map is not None:
             main_map.setKeepLayerSet(True)
@@ -957,6 +1005,137 @@ class AtlasBuilder:
                     overview_map.zoomToExtent(extent)
             except Exception:
                 pass
+
+    def _add_legend(self, layout, area_layer, main_parcels, extra_layers):
+        """Signaturforklaring med projektgrænse, matrikler og de valgte lag.
+
+        Baggrundskortet og oversigtskortets matrikelkopi kommer ikke med:
+        modellen bygges i hånden og opdateres ikke automatisk fra kortet.
+        Forklaringen følger hovedkortet og viser kun det, der er på den
+        aktuelle side — et tiltag uden for ejerens jord fylder ikke.
+        """
+        main_map, _overview = self._resolve_maps(layout)
+        legend = QgsLayoutItemLegend(layout)
+        legend.setId(LEGEND_ID)
+        legend.setTitle(LEGEND_ID)
+        layout.addLayoutItem(legend)
+        if main_map is not None:
+            legend.setLinkedMap(main_map)
+
+        legend.setAutoUpdateModel(False)
+        rod = legend.model().rootGroup()
+        rod.removeAllChildren()
+        # Rasterlag er baggrund og forklares ikke.
+        poster = [lyr for lyr in
+                  ([area_layer] if area_layer is not None else [])
+                  + [main_parcels] + list(extra_layers)
+                  if lyr.type() != QgsMapLayer.RasterLayer]
+        for lyr in poster:
+            rod.addLayer(lyr)
+
+        legend.setBackgroundEnabled(True)
+        legend.setBackgroundColor(QColor(255, 255, 255))
+        legend.setFrameEnabled(False)
+        legend.setResizeToContents(True)
+        legend.attemptMove(QgsLayoutPoint(
+            LEGEND_X, LEGEND_Y, QgsUnitTypes.LayoutMillimeters))
+        legend.updateLegend()
+
+        # Størrelsen måles uden filtret og er derfor den største, siden kan
+        # få. Er den for stor til pladsen, prøves trinene i rækkefølge:
+        # mindre skrift, to kolonner, endnu mindre skrift. Passer den stadig
+        # ikke, låses rammen, så den ikke vokser ud over siden.
+        trin = (
+            # (kolonner, titel pt, lag pt, symbol pt, symbolbredde, -højde)
+            (1, 11, 9, 9, 7.0, 4.0),
+            (1, 10, 8, 8, 6.0, 3.5),
+            (2, 10, 8, 8, 6.0, 3.5),
+            (2, 9, 7, 7, 5.0, 3.0),
+        )
+        for kolonner, titel, lag, symbol, sb, sh in trin:
+            legend.setColumnCount(kolonner)
+            legend.setSplitLayer(kolonner > 1)
+            legend.setEqualColumnWidth(kolonner > 1)
+            self._legend_fonts(legend, titel=titel, lag=lag, symbol=symbol)
+            legend.setSymbolWidth(sb)
+            legend.setSymbolHeight(sh)
+            bredde, hoejde = self._tilpas_forklaring(legend, layout)
+            if hoejde <= LEGEND_H and bredde <= LEGEND_W:
+                break
+        if hoejde > LEGEND_H or bredde > LEGEND_W:
+            _log("Signaturforklaringen er større end pladsen ({:.0f} x {:.0f} mm) "
+                 "— den beskæres".format(bredde, hoejde))
+            legend.setResizeToContents(False)
+            bredde, hoejde = min(bredde, LEGEND_W), min(hoejde, LEGEND_H)
+            legend.attemptResize(QgsLayoutSize(
+                bredde, hoejde, QgsUnitTypes.LayoutMillimeters))
+        _log("Signaturforklaring: {} lag, {:.0f} x {:.0f} mm".format(
+            len(poster), bredde, hoejde))
+
+        # Filtret slås først til nu: det afgøres i baggrunden, når kortet
+        # tegnes, og indtil da er forklaringen tom — målt med filtret ville
+        # den fylde 0 mm. Uden filter er den så stor, som den kan blive.
+        if main_map is not None:
+            legend.setLegendFilterByMapEnabled(True)
+        return legend
+
+    def _har_objekter_i(self, lyr, rektangel, crs):
+        """Har et vektorlag mindst ét objekt inden for rektanglet (i crs)?
+
+        Andre lagtyper antages at have — de kan ikke spørges billigt.
+        """
+        if not isinstance(lyr, QgsVectorLayer):
+            return True
+        omfang = rektangel
+        if lyr.crs().isValid() and crs.isValid() and lyr.crs() != crs:
+            try:
+                omfang = QgsCoordinateTransform(
+                    crs, lyr.crs(), self.project).transformBoundingBox(rektangel)
+            except Exception:
+                return True
+        anmodning = (QgsFeatureRequest().setFilterRect(omfang)
+                     .setNoAttributes().setLimit(1))
+        for _objekt in lyr.getFeatures(anmodning):
+            return True
+        _log("Signaturforklaring: '{}' har intet i atlassets område og "
+             "udelades".format(lyr.name()))
+        return False
+
+    @staticmethod
+    def _tilpas_forklaring(legend, layout):
+        """Giv forklaringen den størrelse, indholdet kræver. (bredde, højde) i mm.
+
+        legend.adjustBoxSize() gør intet, før forklaringen har været tegnet
+        én gang, så størrelsen regnes her direkte med QgsLegendRenderer.
+        """
+        kontekst = QgsLayoutUtils.createRenderContextForLayout(layout, None)
+        stoerrelse = QgsLegendRenderer(
+            legend.model(), legend.legendSettings()).minimumSize(kontekst)
+        if stoerrelse.isValid() and stoerrelse.width() > 0:
+            legend.attemptResize(QgsLayoutSize(
+                stoerrelse.width(), stoerrelse.height(),
+                QgsUnitTypes.LayoutMillimeters))
+        return stoerrelse.width(), stoerrelse.height()
+
+    @staticmethod
+    def _legend_fonts(legend, titel, lag, symbol):
+        """Skriftstørrelser (pt) i forklaringen, i skabelonens skrift."""
+        for stil, stoerrelse, fed in (
+                (QgsLegendStyle.Title, titel, True),
+                (QgsLegendStyle.Group, lag, True),
+                (QgsLegendStyle.Subgroup, lag, True),
+                (QgsLegendStyle.SymbolLabel, symbol, False)):
+            s = legend.style(stil)
+            fmt = s.textFormat()
+            skrift = fmt.font()
+            skrift.setFamily(LEGEND_FONT)
+            skrift.setBold(fed)
+            fmt.setFont(skrift)
+            fmt.setSize(stoerrelse)
+            fmt.setSizeUnit(QgsUnitTypes.RenderPoints)
+            fmt.setColor(QColor(0, 0, 0))
+            s.setTextFormat(fmt)
+            legend.setStyle(stil, s)
 
     @staticmethod
     def _enable_atlas_clip(map_item, layers_to_clip):

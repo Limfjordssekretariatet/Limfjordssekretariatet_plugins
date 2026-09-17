@@ -91,6 +91,7 @@ class AtlasMapbook:
                 background_auto=result.background_auto,
                 background_layer=result.background_layer,
                 reference_path=reference_path,
+                extra_layers=result.extra_layers,
             )
         except AtlasBuildError as exc:
             QMessageBox.critical(
