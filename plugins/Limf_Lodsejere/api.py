@@ -8,6 +8,10 @@ from qgis.core import QgsGeometry
 _token_cache: dict[str, dict] = {}
 
 
+class AdgangAfvist(RuntimeError):
+    """Datafordeleren afviste opslaget — det er adgangen, ikke dataen."""
+
+
 class DatafordelerClient:
     """Geometri og ejeroplysninger via Datafordeleren (OAuth Shared Secret)."""
 
@@ -54,6 +58,10 @@ class DatafordelerClient:
         #: VIRK_ADRESSE_FORMER; skrues ned ét trin ad gangen, hvis
         #: serveren afviser den.
         self._virk_adresse_form = 0
+        #: Hvilket navn CPR-nøglen og person-joinet har i det fortrolige
+        #: ejerskab. Se CPR_FELTER og PERSON_JOIN_FORTROLIG.
+        self._cpr_felt_form = 0
+        self._person_join_form = 0
 
     # ------------------------------------------------------------------
     # Fejlhåndtering
@@ -102,17 +110,26 @@ class DatafordelerClient:
         if krop:
             besked += f' — {krop}'
         if resp.status_code in (401, 403):
-            besked += (
-                '\n\nAdgangen blev afvist, selvom log ind lykkedes. Nævnes '
-                'en ressource ovenfor, er det præcis den entitet, jeres '
-                'ansøgning om dataadgang skal omfatte — se Datafordeler '
-                'Administration → Dataadgang, hvor status skal stå som '
-                '"Godkendt". Fejlkoden DAF-AUTH-0001 betyder netop det. '
-                'Dækker ansøgningen kun virksomhedsdata, kan pluginnet '
-                'stadig bruges med "Vis kun virksomhedsejere" — adgang til '
-                'personoplysninger godkendes særskilt.'
-            )
+            raise AdgangAfvist(besked + cls.AFVIST_FORKLARING)
         raise RuntimeError(besked)
+
+    AFVIST_FORKLARING = (
+        '\n\nAdgangen blev afvist, selvom log ind lykkedes. Nævnes '
+        'en ressource ovenfor, er det præcis den entitet, jeres '
+        'ansøgning om dataadgang skal omfatte — se Datafordeler '
+        'Administration → Dataadgang, hvor status skal stå som '
+        '"Godkendt". Fejlkoden DAF-AUTH-0001 betyder netop det. '
+        'Dækker ansøgningen kun virksomhedsdata, kan pluginnet '
+        'stadig bruges med "Vis kun virksomhedsejere" — adgang til '
+        'personoplysninger godkendes særskilt.'
+    )
+
+    CPR_FORKLARING = (
+        '\n\nCPR-numre ligger i Ejerfortegnelsen Fortrolig (entiteten '
+        'EJF_Ejerskab), som kun offentlige myndigheder kan få adgang til. '
+        'Fjern fluebenet "Hent CPR-numre", eller søg om adgangen under '
+        'Dataadgang i Datafordeler Administration.'
+    )
 
     # ------------------------------------------------------------------
     # OAuth
@@ -279,6 +296,21 @@ class DatafordelerClient:
         "",
     )
 
+    #: CPR-numre findes kun i det fortrolige ejerskab. Det begrænsede, som
+    #: bruges ellers, har hverken CPR-nøglen eller adgang til at få den.
+    ROD_BEGRAENSET = 'EJFCustom_EjerskabBegraenset'
+    ROD_FORTROLIG = 'EJF_Ejerskab'
+
+    #: CPR-nøglen på ejerskabet. Datafordelerens transitionsguide skriver
+    #: den begge veje (afsnit 4.4.3 og 4.4.4); navnet følger ellers mønstret
+    #: fra ejendeVirksomhedCVRNr. Den første serveren kender, bruges.
+    CPR_FELTER = ('ejendePersonPersonNr', 'ejendePersonPersonNR')
+
+    #: Personen bag CPR-nøglen. Det begrænsede join udelader beskyttede
+    #: navne og adresser — det svarer til niveauet Fortrolig. ejendePerson
+    #: er guidens eksempel, men kan kræve Fortrolig Beskyttet.
+    PERSON_JOIN_FORTROLIG = ('ejendePersonBegraenset', 'ejendePerson')
+
     @staticmethod
     def _klager_over(fejl: list, navn: str) -> bool:
         """Klager GraphQL over et felt vi har spurgt om, frem for om data?
@@ -299,13 +331,25 @@ class DatafordelerClient:
                 return True
         return False
 
-    def _skru_ned(self, fejl: list) -> bool:
+    def _skru_ned(self, fejl: list, med_cpr: bool = False) -> bool:
         """Sluk den del af forespørgslen serveren ikke vil svare på.
 
         Returnerer True hvis der blev skruet ned, så opslaget kan prøves
         igen. Valget huskes resten af kørslen — ellers ville hver eneste
         matrikel koste et spildt opslag.
         """
+        if med_cpr:
+            # CPR-nøglen først: dens navn indeholder person-joinets.
+            felt = self.CPR_FELTER[self._cpr_felt_form]
+            if (self._cpr_felt_form + 1 < len(self.CPR_FELTER)
+                    and self._klager_over(fejl, felt)):
+                self._cpr_felt_form += 1
+                return True
+            join = self.PERSON_JOIN_FORTROLIG[self._person_join_form]
+            if (self._person_join_form + 1 < len(self.PERSON_JOIN_FORTROLIG)
+                    and self._klager_over(fejl, join)):
+                self._person_join_form += 1
+                return True
         if not self._uden_cpradresse and self._klager_over(fejl, 'cpradresse'):
             self._uden_cpradresse = True
             return True
@@ -316,25 +360,35 @@ class DatafordelerClient:
             return True
         return False
 
-    def _ejer_query(self, nu: str, bfe_nummer: str) -> str:
+    def _rod_og_person(self, med_cpr: bool):
+        """(rodentitet, person-join, CPR-felt eller '') for opslaget."""
+        if not med_cpr:
+            return self.ROD_BEGRAENSET, 'ejendePersonBegraenset', ''
+        return (self.ROD_FORTROLIG,
+                self.PERSON_JOIN_FORTROLIG[self._person_join_form],
+                self.CPR_FELTER[self._cpr_felt_form])
+
+    def _ejer_query(self, nu: str, bfe_nummer: str,
+                    med_cpr: bool = False) -> str:
         virk_adresse = self.VIRK_ADRESSE_FORMER[self._virk_adresse_form]
         if virk_adresse:
             virk_adresse = virk_adresse.format(felter=self.VIRK_ADRESSE_FELTER)
+        rod, person, cpr_felt = self._rod_og_person(med_cpr)
         return """
         query {
-            EJFCustom_EjerskabBegraenset(
+            %s(
                 virkningstid: "%s"
                 where: { bestemtFastEjendomBFENr: { eq: %s } }
             ) {
                 nodes {
                     bestemtFastEjendomBFENr
                     ejerforholdskode
-                    status
+                    status%s
                     ejendeVirksomhedCVRNr_20_Virksomhed_CVRNummer_ref {
                         CVRNummer
                         id_CVR_Navn_CVREnhedsId_ref { vaerdi }%s
                     }
-                    ejendePersonBegraenset {
+                    %s {
                         navn { navn }
                         standardadresse%s
                         beskyttelser { beskyttelsestype }
@@ -343,12 +397,23 @@ class DatafordelerClient:
                 }
             }
         }
-        """ % (nu, bfe_nummer, virk_adresse,
+        """ % (rod, nu, bfe_nummer,
+               ('\n                    ' + cpr_felt) if cpr_felt else '',
+               virk_adresse, person,
                '' if self._uden_cpradresse else self.CPR_ADRESSE)
 
-    def get_ejer(self, bfe_nummer: str, only_companies: bool = True) -> dict:
+    def get_ejer(self, bfe_nummer: str, only_companies: bool = True,
+                 med_cpr: bool = False) -> dict:
+        """Ejeroplysninger for én ejendom.
+
+        med_cpr henter også ejernes CPR-numre fra Ejerfortegnelsen Fortrolig.
+        Det kræver en godkendt adgang, som kun offentlige myndigheder kan få;
+        afvises den, rejses AdgangAfvist.
+        """
         if not bfe_nummer:
             return self._tomt_ejer()
+        # Vises private ejere ikke, er der ingen CPR-numre at hente.
+        med_cpr = med_cpr and not only_companies
 
         token = self._get_token()
         headers = {
@@ -363,35 +428,62 @@ class DatafordelerClient:
         # forespørgslen, og opslaget prøves igen. Højst ét forsøg pr. del,
         # og valget huskes resten af kørslen.
         data = None
-        for _ in range(len(self.VIRK_ADRESSE_FORMER) + 2):
-            query = self._ejer_query(nu, bfe_nummer)
+        forsoeg = (len(self.VIRK_ADRESSE_FORMER) + len(self.CPR_FELTER)
+                   + len(self.PERSON_JOIN_FORTROLIG) + 2)
+        for _ in range(forsoeg):
+            query = self._ejer_query(nu, bfe_nummer, med_cpr)
             resp = self.session.post(
                 self.GRAPHQL_URL,
                 json={'query': query},
                 headers=headers,
                 timeout=15,
             )
-            self._tjek_svar(resp, 'Opslag af ejeroplysninger (Ejerfortegnelsen)')
+            try:
+                self._tjek_svar(
+                    resp, 'Opslag af ejeroplysninger (Ejerfortegnelsen)')
+            except AdgangAfvist as e:
+                raise AdgangAfvist(
+                    str(e) + (self.CPR_FORKLARING if med_cpr else '')) from None
             svar = resp.json()
             fejl = svar.get('errors')
             if not fejl:
                 data = svar
                 break
-            if self._skru_ned(fejl):
+            if self._skru_ned(fejl, med_cpr):
                 continue
+            if any((f.get('extensions') or {}).get('code') == 'DAF-AUTH-0001'
+                   for f in fejl):
+                raise AdgangAfvist(
+                    'Opslag af ejeroplysninger (Ejerfortegnelsen) blev afvist — '
+                    + self._fejltekst(resp) + self.AFVIST_FORKLARING
+                    + (self.CPR_FORKLARING if med_cpr else ''))
             raise RuntimeError(f'GraphQL fejl: {fejl[0].get("message", "")}')
         if data is None:
             raise RuntimeError(
                 'Ejerfortegnelsen svarede ikke på opslaget af ejeroplysninger.')
 
-        nodes = (data.get('data') or {}).get('EJFCustom_EjerskabBegraenset', {}).get('nodes', [])
+        rod, person, cpr_felt = self._rod_og_person(med_cpr)
+        nodes = ((data.get('data') or {}).get(rod) or {}).get('nodes') or []
 
         # Vælg den gældende post (filtrer historiske fra)
         gaeldende = [n for n in nodes if n.get('status') == 'gældende']
         if not gaeldende:
             return self._tomt_ejer()
 
-        return self._parse_nodes(gaeldende, only_companies)
+        return self._parse_nodes(gaeldende, only_companies, person, cpr_felt)
+
+    @staticmethod
+    def _cpr_tekst(vaerdi) -> str:
+        """CPR-nummeret som ti cifre — også hvis det kommer som et tal.
+
+        Som tal mister et CPR-nummer født den 1.-9. i måneden sit første nul.
+        """
+        if vaerdi is None:
+            return ''
+        tekst = str(vaerdi).strip()
+        if isinstance(vaerdi, int) or (tekst.isdigit() and len(tekst) < 10):
+            tekst = tekst.zfill(10)
+        return tekst
 
     @staticmethod
     def _joinraekker(vaerdi) -> list:
@@ -478,7 +570,9 @@ class DatafordelerClient:
             linje = f'{linje}, {sal}'
         return linje
 
-    def _parse_nodes(self, nodes: list, only_companies: bool) -> dict:
+    def _parse_nodes(self, nodes: list, only_companies: bool,
+                     person_join: str = 'ejendePersonBegraenset',
+                     cpr_felt: str = '') -> dict:
         # Alle gældende ejere (kan være flere ved sameje)
         ejerforhold = str(nodes[0].get('ejerforholdskode') or '')
 
@@ -487,6 +581,7 @@ class DatafordelerClient:
         postnumre = []
         byer      = []
         cvr_numre = []
+        cpr_numre = []
         adrbeskyt = 'Nej'
 
         for node in nodes:
@@ -505,11 +600,15 @@ class DatafordelerClient:
                     byer.append(by)
                 continue
 
-            person = node.get('ejendePersonBegraenset')
-            if person:
+            person = node.get(person_join)
+            cpr = self._cpr_tekst(node.get(cpr_felt)) if cpr_felt else ''
+            if person or cpr:
+                person = person or {}
                 if only_companies:
                     navne.append('Privat ejer')
                     continue
+                # Samme rækkefølge som navnene, så sameje kan læses parvis.
+                cpr_numre.append(cpr or '?')
                 navn_obj = person.get('navn') or {}
                 navn = navn_obj.get('navn', '') if isinstance(navn_obj, dict) else ''
                 navne.append(navn)
@@ -542,6 +641,9 @@ class DatafordelerClient:
             'ejerforhold':        ejerforhold,
             'ejerforhold_tekst':  self.EJERFORHOLD.get(ejerforhold, ejerforhold),
             'cvr_nummer':         ' / '.join(cvr_numre),
+            'cpr_nummer':         (' / '.join(cpr_numre)
+                                   if cpr_felt and any(c != '?' for c in cpr_numre)
+                                   else ''),
             'adressebeskyttelse': adrbeskyt,
         }
 
@@ -554,5 +656,6 @@ class DatafordelerClient:
             'ejerforhold':        '',
             'ejerforhold_tekst':  '',
             'cvr_nummer':         '',
+            'cpr_nummer':         '',
             'adressebeskyttelse': '',
         }

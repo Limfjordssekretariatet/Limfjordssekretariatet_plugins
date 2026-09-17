@@ -14,7 +14,7 @@ videregive dem. Se [Licens og kreditering](#licens-og-kreditering).
 | **Vandprojekter – Vådområder** | 4.0.28 | Diverse GIS-værktøjer (jordberegning, terræninterpolation m.m.) |
 | **Vandprojekter – Dræn** | 0.2.19 | Find drænudløbspunkter baseret på fald og DEM |
 | **Vandprojekter – Lodsejeratlas** | 0.2.14 | Genererer et lodsejer-atlas (mapbook) ud fra en layout-skabelon med auto-mapping af felter |
-| **Vandprojekter – Lodsejerudtræk** | 0.1.16 | Henter matrikler og ejeroplysninger for et valgt polygon via Datafordeleren/CVR |
+| **Vandprojekter – Lodsejerudtræk** | 0.1.17 | Henter matrikler og ejeroplysninger for et valgt polygon via Datafordeleren/CVR |
 | **Vandprojekter – VASP** | 1.2.20 | Integration mellem VASP Access-database og QGIS – henter terræn-/profildata ind som lag |
 | **Vandprojekter – N-regneark** | 2.24 | Udfylder kvælstof-regnearket (N) for et vådområdeprojekt: oplande, arealer og tilførsel |
 
@@ -68,6 +68,9 @@ plugin-opdateringer). Kræver internetadgang ved første kørsel.
 **Vandprojekter – Lodsejerudtræk** henter i stedet matrikler og ejeroplysninger *live*
 fra Datafordeleren ved hver forespørgsel. Det kræver en personlig
 Datafordeler-API-nøgle, som hver bruger selv skal konfigurere (distribueres ikke).
+CPR-numre kan hentes med, hvis ens IT-system har godkendt adgang til
+Ejerfortegnelsen Fortrolig. Den adgang gives kun til offentlige myndigheder.
+Valget er altid slået fra, når dialogen åbnes.
 
 **Vandprojekter – N-regneark** henter kun det datasæt et trin faktisk skal
 bruge — regner man kun oplande, hentes jordbundskortet aldrig.

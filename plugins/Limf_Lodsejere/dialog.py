@@ -13,7 +13,7 @@ from qgis.core import (
 )
 
 from . import faelles_ui
-from .api import DatafordelerClient
+from .api import AdgangAfvist, DatafordelerClient
 
 
 class LodsejerDialog(QDialog):
@@ -67,6 +67,29 @@ class LodsejerDialog(QDialog):
         )
         self.only_companies_cb.setChecked(False)
         udtraek_l.addWidget(self.only_companies_cb)
+
+        # CPR-numre er fortrolige og kræver en adgang, de fleste ikke har.
+        # Derfor altid fra, når dialogen åbnes — valget huskes ikke.
+        self.cpr_cb = QCheckBox(
+            'Hent CPR-numre (kræver adgang til Ejerfortegnelsen Fortrolig)')
+        self.cpr_cb.setChecked(False)
+        self.cpr_cb.setToolTip(
+            'CPR-numrene hentes fra Ejerfortegnelsen Fortrolig (entiteten '
+            'EJF_Ejerskab).\nDen adgang gives kun til offentlige myndigheder '
+            'og skal være godkendt under Dataadgang i Datafordeler '
+            'Administration.')
+        udtraek_l.addWidget(self.cpr_cb)
+        self.cpr_note = QLabel(
+            'Laget får en kolonne med CPR-numre. De er fortrolige: del ikke '
+            'laget, og brug det ikke i atlas eller udsendelser uden at fjerne '
+            'kolonnen.')
+        self.cpr_note.setWordWrap(True)
+        self.cpr_note.setStyleSheet('color: #a33;')
+        self.cpr_note.setVisible(False)
+        udtraek_l.addWidget(self.cpr_note)
+        self.cpr_cb.toggled.connect(self.cpr_note.setVisible)
+        # Uden private ejere er der ingen CPR-numre at hente.
+        self.only_companies_cb.toggled.connect(self._kun_virksomheder_skiftet)
         layout.addWidget(udtraek)
 
         # --- Fremdrift ---------------------------------------------------
@@ -128,6 +151,11 @@ class LodsejerDialog(QDialog):
                 self, 'Lodsejere',
                 'Kunne ikke åbne vejledningen. Den ligger her:\n %s' % sti)
 
+    def _kun_virksomheder_skiftet(self, kun_virksomheder):
+        if kun_virksomheder:
+            self.cpr_cb.setChecked(False)
+        self.cpr_cb.setEnabled(not kun_virksomheder)
+
     def _toggle_secret(self, checked):
         mode = QLineEdit.Normal if checked else QLineEdit.Password
         self.wfs_apikey_edit.setEchoMode(mode)
@@ -184,6 +212,7 @@ class LodsejerDialog(QDialog):
 
             self.progress.setRange(0, len(jordstykker))
             only_companies = self.only_companies_cb.isChecked()
+            med_cpr = self.cpr_cb.isChecked() and not only_companies
             results = []
             errors = []
 
@@ -195,7 +224,16 @@ class LodsejerDialog(QDialog):
                 QApplication.processEvents()
 
                 try:
-                    ejer = client.get_ejer(js.get('bfe_nummer', ''), only_companies=only_companies)
+                    ejer = client.get_ejer(js.get('bfe_nummer', ''),
+                                           only_companies=only_companies,
+                                           med_cpr=med_cpr)
+                except AdgangAfvist as e:
+                    if med_cpr:
+                        # Uden adgangen fejler hver eneste matrikel — og et
+                        # lag uden ejere er ikke det, der blev bedt om.
+                        raise
+                    errors.append(str(e))
+                    ejer = {}
                 except Exception as e:
                     errors.append(str(e))
                     ejer = {}
@@ -203,7 +241,7 @@ class LodsejerDialog(QDialog):
                 results.append({**js, **ejer})
 
             self.status_label.setText('Opretter lag...')
-            self._create_layer(results)
+            self._create_layer(results, med_cpr)
 
             if errors:
                 # Ens fejl tælles sammen: 8 gange samme afviste adgang er ét
@@ -233,12 +271,13 @@ class LodsejerDialog(QDialog):
         geom.transform(transform)
         return geom
 
-    def _create_layer(self, results):
-        layer = QgsVectorLayer('Polygon?crs=EPSG:25832', 'Lodsejere', 'memory')
+    def _create_layer(self, results, med_cpr=False):
+        # Navnet siger det, så laget ikke deles ved en fejl.
+        navn = 'Lodsejere – med CPR (fortroligt)' if med_cpr else 'Lodsejere'
+        layer = QgsVectorLayer('Polygon?crs=EPSG:25832', navn, 'memory')
         provider = layer.dataProvider()
 
-        fields = QgsFields()
-        for name, typ in [
+        felter = [
             ('ejerlavskode',       QVariant.Int),
             ('ejerlavsnavn',       QVariant.String),
             ('matrikelnummer',     QVariant.String),
@@ -250,8 +289,15 @@ class LodsejerDialog(QDialog):
             ('ejerforhold',        QVariant.String),
             ('ejerforhold_tekst',  QVariant.String),
             ('cvr_nummer',         QVariant.String),
-            ('adressebeskyttelse', QVariant.String),
-        ]:
+        ]
+        # Kun når der er bedt om det — ellers ville en tom CPR-kolonne
+        # følge med alle lag.
+        if med_cpr:
+            felter.append(('cpr_nummer', QVariant.String))
+        felter.append(('adressebeskyttelse', QVariant.String))
+
+        fields = QgsFields()
+        for name, typ in felter:
             fields.append(QgsField(name, typ))
 
         provider.addAttributes(fields)
@@ -261,19 +307,13 @@ class LodsejerDialog(QDialog):
         for r in results:
             feat = QgsFeature()
             feat.setGeometry(QgsGeometry.fromWkt(r.get('geometri_wkt', '')))
+            vaerdier = {
+                'ejerlavskode': r.get('ejerlavskode'),
+                'bfe_nummer': str(r.get('bfe_nummer', '')),
+            }
             feat.setAttributes([
-                r.get('ejerlavskode'),
-                r.get('ejerlavsnavn', ''),
-                r.get('matrikelnummer', ''),
-                str(r.get('bfe_nummer', '')),
-                r.get('ejernavn', ''),
-                r.get('ejeradresse', ''),
-                r.get('postnr', ''),
-                r.get('postby', ''),
-                r.get('ejerforhold', ''),
-                r.get('ejerforhold_tekst', ''),
-                r.get('cvr_nummer', ''),
-                r.get('adressebeskyttelse', ''),
+                vaerdier[name] if name in vaerdier else r.get(name, '')
+                for name, _typ in felter
             ])
             features.append(feat)
 

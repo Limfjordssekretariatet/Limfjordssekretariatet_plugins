@@ -52,6 +52,37 @@ afkrydsningen *"Vis kun virksomhedsejere"* — private ejere vises da som
 Ansøgningen gælder **kun det miljø den er søgt til**. Produktion og test er
 adskilt; en godkendelse i test giver ikke adgang i produktion.
 
+### CPR-numre (valgfrit)
+
+Afkrydsningen *"Hent CPR-numre"* er altid slået fra, når dialogen åbnes. CPR-
+numrene ligger ikke i det begrænsede ejerskab, som pluginnet ellers bruger, men i
+**Ejerfortegnelsen Fortrolig**:
+
+| Niveau | Indhold | Hvem kan få adgang |
+|---|---|---|
+| Ejerfortegnelsen | Navne og adresser, uden CPR-numre og uden beskyttede navne/adresser | Alle, også private |
+| Ejerfortegnelsen Fortrolig | Med CPR-numre, uden beskyttede navne/adresser | Kun offentlige myndigheder |
+| Ejerfortegnelsen Fortrolig Beskyttet | Alt, også beskyttede navne/adresser | Kun offentlige myndigheder |
+
+Med afkrydsningen spørges entiteten **`EJF_Ejerskab`** i stedet for
+`EJFCustom_EjerskabBegraenset`, og den skal være godkendt under Dataadgang. Det
+IT-system, der henter data, skal være oprettet af en offentlig myndighed.
+Afvises opslaget, stopper kørslen med en besked, og der oprettes ikke noget lag.
+
+Laget hedder da *"Lodsejere – med CPR (fortroligt)"* og får kolonnen
+`cpr_nummer`. Ved sameje står numrene i samme rækkefølge som navnene i
+`ejernavn`, og `?` markerer en ejer, hvis nummer ikke kom med. Laget indeholder
+fortrolige oplysninger: del det ikke, og fjern kolonnen, før det bruges i atlas,
+eksporteres eller sendes videre.
+
+> **Afprøvet mod tjenesten?** Nej, ikke ved udgivelsen: ingen af os havde adgang
+> til niveauet Fortrolig. Feltnavnene følger Datafordelerens transitionsguide,
+> der staver CPR-nøglen på to måder (`ejendePersonPersonNr` og
+> `ejendePersonPersonNR`). Pluginnet prøver begge, og for personen både
+> `ejendePersonBegraenset` og `ejendePerson`. Den første, serveren kender, bruges.
+> Melder den første kørsel med adgang en fejl om et ukendt felt, så send beskeden
+> videre.
+
 ## Trin 5: IP-adresser — den hyppigste årsag til 403
 
 IP-listen skal dække **alle de maskiner der bruger pluginnet**, ikke kun den
