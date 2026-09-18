@@ -62,7 +62,7 @@ class Limfjordssekretariatet_tools:
         self.first_start = None
         self.tegne_action = None
         self.tegne_vaerktoej = None
-        self.provider = None
+        self.providers = []
 
     def tr(self, message):
         return QCoreApplication.translate('Limfjordssekretariatet_tools', message)
@@ -97,26 +97,28 @@ class Limfjordssekretariatet_tools:
         return action
 
     def initProcessing(self):
-        """Støttepunkternes algoritme i Processing-værktøjskassen.
+        """Støttepunkter og Udpeg opland i Processing-værktøjskassen.
 
         Kaldes af QGIS selv (hasProcessingProvider=yes), også når der ikke er
-        en brugerflade — og fra initGui, så den er der uanset hvad.
+        en brugerflade — og fra initGui, så de er der uanset hvad.
         """
-        if self.provider is not None:
+        if self.providers:
             return
         from qgis.core import QgsApplication, QgsMessageLog, Qgis
         from .stoettepunkter.provider import AfvandingProvider
+        from .udpeg_opland.provider import UdpegOplandProvider
 
-        provider = AfvandingProvider()
-        if QgsApplication.processingRegistry().addProvider(provider):
-            self.provider = provider
-        else:
-            # Samme id som det selvstændige plugin, værktøjet kom fra. Er det
-            # stadig installeret, afviser QGIS den anden udbyder.
-            QgsMessageLog.logMessage(
-                'Processing-udbyderen "afvanding" findes allerede — er det '
-                'gamle Afvandingspunkter-plugin stadig installeret? '
-                'Afinstallér det.', 'Vandprojekter', Qgis.Warning)
+        # Begge har samme id som det selvstændige plugin, værktøjet kom fra.
+        # Er det stadig installeret, afviser QGIS den anden udbyder.
+        for provider, gammelt in ((AfvandingProvider(), 'Afvandingspunkter'),
+                                  (UdpegOplandProvider(), 'Udpeg opland')):
+            if QgsApplication.processingRegistry().addProvider(provider):
+                self.providers.append(provider)
+            else:
+                QgsMessageLog.logMessage(
+                    'Processing-udbyderen "{}" findes allerede — er det gamle '
+                    '{}-plugin stadig installeret? Afinstallér det.'.format(
+                        provider.id(), gammelt), 'Vandprojekter', Qgis.Warning)
 
     def initGui(self):
         """Create the menu entries and toolbar icon inside QGIS."""
@@ -182,10 +184,10 @@ class Limfjordssekretariatet_tools:
         self.actions = []
         self.tegne_action = None
 
-        if self.provider is not None:
-            from qgis.core import QgsApplication
-            QgsApplication.processingRegistry().removeProvider(self.provider)
-            self.provider = None
+        from qgis.core import QgsApplication
+        for provider in self.providers:
+            QgsApplication.processingRegistry().removeProvider(provider)
+        self.providers = []
 
     def run(self):
         """Run whenever user clicks icon/menu."""

@@ -43,6 +43,8 @@ class Limfjordssekretariatet_toolsDialog(QtWidgets.QDialog, FORM_CLASS):
         self.JordbalanceBtn.clicked.connect(self.jordberegning)
         self.GridTilLERBtn.clicked.connect(self.grid_til_ler)
         self.StoettepunkterBtn.clicked.connect(self.stoettepunkter)
+        self.UdpegOplandBtn.clicked.connect(self.udpeg_opland)
+        self._udpeg_dialog = None
 
     # Afvandingsanalyse, "Brænd vandløb i terræn" og "Terræn til VASP" er
     # flyttet til VASP-pluginnet, hvor profiler, tværprofiler og vandspejl
@@ -72,6 +74,39 @@ class Limfjordssekretariatet_toolsDialog(QtWidgets.QDialog, FORM_CLASS):
             from qgis.utils import iface
         self.accept()
         StoettepunktPanel(iface).aabn()
+
+    def udpeg_opland(self):
+        """Åbn Udpeg opland, som når den åbnes fra Værktøjskassen.
+
+        Denne dialog lukkes først, og værktøjet åbnes ikke-modalt: et punkt
+        skal kunne prikkes på kortet, og det kan man ikke bag en modal
+        dialog. Den åbnes først, når denne dialogs egen løkke er slut.
+        """
+        from qgis.PyQt.QtCore import QTimer
+        from .udpeg_opland.provider import ALGORITME_ID
+
+        self.accept()
+
+        def aabn():
+            try:
+                dialog = processing.createAlgorithmDialog(ALGORITME_ID)
+            except Exception as e:
+                dialog = None
+                fejl = str(e)
+            else:
+                fejl = ''
+            if dialog is None:
+                QtWidgets.QMessageBox.warning(
+                    self.parent() or None, "Udpeg opland",
+                    "Udpeg opland findes ikke i Værktøjskassen. Er det gamle "
+                    "Udpeg opland-plugin stadig installeret? Så skal det "
+                    "afinstalleres, og QGIS genstartes.\n\n" + fejl)
+                return
+            dialog.show()
+            # Holdes i live — ellers rydder Python den væk med det samme.
+            self._udpeg_dialog = dialog
+
+        QTimer.singleShot(0, aabn)
 
     def jordberegning(self):
         """Åbner QGIS' standard parameterdialog for jordbalance-modellen."""

@@ -104,7 +104,21 @@
      </property>
     </widget>
    </item>
-   <item row="10" column="0" colspan="2">
+   <item row="10" column="0">
+    <widget class="QPushButton" name="UdpegOplandBtn">
+     <property name="text">
+      <string>Udpeg opland</string>
+     </property>
+    </widget>
+   </item>
+   <item row="10" column="1">
+    <widget class="QLabel" name="label_udpeg_opland">
+     <property name="text">
+      <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Udpeg oplandet til et område, et punkt på kortet &lt;br/&gt;eller hvert punkt i et punktlag&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+     </property>
+    </widget>
+   </item>
+   <item row="11" column="0" colspan="2">
     <widget class="QGroupBox" name="groupBox">
      <property name="title">
       <string />
