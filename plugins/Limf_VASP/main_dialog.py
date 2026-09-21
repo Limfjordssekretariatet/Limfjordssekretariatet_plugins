@@ -125,9 +125,10 @@ class MainDialog(QDialog):
         if on_afvandingsanalyse is not None:
             valg.append((
                 "Afvandingsanalyse …",
-                "Beregner afstanden fra terrænet ned til et beregnet "
-                "vandspejl fra VASP og klassificerer den i "
-                "afvandingsklasser.", on_afvandingsanalyse))
+                "Beregner afstanden fra terrænet ned til vandspejlet og "
+                "klassificerer den i afvandingsklasser. Vandspejlet kan "
+                "være beregnet i VASP, opmålt i et eget punktlag — eller "
+                "begge dele flettet sammen.", on_afvandingsanalyse))
 
         boks = QGroupBox("Analyser")
         indhold = QVBoxLayout(boks)

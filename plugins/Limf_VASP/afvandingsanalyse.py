@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
-"""Afvandingsanalyse: afstanden fra terrænet ned til det beregnede vandspejl.
+"""Afvandingsanalyse: afstanden fra terrænet ned til vandspejlet.
 
-Kopi af afvandingsmodellen fra Limf_WetlandTools, men med vandspejlet hentet
-direkte fra VASP i stedet for et vilkårligt punktlag. Brugeren vælger en
-vandspejlsberegning — og et scenarie, hvis det er en multiberegning — i
-VASP-dialogen, som bygger punktlaget og starter dette værktøj med lag og
-vandspejlsfelt udfyldt.
+Kopi af afvandingsmodellen fra Limf_WetlandTools. Vandspejlet kan komme fra
+VASP, fra egne punktlag med opmålte vandspejlskoter — eller fra begge dele på
+én gang. Fra VASP-dialogen samles kilderne først, og de flettes her til ét
+vandspejl; åbnes værktøjet fra Værktøjskassen, vælges lagene direkte.
 
-Selve metoden er uændret fra WetlandTools-udgaven:
+Metoden er uændret fra WetlandTools-udgaven:
 
-1. Vandspejlspunkterne interpoleres til et raster (IDW med nærmeste naboer).
-2. Terræn minus vandspejl giver afvandingsdybden i cm.
-3. Dybden klassificeres i afvandingsklasser (frit vandspejl, sump, eng …).
-4. Klasserne polygoniseres, navngives og får den faste legende.
+1. Vandspejlslagene flettes til ét punktlag.
+2. Punkterne interpoleres til et raster (IDW med nærmeste naboer).
+3. Terræn minus vandspejl giver afvandingsdybden i cm.
+4. Dybden klassificeres i afvandingsklasser (frit vandspejl, sump, eng …).
+5. Klasserne polygoniseres, navngives og får den faste legende.
 """
 
 from osgeo import gdal, ogr, osr
@@ -27,11 +27,12 @@ from qgis.core import (
     QgsProcessingMultiStepFeedback,
     QgsProcessingParameterDefinition,
     QgsProcessingParameterExtent,
+    QgsProcessingException,
     QgsProcessingParameterFeatureSink,
-    QgsProcessingParameterField,
+    QgsProcessingParameterMultipleLayers,
     QgsProcessingParameterNumber,
     QgsProcessingParameterRasterLayer,
-    QgsProcessingParameterVectorLayer,
+    QgsProcessingParameterString,
     QgsProcessingLayerPostProcessorInterface,
     QgsProcessingUtils,
     QgsRendererCategory,
@@ -124,7 +125,7 @@ class AfvandingsanalyseAlgorithm(QgsProcessingAlgorithm):
         return "vasp_afvandingsanalyse"
 
     def displayName(self):
-        return "Afvandingsanalyse (VASP-vandspejl → DHM)"
+        return "Afvandingsanalyse (vandspejl → DHM)"
 
     def group(self):
         return "VASP"
@@ -134,13 +135,18 @@ class AfvandingsanalyseAlgorithm(QgsProcessingAlgorithm):
 
     def shortHelpString(self):
         return (
-            "Beregner hvor langt der er fra terrænet ned til det beregnede "
-            "vandspejl, og klassificerer resultatet i afvandingsklasser.\n\n"
-            "Vandspejlet kommer fra VASP. Værktøjet startes fra "
-            "VASP-dialogen, hvor beregningen — og scenariet, hvis det er en "
-            "multiberegning — vælges; punktlag og vandspejlsfelt er derfor "
-            "allerede udfyldt. Du vælger terrænmodel, udstrækning og "
-            "output.\n\n"
+            "Beregner hvor langt der er fra terrænet ned til vandspejlet, og "
+            "klassificerer resultatet i afvandingsklasser.\n\n"
+            "Vandspejlet kan komme fra VASP, fra egne punktlag med opmålte "
+            "vandspejlskoter — eller fra begge dele på én gang. Startes "
+            "værktøjet fra VASP-dialogen, samles kilderne der, og lag og "
+            "vandspejlsfelt er allerede udfyldt. Herfra vælger du selv "
+            "punktlagene under Avancerede parametre; de skal have "
+            "vandspejlskoten i et felt med samme navn (standard 'vsp').\n\n"
+            "Flere lag flettes til ét vandspejl, før der interpoleres. De "
+            "skal høre til samme vandløbssystem — ellers bliver den fælles "
+            "vandspejlsflade forkert.\n\n"
+            "Du vælger terrænmodel, udstrækning og output.\n\n"
             "Udstrækningen er forudfyldt med vandspejlspunkternes område "
             "plus en margin og kan frit ændres.\n\n"
             "Punkterne interpoleres med IDW (nærmeste naboer), så områder "
@@ -173,18 +179,21 @@ class AfvandingsanalyseAlgorithm(QgsProcessingAlgorithm):
             QgsProcessing.TypeVectorPolygon))
 
         # --- avanceret --------------------------------------------------
-        param = QgsProcessingParameterVectorLayer(
-            self.PARAM_VSP, "Vandspejlspunkter (udfyldes fra VASP-dialogen)",
-            types=[QgsProcessing.TypeVectorPoint])
+        # Ét eller flere vandspejlslag, der flettes før analysen. Fra
+        # VASP-dialogen er de udfyldt; herfra kan man selv pege på punktlag
+        # med opmålte vandspejl — eller blande dem med VASP's beregnede.
+        param = QgsProcessingParameterMultipleLayers(
+            self.PARAM_VSP, "Vandspejlslag der flettes",
+            layerType=QgsProcessing.TypeVectorPoint)
         param.setFlags(param.flags()
                        | QgsProcessingParameterDefinition.FlagAdvanced)
         self.addParameter(param)
 
-        param = QgsProcessingParameterField(
-            self.PARAM_FIELD, "Felt med vandspejlskoten",
-            type=QgsProcessingParameterField.Numeric,
-            parentLayerParameterName=self.PARAM_VSP,
-            allowMultiple=False, defaultValue="vsp")
+        # Feltnavnet skal være ens i alle lagene. VASP-dialogen normaliserer
+        # kilderne til 'vsp', så derfra passer det af sig selv.
+        param = QgsProcessingParameterString(
+            self.PARAM_FIELD, "Felt med vandspejlskoten (samme navn i alle lag)",
+            defaultValue="vsp")
         param.setFlags(param.flags()
                        | QgsProcessingParameterDefinition.FlagAdvanced)
         self.addParameter(param)
@@ -230,37 +239,55 @@ class AfvandingsanalyseAlgorithm(QgsProcessingAlgorithm):
 
     # ------------------------------------------------------------------
     def processAlgorithm(self, parameters, context, model_feedback):
-        feedback = QgsProcessingMultiStepFeedback(5, model_feedback)
+        feedback = QgsProcessingMultiStepFeedback(6, model_feedback)
         results = {}
         outputs = {}
 
-        # --- 1) vandspejlet som raster ----------------------------------
+        felt = (self.parameterAsString(parameters, self.PARAM_FIELD, context)
+                or "vsp")
+
+        # --- 1) flet vandspejlslagene sammen ----------------------------
+        vsp_kilde, vsp_lag, z_felt = self._flet_vandspejl(
+            parameters, context, feedback, felt)
+
+        feedback.setCurrentStep(1)
+        if feedback.isCanceled():
+            return {}
+
+        # --- 2) vandspejlet som raster ----------------------------------
+        # parameterAs* frem for parameters[...]: de avancerede tal er ikke
+        # med i kaldet, når værktøjet køres fra en model eller et script,
+        # og så skal standardværdien bruges i stedet for at fejle.
         alg_params = {
             "DATA_TYPE": 5,
-            "INPUT": parameters[self.PARAM_VSP],
-            "MAX_POINTS": parameters[self.PARAM_MAX_POINTS],
-            "MIN_POINTS": parameters[self.PARAM_MIN_POINTS],
+            "INPUT": vsp_kilde,
+            "MAX_POINTS": self.parameterAsInt(
+                parameters, self.PARAM_MAX_POINTS, context),
+            "MIN_POINTS": self.parameterAsInt(
+                parameters, self.PARAM_MIN_POINTS, context),
             "NODATA": 0,
-            "POWER": parameters[self.PARAM_POWER],
-            "RADIUS": parameters[self.PARAM_RADIUS],
+            "POWER": self.parameterAsDouble(
+                parameters, self.PARAM_POWER, context),
+            "RADIUS": self.parameterAsDouble(
+                parameters, self.PARAM_RADIUS, context),
             "SMOOTHING": 0,
-            "Z_FIELD": parameters[self.PARAM_FIELD],
+            "Z_FIELD": z_felt,
             "OUTPUT": QgsProcessing.TEMPORARY_OUTPUT,
         }
-        extra = self._grid_udstraekning(parameters, context, feedback)
+        extra = self._grid_udstraekning(parameters, context, feedback, vsp_lag)
         if extra:
             alg_params["EXTRA"] = extra
         outputs["Vandspejlsraster"] = processing.run(
             "gdal:gridinversedistancenearestneighbor", alg_params,
             context=context, feedback=feedback, is_child_algorithm=True)
 
-        feedback.setCurrentStep(1)
+        feedback.setCurrentStep(2)
         if feedback.isCanceled():
             return {}
 
-        self._tjek_terraen(parameters, context, feedback)
+        self._tjek_terraen(parameters, context, feedback, vsp_lag, z_felt)
 
-        # --- 2) afvandingsdybden i cm -----------------------------------
+        # --- 3) afvandingsdybden i cm -----------------------------------
         alg_params = {
             "CELL_SIZE": None,
             "CRS": None,
@@ -274,11 +301,11 @@ class AfvandingsanalyseAlgorithm(QgsProcessingAlgorithm):
             "native:modelerrastercalc", alg_params,
             context=context, feedback=feedback, is_child_algorithm=True)
 
-        feedback.setCurrentStep(2)
+        feedback.setCurrentStep(3)
         if feedback.isCanceled():
             return {}
 
-        # --- 3) klassificering ------------------------------------------
+        # --- 4) klassificering ------------------------------------------
         alg_params = {
             "DATA_TYPE": 11,
             "INPUT_RASTER": outputs["Dybde"]["OUTPUT"],
@@ -293,21 +320,21 @@ class AfvandingsanalyseAlgorithm(QgsProcessingAlgorithm):
             "native:reclassifybytable", alg_params,
             context=context, feedback=feedback, is_child_algorithm=True)
 
-        feedback.setCurrentStep(3)
+        feedback.setCurrentStep(4)
         if feedback.isCanceled():
             return {}
 
-        # --- 4) fra raster til polygoner --------------------------------
+        # --- 5) fra raster til polygoner --------------------------------
         # Polygoniseringen sker med GDAL's Python-binding i stedet for
         # gdal_polygonize.bat, der fejler på danske tegn i stier under Windows.
         outputs["Polygoner"] = {
             "OUTPUT": self._polygonize(outputs["Klasser"]["OUTPUT"])}
 
-        feedback.setCurrentStep(4)
+        feedback.setCurrentStep(5)
         if feedback.isCanceled():
             return {}
 
-        # --- 5) navngivning ---------------------------------------------
+        # --- 6) navngivning ---------------------------------------------
         alg_params = {
             "FIELD_LENGTH": 0,
             "FIELD_NAME": "Navn",
@@ -357,7 +384,103 @@ class AfvandingsanalyseAlgorithm(QgsProcessingAlgorithm):
         return ('(("A@1" != 0) * (("A@1" - "B@1")*100))'
                 ' + (("A@1" = 0) * %d)' % _UDENFOR)
 
-    def _tjek_terraen(self, parameters, context, feedback):
+    def _flet_vandspejl(self, parameters, context, feedback, felt):
+        """Flet alle valgte vandspejlslag til ét renset punktlag.
+
+        Lag der mangler kote-feltet, får ingen vandspejlskote ved
+        sammenfletningen; de punkter sorteres fra bagefter, så et forkert
+        feltnavn i ét af lagene ikke trækker hele vandspejlsfladen mod nul.
+        Er koten gemt i et tekstfelt (fx en håndlavet shapefil), regnes den
+        om til et talfelt — komma og punktum som decimaltegn begge.
+
+        Returnerer (kilde_streng, lag, z_felt): kilde_strengen og z_felt
+        gives videre til gdal_grid, laget bruges til udstrækning og tjek.
+        """
+        lag_liste = self.parameterAsLayerList(
+            parameters, self.PARAM_VSP, context)
+        if not lag_liste:
+            raise QgsProcessingException(
+                "Vælg mindst ét vandspejlslag under Avancerede parametre.")
+
+        mangler = [lag.name() for lag in lag_liste
+                   if lag.fields().lookupField(felt) < 0]
+        if mangler:
+            _advar(feedback,
+                   "Feltet '%s' findes ikke i: %s. Punkterne derfra får ingen "
+                   "vandspejlskote og indgår ikke i sammenfletningen."
+                   % (felt, ", ".join(mangler)))
+        if len(mangler) == len(lag_liste):
+            raise QgsProcessingException(
+                "Ingen af de valgte lag har feltet '%s' med vandspejlskoten."
+                % felt)
+
+        flettet = processing.run(
+            "native:mergevectorlayers",
+            {"LAYERS": lag_liste, "CRS": lag_liste[0].crs(),
+             "OUTPUT": QgsProcessing.TEMPORARY_OUTPUT},
+            context=context, feedback=feedback, is_child_algorithm=True)
+
+        kilde = flettet["OUTPUT"]
+        z_felt = felt
+
+        # Er koten et tekstfelt — enten fordi et af lagene har den som tekst,
+        # eller fordi sammenfletningen udvidede den til tekst — kan gdal_grid
+        # ikke bruge den som Z. Læg et rigtigt talfelt ved siden af.
+        flettet_lag = QgsProcessingUtils.mapLayerFromString(kilde, context)
+        if flettet_lag is not None:
+            idx = flettet_lag.fields().lookupField(felt)
+            if idx >= 0 and not flettet_lag.fields().at(idx).isNumeric():
+                _advar(feedback,
+                       "Feltet '%s' er et tekstfelt. Værdierne regnes om til "
+                       "tal (komma og punktum som decimaltegn); værdier der "
+                       "ikke er tal, sorteres fra." % felt)
+                talfelt = processing.run(
+                    "native:fieldcalculator",
+                    {"INPUT": kilde, "FIELD_NAME": "vsp_tal",
+                     "FIELD_TYPE": 0, "FIELD_LENGTH": 0, "FIELD_PRECISION": 0,
+                     "FORMULA": 'to_real(replace(trim("%s"), \',\', \'.\'))'
+                                % felt,
+                     "OUTPUT": QgsProcessing.TEMPORARY_OUTPUT},
+                    context=context, feedback=feedback, is_child_algorithm=True)
+                kilde = talfelt["OUTPUT"]
+                z_felt = "vsp_tal"
+
+        # Punkter uden en kote i feltet ville blive læst som kote 0 af
+        # interpolationen — sortér dem fra.
+        renset = processing.run(
+            "native:extractbyexpression",
+            {"INPUT": kilde,
+             "EXPRESSION": '"%s" IS NOT NULL' % z_felt,
+             "OUTPUT": QgsProcessing.TEMPORARY_OUTPUT},
+            context=context, feedback=feedback, is_child_algorithm=True)
+
+        lag = QgsProcessingUtils.mapLayerFromString(renset["OUTPUT"], context)
+        if lag is None or not lag.isValid():
+            raise QgsProcessingException(
+                "Kunne ikke sammenflette vandspejlslagene.")
+        antal = lag.featureCount()
+        if antal < 3:
+            raise QgsProcessingException(
+                "Kun %d vandspejlspunkter med en kote i '%s' efter "
+                "sammenfletningen. Der skal mindst være 3 for at kunne "
+                "interpolere en vandspejlsflade." % (antal, felt))
+        feedback.pushInfo(
+            "Sammenflettede %d vandspejlslag til %d punkter med en kote i "
+            "'%s'." % (len(lag_liste), antal, felt))
+
+        bbox = lag.extent()
+        if not bbox.isEmpty() and max(bbox.width(), bbox.height()) > 6000:
+            _advar(feedback,
+                   "Vandspejlspunkterne spænder over %.1f × %.1f km. Hvis der "
+                   "er valgt vandspejl fra flere forskellige vandløb, eller "
+                   "et punktlag i et forkert koordinatsystem, bliver den "
+                   "flettede vandspejlsflade — og resultatet — forkert. "
+                   "Vandspejl der skal flettes, skal høre til samme "
+                   "vandløbssystem."
+                   % (bbox.width() / 1000, bbox.height() / 1000))
+        return renset["OUTPUT"], lag, z_felt
+
+    def _tjek_terraen(self, parameters, context, feedback, lag, felt):
         """Sammenlign terrænet med vandspejlet i punkterne.
 
         Ligger vandspejlet over terrænet stort set overalt, bliver hele
@@ -366,9 +489,7 @@ class AfvandingsanalyseAlgorithm(QgsProcessingAlgorithm):
         et andet vandløb — og ikke selve beregningen. Derfor siges det
         tydeligt i loggen frem for at lade brugeren gætte.
         """
-        lag = self.parameterAsVectorLayer(parameters, self.PARAM_VSP, context)
         dhm = self.parameterAsRasterLayer(parameters, self.PARAM_DHM, context)
-        felt = self.parameterAsString(parameters, self.PARAM_FIELD, context)
         if lag is None or dhm is None or not felt:
             return
 
@@ -439,7 +560,7 @@ class AfvandingsanalyseAlgorithm(QgsProcessingAlgorithm):
                    "vandspejlsberegningen hører til netop dette vandløb."
                    % (under, len(forskelle), median))
 
-    def _grid_udstraekning(self, parameters, context, feedback):
+    def _grid_udstraekning(self, parameters, context, feedback, lag):
         """Kommandolinje-tilføjelse der lægger vandspejlsrasteret på området.
 
         Uden den interpolerer gdal_grid kun inden for punkternes egen
@@ -448,8 +569,9 @@ class AfvandingsanalyseAlgorithm(QgsProcessingAlgorithm):
         havne uden for klasserne, uanset hvilket område brugeren valgte.
         Med -txe/-tye dækker vandspejlsfladen hele beregningsområdet, og
         søgeradius afgør så, hvor langt fra vandløbet der stadig regnes.
+
+        ``lag`` er det flettede vandspejlslag.
         """
-        lag = self.parameterAsVectorLayer(parameters, self.PARAM_VSP, context)
         if lag is None:
             return ""
         omraade = self.parameterAsExtent(

@@ -13,8 +13,15 @@ from qgis.PyQt.QtWidgets import (
 from qgis.PyQt.QtCore import Qt, QThread, pyqtSignal, QEventLoop
 from qgis.PyQt.QtGui import QIcon
 from qgis.core import (
-    QgsApplication, QgsCoordinateTransform, QgsProject, QgsRectangle,
-    QgsReferencedRectangle)
+    QgsApplication,
+    QgsCoordinateReferenceSystem,
+    QgsCoordinateTransform,
+    QgsProcessingUtils,
+    QgsProject,
+    QgsRectangle,
+    QgsReferencedRectangle,
+    QgsVectorFileWriter,
+)
 
 from . import config
 from . import dbaccess
@@ -23,6 +30,7 @@ from . import writeback
 from .profile_dialog import ProfileDialog
 from .gisline_dialog import GisLineDialog
 from .vsp_dialog import VspDialog, ScenarieDialog
+from .afvanding_kilder_dialog import AfvandingKilderDialog
 from .tvp_dialog import TvpDialog
 from .main_dialog import MainDialog
 from .terrain_task import TerrainTask
@@ -583,69 +591,260 @@ class VaspPlugin:
     AFVANDING_MARGIN_M = 500.0
 
     def run_afvandingsanalyse(self):
-        """Afvandingsanalyse ud fra et beregnet vandspejl i VASP.
+        """Afvandingsanalyse ud fra et eller flere vandspejl.
 
-        Brugeren vælger en vandspejlsberegning — og et scenarie, hvis det er
-        en multiberegning — hvorefter punktlaget bygges og sendes videre til
-        Processing-dialogen sammen med et forslag til beregningsområdet.
+        Brugeren samler vandspejlskilderne i en dialog — beregnede vandspejl
+        fra VASP og/eller punktlag med opmålte vandspejl fra projektet — og
+        de flettes til ét vandspejl, som analysen køres på. Kildelagene
+        gemmes kun midlertidigt og lægges ikke i projektet; kun resultatet
+        ender i kortet.
         """
         win = self.iface.mainWindow()
         try:
             calcs = dbaccess.list_vsp_calcs()
         except dbaccess.VaspDbError as exc:
-            QMessageBox.critical(win, "VASP — databasefejl", str(exc))
+            # Uden databasen kan man stadig regne på egne opmålte vandspejl.
+            calcs = []
+            self.iface.messageBar().pushWarning(
+                "VASP", "Kunne ikke hente vandspejlsberegninger: %s" % exc)
+
+        dialog = AfvandingKilderDialog(calcs, self._vsp_punkter, win)
+        if dialog.exec_() != AfvandingKilderDialog.Accepted:
             return
-        if not calcs:
-            QMessageBox.information(
-                win, "VASP",
-                "Der blev ikke fundet nogen vandspejlsberegninger.")
+        kilder = dialog.valgte_kilder()
+        if not kilder:
             return
 
-        dialog = VspDialog(
-            calcs, win,
-            titel="Afvandingsanalyse — vælg vandspejlsberegning",
-            intro="Vælg det beregnede vandspejl afvandingen skal måles i "
-                  "forhold til:")
-        if dialog.exec_() != VspDialog.Accepted:
-            return
-        calc = dialog.selected_calc()
-        if not calc:
-            return
-
-        punkter, scenarie = self._vsp_punkter(calc)
-        if punkter is None:
-            return
-
-        navn = "VASP vandspejl: %s" % calc["navn"]
-        if scenarie:
-            navn += " (%s)" % scenarie
-        brugbare, sprunget = self._brugbare_vsp_punkter(punkter)
-        if len(brugbare) < 3:
+        kildelag, advarsler = self._byg_kildelag(kilder)
+        if advarsler:
+            self.iface.messageBar().pushInfo(
+                "VASP — afvandingsanalyse", "  ".join(advarsler))
+        if not kildelag:
             QMessageBox.warning(
                 win, "VASP — afvandingsanalyse",
-                "Beregningen har kun %d punkter med både koordinater og en "
-                "vandspejlskote. Der skal mindst være 3 for at kunne "
-                "interpolere et vandspejl." % len(brugbare))
+                "Ingen af de valgte vandspejl gav punkter med både "
+                "koordinater og en kote.")
             return
 
-        layer = layer_builder.build_vsp_layer(
-            navn, brugbare, calc["koordsysid"],
-            [("vsp", "vsp"), ("bund", "bund")])
-        if not layer.isValid():
+        samlet = sum(lag.featureCount() for lag in kildelag)
+        if samlet < 3:
+            QMessageBox.warning(
+                win, "VASP — afvandingsanalyse",
+                "De valgte vandspejl har tilsammen kun %d punkter med en "
+                "kote. Der skal mindst være 3 for at kunne interpolere et "
+                "vandspejl." % samlet)
+            return
+
+        afstand = self._kilder_spredning(kildelag)
+        if afstand is not None and afstand > 3000:
+            svar = QMessageBox.question(
+                win, "VASP — afvandingsanalyse",
+                "De valgte vandspejl ligger op til ca. %.1f km fra "
+                "hinanden.\n\nFlettes vandspejl fra forskellige vandløb — "
+                "eller et punktlag i et forkert koordinatsystem — bliver den "
+                "fælles vandspejlsflade og hele resultatet forkert. "
+                "Vandspejlene skal høre til samme vandløbssystem."
+                "\n\nFortsæt alligevel?" % (afstand / 1000),
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if svar != QMessageBox.Yes:
+                return
+
+        try:
+            vsp_kilder = self._skriv_kildelag(kildelag)
+        except (OSError, RuntimeError) as exc:
             QMessageBox.critical(
-                win, "VASP", "Kunne ikke oprette vandspejls-laget i QGIS.")
+                win, "VASP — afvandingsanalyse",
+                "Kunne ikke gemme de flettede vandspejl midlertidigt:\n%s"
+                % exc)
             return
-        QgsProject.instance().addMapLayer(layer)
-        if sprunget:
-            self.iface.messageBar().pushInfo(
-                "VASP", "%d punkter uden koordinater eller vandspejlskote "
-                        "indgår ikke i afvandingsanalysen." % sprunget)
 
-        parameters = {"VSP": layer, "VSP_FIELD": "vsp"}
-        extent = self._punkt_extent(layer)
+        parameters = {"VSP": vsp_kilder, "VSP_FIELD": "vsp"}
+        extent = self._kildelag_extent(kildelag)
         if extent is not None:
             parameters["EXTENT"] = extent
         self._afvanding_dialog(parameters)
+
+    def _byg_kildelag(self, kilder):
+        """Byg et normaliseret PointZ-lag (felt "vsp") pr. valgt kilde.
+
+        Returnerer (lag_liste, advarsler). Kilder uden brugbare punkter
+        udelades, og hver udeladelse/frasortering nævnes i advarsler.
+        """
+        lag_liste, advarsler = [], []
+        for kilde in kilder:
+            navn = kilde["navn"]
+            if kilde["type"] == "vasp":
+                brugbare, sprunget = self._brugbare_vsp_punkter(
+                    kilde["punkter"])
+                if not brugbare:
+                    advarsler.append(
+                        "«%s» har ingen punkter med både koordinater og en "
+                        "vandspejlskote og udelades." % navn)
+                    continue
+                lag = layer_builder.build_vsp_layer(
+                    "Vandspejl: %s" % navn, brugbare,
+                    kilde["calc"]["koordsysid"], [("vsp", "vsp")])
+                if sprunget:
+                    advarsler.append(
+                        "%d punkter i «%s» uden koordinater eller kote "
+                        "indgår ikke." % (sprunget, navn))
+            else:
+                lag, sprunget, kun_markerede = self._punktlag_som_vsp(
+                    kilde["lag"], kilde["felt"])
+                if kun_markerede:
+                    advarsler.append(
+                        "Kun de markerede punkter i «%s» bruges." % navn)
+                if lag is None:
+                    advarsler.append(
+                        "Punktlaget «%s» har ingen punkter med en talkote i "
+                        "«%s» og udelades." % (navn, kilde["felt"]))
+                    continue
+                if sprunget:
+                    advarsler.append(
+                        "%d punkter i «%s» uden en kote i «%s» indgår ikke."
+                        % (sprunget, navn, kilde["felt"]))
+            if not lag.isValid():
+                advarsler.append(
+                    "Kunne ikke bygge et vandspejlslag ud fra «%s»." % navn)
+                continue
+            lag_liste.append(lag)
+        return lag_liste, advarsler
+
+    def _punktlag_som_vsp(self, src, felt):
+        """Kopiér et projekt-punktlag til et PointZ-lag med ét "vsp"-felt.
+
+        Koordinaterne omregnes til EPSG:25832 — som VASP-lagene og DHM'et —
+        så sammenfletningen sker i ét koordinatsystem. Punkter uden en
+        talværdi i feltet springes over; en kote skrevet som tekst med komma
+        læses også.
+
+        Et forespørgselsfilter på laget (subset string) respekteres, fordi
+        iterationen kun ser de filtrerede punkter. Er der markerede punkter,
+        bruges kun dem — så man kan udpege præcis de opmålte vandspejl der
+        skal flettes. Returnerer (lag, antal_sprunget, kun_markerede), eller
+        (None, antal_sprunget, kun_markerede) hvis ingen punkter kunne bruges.
+        """
+        maal = QgsCoordinateReferenceSystem("EPSG:25832")
+        xform = None
+        if src.crs().isValid() and src.crs() != maal:
+            xform = QgsCoordinateTransform(
+                src.crs(), maal, QgsProject.instance())
+
+        kun_markerede = src.selectedFeatureCount() > 0
+        features = (src.getSelectedFeatures() if kun_markerede
+                    else src.getFeatures())
+        punkter, sprunget = [], 0
+        for feat in features:
+            raa = feat[felt] if felt in feat.fields().names() else None
+            if isinstance(raa, str):
+                raa = raa.replace(",", ".").strip()
+            try:
+                vaerdi = float(raa)
+            except (TypeError, ValueError):
+                sprunget += 1
+                continue
+            geom = feat.geometry()
+            if geom is None or geom.isEmpty():
+                sprunget += 1
+                continue
+            try:
+                if geom.isMultipart():
+                    dele = geom.asMultiPoint()
+                    pt = dele[0] if dele else None
+                else:
+                    pt = geom.asPoint()
+            except (ValueError, TypeError):
+                pt = None
+            if pt is None:
+                sprunget += 1
+                continue
+            if xform is not None:
+                try:
+                    pt = xform.transform(pt)
+                except Exception:
+                    sprunget += 1
+                    continue
+            punkter.append({"x": pt.x(), "y": pt.y(), "vsp": vaerdi})
+
+        if not punkter:
+            return None, sprunget, kun_markerede
+        lag = layer_builder.build_vsp_point_layer(
+            "Opmålt vandspejl: %s" % src.name(), punkter, 25832)
+        return lag, sprunget, kun_markerede
+
+    @staticmethod
+    def _kilder_spredning(kildelag):
+        """Største afstand mellem to kildelags midtpunkter i meter.
+
+        Ligger kilderne langt fra hinanden, hører de sandsynligvis ikke til
+        samme vandløb — eller ét af punktlagene er i et forkert
+        koordinatsystem. Returnerer None hvis der kun er ét brugbart lag.
+        """
+        midter = [lag.extent().center() for lag in kildelag
+                  if not lag.extent().isNull()]
+        if len(midter) < 2:
+            return None
+        maks = 0.0
+        for i in range(len(midter)):
+            for j in range(i + 1, len(midter)):
+                maks = max(maks, ((midter[i].x() - midter[j].x()) ** 2
+                                  + (midter[i].y() - midter[j].y()) ** 2)
+                           ** 0.5)
+        return maks
+
+    def _kildelag_extent(self, kildelag):
+        """Samlet udstrækning for kildelagene plus margin — områdeforslag.
+
+        Lagene kan ligge i hvert sit koordinatsystem, så hver udstrækning
+        omregnes til EPSG:25832, før de lægges sammen. isNull og ikke
+        isEmpty: et vandspejl på en ret linje har ingen bredde, og det er
+        stadig en udstrækning.
+        """
+        maal = QgsCoordinateReferenceSystem("EPSG:25832")
+        samlet = None
+        for lag in kildelag:
+            rect = lag.extent()
+            if rect.isNull():
+                continue
+            if lag.crs().isValid() and lag.crs() != maal:
+                try:
+                    rect = QgsCoordinateTransform(
+                        lag.crs(), maal, QgsProject.instance()
+                    ).transformBoundingBox(rect)
+                except Exception:
+                    continue
+            if samlet is None:
+                samlet = QgsRectangle(rect)
+            else:
+                samlet.combineExtentWith(rect)
+        if samlet is None:
+            return None
+        samlet.grow(self.AFVANDING_MARGIN_M)
+        return QgsReferencedRectangle(samlet, maal)
+
+    def _skriv_kildelag(self, kildelag):
+        """Skriv kildelagene til midlertidige GeoPackage-filer.
+
+        Memory-lag, der ikke ligger i projektet, er ikke altid til at nå for
+        Processing-dialogen; en fil på disken er det altid. Filerne ligger i
+        Processings temp-mappe og ryddes med QGIS. Returnerer listen af
+        lag-kilder (stier med |layername=), som algoritmen fletter sammen.
+        """
+        ctx = QgsProject.instance().transformContext()
+        stier = []
+        for i, lag in enumerate(kildelag, 1):
+            sti = QgsProcessingUtils.generateTempFilename(
+                "afvanding_vsp_%d.gpkg" % i)
+            muligheder = QgsVectorFileWriter.SaveVectorOptions()
+            muligheder.driverName = "GPKG"
+            muligheder.layerName = "vandspejl"
+            resultat = QgsVectorFileWriter.writeAsVectorFormatV3(
+                lag, sti, ctx, muligheder)
+            if resultat[0] != QgsVectorFileWriter.NoError:
+                raise RuntimeError(
+                    resultat[1] if len(resultat) > 1 else "ukendt fejl")
+            stier.append("%s|layername=vandspejl" % sti)
+        return stier
 
     def _vsp_punkter(self, calc):
         """Hent punkterne til analysen: (punkter, scenarienavn).
@@ -694,14 +893,6 @@ class VaspPlugin:
                 continue
             brugbare.append(p)
         return brugbare, len(punkter or []) - len(brugbare)
-
-    def _punkt_extent(self, layer):
-        """Punkternes udstrækning plus margin — forslag til beregningsområdet."""
-        rect = QgsRectangle(layer.extent())
-        if rect.isEmpty():
-            return None
-        rect.grow(self.AFVANDING_MARGIN_M)
-        return QgsReferencedRectangle(rect, layer.crs())
 
     def _afvanding_dialog(self, parameters):
         """Åbn Processing-dialogen for afvandingsanalysen."""

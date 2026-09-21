@@ -120,6 +120,38 @@ def build_vsp_layer(layer_name, points, koordsysid, fields_spec):
     return layer
 
 
+def build_vsp_point_layer(layer_name, points, epsg):
+    """Lav et PointZ-lag med ét 'vsp'-felt ud fra {x, y, vsp}-dicts.
+
+    Bruges til opmålte vandspejl fra et projekt-punktlag, så de kan flettes
+    med de beregnede vandspejl fra VASP før afvandingsanalysen. I modsætning
+    til build_vsp_layer tages EPSG-koden direkte (punktlaget har et rigtigt
+    koordinatsystem, ikke et VASP-koordsysid), og der er kun koten-feltet.
+    Punkternes vandspejl lægges også som geometrisk Z.
+    """
+    layer = QgsVectorLayer(
+        "PointZ?crs=EPSG:%d" % epsg, layer_name, "memory")
+    provider = layer.dataProvider()
+
+    fields = QgsFields()
+    fields.append(QgsField("vsp", QVariant.Double))
+    provider.addAttributes(fields)
+    layer.updateFields()
+
+    features = []
+    for p in points:
+        vsp = p.get("vsp")
+        feat = QgsFeature(layer.fields())
+        feat.setGeometry(QgsGeometry(QgsPoint(
+            p["x"], p["y"], vsp if vsp is not None else 0.0)))
+        feat.setAttributes([vsp])
+        features.append(feat)
+
+    provider.addFeatures(features)
+    layer.updateExtents()
+    return layer
+
+
 def build_terrain_layer(layer_name, points, koordsysid):
     """Lav et PointZ-lag hvor punktets Z er terrænkoten fra DHM.
 

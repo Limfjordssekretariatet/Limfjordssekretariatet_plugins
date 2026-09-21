@@ -1,7 +1,9 @@
-"""GUI til valg af en vandspejlsberegning — og af et scenarie i den.
+"""GUI til valg af en eller flere vandspejlsberegninger — og af scenarier i dem.
 
 VspDialog viser en søgbar liste over beregninger (simpel + multi) med projekt,
-navn og type; brugeren vælger én, som hentes via selected_calc().
+navn og type. Brugeren vælger én, som hentes via selected_calc() — eller, hvis
+dialogen oprettes med multi=True, flere ad gangen (Ctrl/Shift-klik), som hentes
+via selected_calcs().
 ScenarieDialog vælger bagefter ét scenarie i en multiberegning.
 """
 
@@ -21,13 +23,17 @@ from qgis.PyQt.QtCore import Qt
 from . import faelles_ui
 
 class VspDialog(QDialog):
-    """Dialog der lader brugeren vælge én vandspejlsberegning."""
+    """Dialog der lader brugeren vælge én — eller med multi=True flere —
+    vandspejlsberegning(er)."""
 
     def __init__(self, calcs, parent=None,
                  titel="Importer vandspejlsberegning til GIS",
                  intro="Vælg den vandspejlsberegning der skal hentes ind i "
-                       "QGIS:"):
+                       "QGIS:",
+                 multi=False):
         super().__init__(parent)
+        if multi:
+            intro += " Hold Ctrl eller Shift nede for at vælge flere."
         self.setWindowTitle(titel)
         self.resize(600, 480)
         self._calcs = calcs
@@ -46,6 +52,8 @@ class VspDialog(QDialog):
 
         self._list = QListWidget()
         self._list.itemDoubleClicked.connect(lambda _: self.accept())
+        if multi:
+            self._list.setSelectionMode(QListWidget.ExtendedSelection)
         layout.addWidget(self._list)
         self._populate(calcs)
 
@@ -93,6 +101,13 @@ class VspDialog(QDialog):
         """Returnér den valgte beregnings-dict, eller None."""
         item = self._list.currentItem()
         return item.data(Qt.UserRole) if item else None
+
+    def selected_calcs(self):
+        """Returnér de valgte beregnings-dicts (multi=True), i listens
+        rækkefølge. Tom liste hvis intet er valgt."""
+        return [self._list.item(i).data(Qt.UserRole)
+                for i in range(self._list.count())
+                if self._list.item(i).isSelected()]
 
 
 class ScenarieDialog(QDialog):
