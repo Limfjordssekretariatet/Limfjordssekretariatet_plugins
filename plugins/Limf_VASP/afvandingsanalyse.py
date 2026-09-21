@@ -434,12 +434,19 @@ class AfvandingsanalyseAlgorithm(QgsProcessingAlgorithm):
                        "Feltet '%s' er et tekstfelt. Værdierne regnes om til "
                        "tal (komma og punktum som decimaltegn); værdier der "
                        "ikke er tal, sorteres fra." % felt)
+                # Kun celler der ER et tal, regnes om. to_real() på en
+                # tekst som "ikke målt" stopper hele feltberegningen med
+                # en fejl — den skal bare springes over.
+                formel = (
+                    'CASE WHEN regexp_match(trim("{f}"),'
+                    " '^-?[0-9]*[.,]?[0-9]+$') > 0"
+                    ' THEN to_real(replace(trim("{f}"), \',\', \'.\')) END'
+                ).format(f=felt)
                 talfelt = processing.run(
                     "native:fieldcalculator",
                     {"INPUT": kilde, "FIELD_NAME": "vsp_tal",
                      "FIELD_TYPE": 0, "FIELD_LENGTH": 0, "FIELD_PRECISION": 0,
-                     "FORMULA": 'to_real(replace(trim("%s"), \',\', \'.\'))'
-                                % felt,
+                     "FORMULA": formel,
                      "OUTPUT": QgsProcessing.TEMPORARY_OUTPUT},
                     context=context, feedback=feedback, is_child_algorithm=True)
                 kilde = talfelt["OUTPUT"]
