@@ -13,7 +13,8 @@ from qgis.PyQt.QtWidgets import (
 from qgis.PyQt.QtCore import Qt, QThread, pyqtSignal, QEventLoop
 from qgis.PyQt.QtGui import QIcon
 from qgis.core import (
-    QgsApplication, QgsProject, QgsRectangle, QgsReferencedRectangle)
+    QgsApplication, QgsCoordinateTransform, QgsProject, QgsRectangle,
+    QgsReferencedRectangle)
 
 from . import config
 from . import dbaccess
@@ -340,7 +341,11 @@ class VaspPlugin:
             distance=dialog.selected_distance())
 
     def run_importer_laengdeprofil(self):
-        """Importer længdeprofil til GIS: alle terrænpunkter som de er."""
+        """Importer længdeprofiler til GIS: alle terrænpunkter som de er.
+
+        Der kan vælges flere på én gang. Ét profil opfører sig som før; er
+        der flere, samles lagene i en gruppe, og der vises fremdrift.
+        """
         profiles = self._profiles_or_warn()
         if profiles is None:
             return
@@ -350,10 +355,13 @@ class VaspPlugin:
             parent=self.iface.mainWindow())
         if dialog.exec_() != ProfileDialog.Accepted:
             return
-        prof = dialog.selected_profile()
-        if not prof:
+        valgte = dialog.selected_profiles()
+        if not valgte:
             return
-        self._load_profile(prof, interval=None, side=None)
+        if len(valgte) == 1:
+            self._load_profile(valgte[0], interval=None, side=None)
+        else:
+            self._load_profiles(valgte)
 
     def _advar_om_gamle_koter(self):
         """Sig til, hvis datafilen stammer fra før kote-rettelsen.
@@ -876,6 +884,120 @@ class VaspPlugin:
             "VASP",
             "Indlæste %d terrænpunkter for '%s'." % (
                 len(points), prof["navn"]))
+
+    def _load_profiles(self, profs):
+        """Importer flere længdeprofiler i én omgang.
+
+        Ét lag pr. profil, samlet i en gruppe i lagpanelet. Et profil, der
+        ikke kan læses, stopper ikke de andre — de sprungne samles i én
+        besked til sidst, i stedet for en fejlboks pr. profil.
+        """
+        win = self.iface.mainWindow()
+        fremdrift = QProgressDialog(
+            "Henter længdeprofiler fra VASP …", "Afbryd", 0, len(profs), win)
+        fremdrift.setWindowTitle("VASP — importerer")
+        fremdrift.setWindowModality(Qt.WindowModal)
+        fremdrift.setMinimumDuration(0)
+
+        lag, sprunget, punkter_i_alt = [], [], 0
+        for nr, prof in enumerate(profs):
+            if fremdrift.wasCanceled():
+                break
+            fremdrift.setValue(nr)
+            fremdrift.setLabelText(
+                "Henter %d af %d: %s" % (nr + 1, len(profs), prof["navn"]))
+            try:
+                points = dbaccess.read_profile_points(prof["lgdid"])
+            except dbaccess.VaspDbError as exc:
+                sprunget.append("%s — %s" % (prof["navn"], exc))
+                continue
+            if not points:
+                sprunget.append(
+                    "%s — ingen geokodede punkter" % prof["navn"])
+                continue
+            laget = layer_builder.build_profile_layer(
+                "VASP længdeprofil: %s" % prof["navn"], points,
+                prof["koordsysid"])
+            if not laget.isValid():
+                sprunget.append("%s — laget kunne ikke oprettes" % prof["navn"])
+                continue
+            lag.append(laget)
+            punkter_i_alt += len(points)
+        fremdrift.setValue(len(profs))
+
+        if not lag:
+            QMessageBox.information(
+                win, "VASP",
+                "Ingen af de valgte længdeprofiler kunne hentes.\n\n"
+                + "\n".join(sprunget[:10]))
+            return
+
+        self._tilfoej_i_gruppe(lag, "VASP længdeprofiler")
+        self._zoom_til(lag)
+        self.iface.messageBar().pushSuccess(
+            "VASP", "Indlæste %d længdeprofiler med %d terrænpunkter i alt."
+            % (len(lag), punkter_i_alt))
+        if sprunget:
+            QMessageBox.information(
+                win, "VASP — nogle profiler kom ikke med",
+                "%d af %d profiler blev sprunget over:\n\n%s"
+                % (len(sprunget), len(profs), "\n".join(sprunget[:15]))
+                + ("\n… og %d mere." % (len(sprunget) - 15)
+                   if len(sprunget) > 15 else ""))
+
+    def _tilfoej_i_gruppe(self, lag, gruppenavn):
+        """Læg lagene i deres egen gruppe øverst i lagpanelet.
+
+        Gruppen får et løbenummer, hvis den findes i forvejen, så to
+        importer ikke bliver blandet sammen.
+        """
+        rod = QgsProject.instance().layerTreeRoot()
+        navn, nr = gruppenavn, 1
+        while rod.findGroup(navn) is not None:
+            nr += 1
+            navn = "%s (%d)" % (gruppenavn, nr)
+        gruppe = rod.insertGroup(0, navn)
+        for laget in lag:
+            # addToLegend=False: laget skal i gruppen, ikke i toppen af
+            # lagpanelet ved siden af den.
+            QgsProject.instance().addMapLayer(laget, addToLegend=False)
+            gruppe.addLayer(laget)
+
+    #: Luft omkring et profil, hvis punkterne ligger på en ret linje.
+    ZOOM_MARGIN_M = 50.0
+
+    def _zoom_til(self, lag):
+        """Zoom kortet ud til alle de nye lag, i projektets CRS."""
+        projekt = QgsProject.instance()
+        maal = projekt.crs()
+        samlet = None
+        for laget in lag:
+            udstraekning = laget.extent()
+            # isNull, ikke isEmpty: et profil, der løber lige nord-syd, har
+            # ingen bredde, og isEmpty ville kalde det tomt og springe det
+            # over. Luften nedenfor tager sig af den slags.
+            if udstraekning.isNull():
+                continue
+            if laget.crs().isValid() and maal.isValid() and laget.crs() != maal:
+                try:
+                    udstraekning = QgsCoordinateTransform(
+                        laget.crs(), maal, projekt).transformBoundingBox(
+                            udstraekning)
+                except Exception:
+                    continue
+            if samlet is None:
+                samlet = QgsRectangle(udstraekning)
+            else:
+                samlet.combineExtentWith(udstraekning)
+        if samlet is None:
+            return
+        # Et profil med punkterne på en ret linje har hverken højde eller
+        # bredde. Zoomes der til det, ser man ingenting.
+        if samlet.width() <= 0 or samlet.height() <= 0:
+            samlet.grow(self.ZOOM_MARGIN_M)
+        samlet.scale(1.05)
+        self.iface.mapCanvas().setExtent(samlet)
+        self.iface.mapCanvas().refresh()
 
     def _load_terrain(self, prof, centerline, side, interval, distance):
         """Forskyd linjen til siden og hent Z fra DHM i baggrunden.

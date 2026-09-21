@@ -95,8 +95,9 @@ class MainDialog(QDialog):
         indhold.setSpacing(6)
         # Alle tre åbner en valgdialog, derfor "…" på dem alle.
         for tekst, tip, handling in (
-            ("Længdeprofil …",
-             "Importer et længdeprofil fra VASP som lag i QGIS.",
+            ("Længdeprofiler …",
+             "Importer et eller flere længdeprofiler fra VASP som lag i "
+             "QGIS. Sæt flueben ved flere, så hentes de i én omgang.",
              on_importer),
             ("Vandløbslinje …",
              "Importer en geokodet vandløbslinje fra VASP som lag i QGIS.",
