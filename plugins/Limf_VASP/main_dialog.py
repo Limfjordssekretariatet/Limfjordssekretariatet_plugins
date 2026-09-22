@@ -31,7 +31,8 @@ class MainDialog(QDialog):
     def __init__(self, on_terraen, on_importer, on_importer_linje,
                  on_importer_vsp, on_opdater, on_vaelg_database, get_db_path,
                  data_ready, on_braend_vandloeb=None,
-                 on_afvandingsanalyse=None, parent=None):
+                 on_afvandingsanalyse=None, on_oplande_til_vasp=None,
+                 parent=None):
         super().__init__(parent)
         self.setWindowTitle("VASP-integration")
         self.setMinimumWidth(460)
@@ -54,6 +55,8 @@ class MainDialog(QDialog):
             on_importer, on_importer_linje, on_importer_vsp))
         layout.addWidget(self._analyse_boks(
             on_terraen, on_braend_vandloeb, on_afvandingsanalyse))
+        if on_oplande_til_vasp is not None:
+            layout.addWidget(self._skriv_boks(on_oplande_til_vasp))
         layout.addStretch(1)
         layout.addLayout(self._bund_raekke(on_opdater))
 
@@ -136,6 +139,20 @@ class MainDialog(QDialog):
         for tekst, tip, handling in valg:
             indhold.addWidget(
                 self._knap(tekst, handling, tip=tip, handlingsknap=True))
+        return boks
+
+    def _skriv_boks(self, on_oplande_til_vasp):
+        """Afsnit med det, der går den anden vej — fra GIS ind i VASP."""
+        boks = QGroupBox("Skriv til VASP")
+        indhold = QVBoxLayout(boks)
+        indhold.setSpacing(6)
+        indhold.addWidget(self._knap(
+            "Oplande til datasæt …", on_oplande_til_vasp,
+            tip="Skriver udpegede oplande ind som en ny serie under "
+                "«Oplande» i et hydraulisk datasæt. Deloplandene lægges "
+                "sammen nedstrøms, og stationerne kommer fra det "
+                "længdeprofil, du vælger.",
+            handlingsknap=True))
         return boks
 
     def _bund_raekke(self, on_opdater):

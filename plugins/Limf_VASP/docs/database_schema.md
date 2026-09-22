@@ -214,6 +214,18 @@ Hydrauliske data-headers pr. projekt.
 | 12 | `STMIN` | DOUBLE | ja |  |  |
 | 13 | `STMAX` | DOUBLE | ja |  |  |
 
+**Selve parametrene ligger ikke i databasen.** `HYDATHEADER` er kun
+overskriften; serierne under fanerne Oplande, Afstrømninger, Manningtal,
+Fast VSP, Pkt. Q, Obs Q og Obs vst står i en binær fil:
+
+    <DBINI.BINPATH>\PRJDATA\PRJ<PROJEKTID>\BER\HYD<HYDATID>.hds
+
+Filhovedet gentager `PROJEKTID`, `HYDATID`, `LOBENR` og `NAVN`, så en fil kan
+identificeres uden at spørge Access. Formatet er beskrevet i `geo/hds.py`,
+som både læser og skriver det. Bemærk at `UPDDATE`/`UPDINIT` og
+`STMIN`/`STMAX` i tabellen ikke opdateres, når pluginnet skriver en serie —
+VASP sætter dem selv, næste gang datasættet gemmes derfra.
+
 ### `KOORDSYSKODER`
 
 Opslag: koordinatsystemer (0=Ikke oplyst, 1=UTM32 ED50, 2=UTM32 EUREF89).

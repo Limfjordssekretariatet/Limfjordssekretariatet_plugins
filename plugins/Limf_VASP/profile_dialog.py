@@ -8,6 +8,10 @@ Bruges af to handlinger med samme profilliste, men forskellige valg:
   mode="profile"  ("Importer længdeprofiler til GIS"): flere profiler kan
                   vælges med flueben, så et helt vandløb kan hentes i én
                   omgang i stedet for ét klik pr. profil.
+  mode="vaelg"    Et enkelt valg uden videre: bruges hvor profilen kun skal
+                  udpege et vandløb — fx stationeringen når oplande skrives
+                  til VASP. Titel og indledning kan sættes af den, der
+                  åbner dialogen.
 """
 
 from qgis.PyQt.QtWidgets import (
@@ -30,6 +34,7 @@ from . import config
 
 MODE_TERRAIN = "terrain"
 MODE_PROFILE = "profile"
+MODE_VAELG = "vaelg"
 
 
 from . import faelles_ui
@@ -39,8 +44,10 @@ class ProfileDialog(QDialog):
 
     MODE_TERRAIN = MODE_TERRAIN
     MODE_PROFILE = MODE_PROFILE
+    MODE_VAELG = MODE_VAELG
 
-    def __init__(self, profiles, mode=MODE_TERRAIN, parent=None):
+    def __init__(self, profiles, mode=MODE_TERRAIN, parent=None,
+                 titel=None, intro=None):
         super().__init__(parent)
         self._mode = mode
         self._profiles = profiles
@@ -53,14 +60,19 @@ class ProfileDialog(QDialog):
         self._fylder = False
 
         if mode == MODE_TERRAIN:
-            self.setWindowTitle("Terræn på profil — vælg længdeprofil")
-            intro = "Vælg længdeprofil. Terrænet hentes fra DHM langs en linje "
-            intro += "forskudt til siden:"
+            self.setWindowTitle(titel or "Terræn på profil — vælg længdeprofil")
+            intro = intro or (
+                "Vælg længdeprofil. Terrænet hentes fra DHM langs en linje "
+                "forskudt til siden:")
+        elif mode == MODE_VAELG:
+            self.setWindowTitle(titel or "Vælg længdeprofil")
+            intro = intro or "Vælg det længdeprofil, der skal bruges:"
         else:
-            self.setWindowTitle("Importer længdeprofiler til GIS")
-            intro = ("Sæt flueben ved de længdeprofiler, der skal hentes ind i "
-                     "QGIS. Søg først, og tag så hele holdet med "
-                     "«Vælg alle viste». Hvert profil bliver sit eget lag.")
+            self.setWindowTitle(titel or "Importer længdeprofiler til GIS")
+            intro = intro or (
+                "Sæt flueben ved de længdeprofiler, der skal hentes ind i "
+                "QGIS. Søg først, og tag så hele holdet med "
+                "«Vælg alle viste». Hvert profil bliver sit eget lag.")
 
         self.resize(540, 460)
         layout = QVBoxLayout(self)

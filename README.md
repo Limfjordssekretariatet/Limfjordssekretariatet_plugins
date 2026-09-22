@@ -15,7 +15,7 @@ videregive dem. Se [Licens og kreditering](#licens-og-kreditering).
 | **Vandprojekter – Dræn** | 0.2.19 | Find drænudløbspunkter baseret på fald og DEM |
 | **Vandprojekter – Lodsejeratlas** | 0.2.15 | Genererer et lodsejer-atlas (mapbook) ud fra en layout-skabelon med auto-mapping af felter, valgfrie tiltagslag og signaturforklaring |
 | **Vandprojekter – Lodsejerudtræk** | 0.1.17 | Henter matrikler og ejeroplysninger for et valgt polygon via Datafordeleren/CVR |
-| **Vandprojekter – VASP** | 1.2.23 | Integration mellem VASP Access-database og QGIS – henter terræn-/profildata ind som lag, flere længdeprofiler ad gangen |
+| **Vandprojekter – VASP** | 1.2.24 | Integration mellem VASP Access-database og QGIS – henter terræn-/profildata ind som lag, flere længdeprofiler ad gangen |
 | **Vandprojekter – N-regneark** | 2.24 | Udfylder kvælstof-regnearket (N) for et vådområdeprojekt: oplande, arealer og tilførsel |
 
 ---
@@ -78,6 +78,10 @@ bruge — regner man kun oplande, hentes jordbundskortet aldrig.
 **Vandprojekter – VASP** læser fra en lokal GeoPackage, som pluginnet selv genopbygger ud
 fra din VASP Access-database (.mdb) første gang du vælger en database (og via
 "Genindlæs database"). Databasen distribueres ikke – hver bruger peger på sin egen.
+
+Den anden vej skriver pluginnet direkte i VASP’s egne filer: «Oplande til datasæt»
+lægger udpegede oplande ind som en ny serie under «Oplande» i et hydraulisk datasæt
+(HYD<id>.hds). Der tages en kopi af filen først, og eksisterende serier røres ikke.
 
 ---
 

@@ -33,10 +33,12 @@ from .vsp_dialog import VspDialog, ScenarieDialog
 from .afvanding_kilder_dialog import AfvandingKilderDialog
 from .tvp_dialog import TvpDialog
 from .main_dialog import MainDialog
+from .oplande_dialog import OplandeDialog
 from .terrain_task import TerrainTask
 from .geo import layer_builder
 from .geo import offset
 from .geo import ber
+from .geo import hds
 
 
 class _BuildWorker(QThread):
@@ -108,6 +110,7 @@ class VaspPlugin:
             data_ready=self._data_ready,
             on_braend_vandloeb=self.run_braend_vandloeb,
             on_afvandingsanalyse=self.run_afvandingsanalyse,
+            on_oplande_til_vasp=self.run_oplande_til_vasp,
             parent=self.iface.mainWindow())
         dialog.exec_()
 
@@ -903,6 +906,60 @@ class VaspPlugin:
         self._processing_dialog(
             lav, parameters, "VASP — afvandingsanalyse",
             "VaspAfvandingsanalyseDialog")
+
+    def run_oplande_til_vasp(self):
+        """Skriv udpegede oplande ind som en ny serie i et VASP-datasæt.
+
+        Oplandene kommer fra et lag i projektet — typisk fra "Udpeg
+        oplande" — og stationeres på det længdeprofil, brugeren vælger.
+        Rækkerne vises i dialogen, inden der skrives, og skrivningen går i
+        selve .hds-filen, hvor VASP har sine hydrauliske parametre.
+        """
+        win = self.iface.mainWindow()
+        profiles = self._profiles_or_warn()
+        if profiles is None:
+            return
+        dialog = OplandeDialog(profiles, self._centerline_for, parent=win)
+        if dialog.exec_() != OplandeDialog.Accepted:
+            return
+        valg = dialog.valg()
+        datasaet = valg["datasaet"]
+        if not datasaet or not valg["raekker"]:
+            return
+        if not self._bekraeft_oplande(valg, datasaet):
+            return
+        try:
+            svar = hds.tilfoej_serie(
+                datasaet["sti"], hds.OPLANDE, valg["navn"], valg["raekker"],
+                initialer=valg["initialer"],
+                bemaerkning=valg["bemaerkning"],
+                backup_mappe=config.BACKUP_DIR)
+        except hds.HdsFejl as exc:
+            QMessageBox.critical(win, "VASP — kunne ikke skrive", str(exc))
+            return
+        QMessageBox.information(
+            win, "VASP",
+            "Serien «%s» er skrevet som nr. %d under Oplande i «%s».\n\n"
+            "%d rækker. Åbn VASP og hent datasættet frem for at se den.\n\n"
+            "Kopi af datasættet før ændringen: %s"
+            % (svar["navn"], svar["nr"], datasaet["navn"], svar["raekker"],
+               svar["backup"] or "(ingen)"))
+
+    def _bekraeft_oplande(self, valg, datasaet):
+        """Sidste kvittering, inden der skrives i VASP's egen fil."""
+        noter = ""
+        if valg["noter"]:
+            noter = "\n\nBemærk:\n" + "\n".join(
+                "• " + n for n in dict.fromkeys(valg["noter"]))
+        svar = QMessageBox.question(
+            self.iface.mainWindow(), "Skriv til VASP",
+            "Serien «%s» skrives med %d rækker ind i datasættet «%s» "
+            "(HYD%d).\n\nDer tages en kopi af filen først, og "
+            "eksisterende serier bliver ikke rørt.%s"
+            % (valg["navn"], len(valg["raekker"]), datasaet["navn"],
+               datasaet["hydatid"], noter),
+            QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Yes)
+        return svar == QMessageBox.Yes
 
     def run_opdater_data(self):
         """Genopbyg GeoPackagen fra den aktive Access-database.
