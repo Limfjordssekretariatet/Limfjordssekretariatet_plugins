@@ -933,7 +933,7 @@ class VaspPlugin:
                 datasaet["sti"], hds.OPLANDE, valg["navn"], valg["raekker"],
                 initialer=valg["initialer"],
                 bemaerkning=valg["bemaerkning"],
-                backup_mappe=config.BACKUP_DIR)
+                backup_mappe=config.hds_backup_mappe())
         except hds.HdsFejl as exc:
             QMessageBox.critical(win, "VASP — kunne ikke skrive", str(exc))
             return

@@ -18,6 +18,19 @@ BACKUP_DIR = os.path.join(PLUGIN_DIR, "backups")
 _DB_SETTING_KEY = "VASP/database_path"
 
 
+def hds_backup_mappe():
+    """Mappe til kopier af VASP's datasætfiler, før der skrives i dem.
+
+    Ligger i QGIS-profilen og ikke i plugin-mappen: den sidste bliver
+    ryddet, hver gang pluginnet opdateres, og en kopi af en fil i den
+    fælles VASP-database skal kunne findes igen længe efter.
+    """
+    from qgis.core import QgsApplication
+    mappe = os.path.join(QgsApplication.qgisSettingsDirPath(), "vasp_backups")
+    os.makedirs(mappe, exist_ok=True)
+    return mappe
+
+
 def db_path():
     """Returnér den valgte VASP-database (huskes mellem sessioner).
 
