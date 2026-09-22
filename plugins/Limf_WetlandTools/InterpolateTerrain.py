@@ -9,8 +9,6 @@ hvis fladen ligger i DHM'ets eget net. Gør den ikke det, skal den
 skaleres om ved sammenlægningen, og så springer koterne ved kanten.
 """
 
-import os
-
 from qgis.core import QgsProcessing
 from qgis.core import QgsProcessingAlgorithm
 from qgis.core import QgsProcessingException
@@ -20,6 +18,7 @@ from qgis.core import QgsProcessingParameterRasterLayer
 from qgis.core import QgsProcessingParameterRasterDestination
 from qgis.core import QgsProcessingUtils
 from qgis.core import QgsVectorFileWriter, QgsCoordinateTransformContext
+from qgis.core import QgsMessageLog, Qgis
 from osgeo import gdal
 import processing
 
@@ -46,6 +45,12 @@ POTENS = 2
 #: Flere kantpunkter end dette giver ikke en bedre flade, men koster tid.
 #: Punkterne lægges med 1 m, indtil kanten bliver længere end det.
 MAKS_KANTPUNKTER = 2000
+
+#: Så mange celler må den interpolerede flade højst have. Et område på
+#: 2,5 x 1,4 km i et DHM på 0,4 m er 22 mio. celler, og interpolationen
+#: tog 3½ minut. Fladen fra kantpunkterne er glat, så den kan regnes
+#: grovere og skaleres op til DHM'ets celler bagefter.
+MAKS_CELLER = 2_000_000
 
 
 class InterpolerTerrn(QgsProcessingAlgorithm):
@@ -121,10 +126,11 @@ class InterpolerTerrn(QgsProcessingAlgorithm):
         if feedback.isCanceled():
             return {}
 
-        # Clip raster til polygon via Python GDAL (håndterer memory/scratch-lag)
+        # Klip fladen til området, og læg den samtidig i DHM'ets celler.
+        # Er fladen regnet grovere end DHM'et (store områder), skaleres den
+        # op her — bilineært, så den bliver ved med at være glat.
         idw_path     = outputs['GridIdwWithNearestNeighborSearching']['OUTPUT']
-        cutline_path = self._layer_to_path(
-            self.parameterAsVectorLayer(parameters, 'omrde', context))
+        cutline_path = self._cutline(omr_lag)
         clipped_path = QgsProcessingUtils.generateTempFilename('clipped.tif')
         gdal.Warp(
             clipped_path, idw_path,
@@ -132,7 +138,8 @@ class InterpolerTerrn(QgsProcessingAlgorithm):
             cropToCutline=True,
             srcNodata=TOM,
             dstNodata=TOM,
-            xRes=net['celle'], yRes=net['celle'],
+            xRes=net['dhm_celle'], yRes=net['dhm_celle'],
+            resampleAlg='bilinear',
             # De samme cellekanter som DHM'et. targetAlignedPixels ville
             # rette ind efter et net med nulpunkt i (0,0) — ligger DHM'ets
             # hjørne ikke dér, forskydes fladen en halv celle.
@@ -155,7 +162,7 @@ class InterpolerTerrn(QgsProcessingAlgorithm):
         gdal.Warp(
             out_path, [dhm_path, clipped_path], format='GTiff',
             outputType=gdal.GDT_Float32,
-            xRes=net['celle'], yRes=net['celle'],
+            xRes=net['dhm_celle'], yRes=net['dhm_celle'],
             outputBounds=net['dhm_grænser'],
         )
 
@@ -207,12 +214,27 @@ class InterpolerTerrn(QgsProcessingAlgorithm):
                 'Højdemodellen har ingen cellestørrelse.')
 
         omr = omr_lag.extent()
+        dhm_celle = celle
         margin = MARGIN_CELLER * celle
         # Ud til nærmeste cellekant i DHM'ets net, så de to passer sammen.
         vest = x0 + celle * ((omr.xMinimum() - margin - x0) // celle)
         syd = y0 + celle * ((omr.yMinimum() - margin - y0) // celle)
         oest = x0 + celle * -(-(omr.xMaximum() + margin - x0) // celle)
         nord = y0 + celle * -(-(omr.yMaximum() + margin - y0) // celle)
+
+        # Et stort område i DHM'ets egen opløsning bliver til millioner af
+        # celler, og interpolationen tager minutter. Fladen fra kantpunkterne
+        # er glat, så den kan regnes grovere og skaleres op bagefter uden at
+        # miste noget. Faktoren er et helt tal, så cellekanterne stadig
+        # falder sammen med DHM'ets.
+        bredde = max(1, int(round((oest - vest) / celle)))
+        hoejde = max(1, int(round((nord - syd) / celle)))
+        faktor = 1
+        while (bredde // faktor) * (hoejde // faktor) > MAKS_CELLER:
+            faktor += 1
+        celle = dhm_celle * faktor
+        oest = vest + celle * -(-bredde // faktor)
+        nord = syd + celle * -(-hoejde // faktor)
         kolonner = max(1, int(round((oest - vest) / celle)))
         raekker = max(1, int(round((nord - syd) / celle)))
 
@@ -221,6 +243,7 @@ class InterpolerTerrn(QgsProcessingAlgorithm):
                                    ** 0.5) + margin)
         return {
             'celle': celle,
+            'dhm_celle': dhm_celle,
             'kolonner': kolonner,
             'raekker': raekker,
             'radius': radius,
@@ -230,25 +253,54 @@ class InterpolerTerrn(QgsProcessingAlgorithm):
                       % (vest, oest, syd, nord, kolonner, raekker)),
         }
 
-    def _layer_to_path(self, layer):
-        """Filsti til vektorlaget — midlertidige lag skrives til en temp-GPKG.
+    def _cutline(self, layer):
+        """Områdelaget som en GPKG, GDAL kan klippe med.
 
-        Tidligere blev et midlertidigt lag kendt på "memory:" eller
-        "?geometrytype" i kilden. QGIS skriver dem nu som
-        "Polygon?crs=EPSG:25832&uid={…}", så tjekket ramte ikke, og
-        lagadressen blev sendt til GDAL som en filsti: "Cannot open
-        Polygon?crs=…". Værktøjet virkede derfor slet ikke på et område,
-        man lige havde tegnet. Nu afgøres det af, om kilden er en fil.
+        Der skrives altid en ny fil med kun de objekter, der HAR en
+        geometri. To grunde:
+
+        * Et objekt uden geometri — en række, der er oprettet, men ikke
+          tegnet — får klipningen til at stoppe med "Cutline feature
+          without a geometry", efter at interpolationen er kørt færdig.
+        * Et midlertidigt lag har ingen fil at pege på. Det blev tidligere
+          kendt på "memory:" i kilden, men QGIS skriver dem nu som
+          "Polygon?crs=EPSG:25832&uid={…}", og lagadressen endte som
+          filsti hos GDAL: "Cannot open Polygon?crs=…".
         """
-        src = layer.source().split('|')[0]
-        if layer.providerType() == 'ogr' and os.path.exists(src):
-            return src
-        temp_path = QgsProcessingUtils.generateTempFilename('clip_mask.gpkg')
-        opts = QgsVectorFileWriter.SaveVectorOptions()
-        opts.driverName = 'GPKG'
-        QgsVectorFileWriter.writeAsVectorFormatV3(
-            layer, temp_path, QgsCoordinateTransformContext(), opts)
-        return temp_path
+        objekter = [f for f in layer.getFeatures()
+                    if f.hasGeometry() and not f.geometry().isEmpty()]
+        if not objekter:
+            raise QgsProcessingException(
+                'Områdelaget "%s" har ingen objekter med en geometri. Tegn '
+                'området, eller vælg et andet lag.' % layer.name())
+        uden = layer.featureCount() - len(objekter)
+        if uden > 0:
+            # Hellere end at stoppe: rækker uden geometri er almindelige i
+            # et lag, man har tegnet i undervejs.
+            QgsMessageLog.logMessage(
+                '%d objekt(er) i "%s" har ingen geometri og bruges ikke som '
+                'område.' % (uden, layer.name()), 'Vandprojekter', Qgis.Info)
+
+        sti = QgsProcessingUtils.generateTempFilename('clip_mask.gpkg')
+        skriver = QgsVectorFileWriter.create(
+            sti, layer.fields(), layer.wkbType(), layer.crs(),
+            QgsCoordinateTransformContext(),
+            self._gpkg_muligheder())
+        if skriver.hasError() != QgsVectorFileWriter.NoError:
+            raise QgsProcessingException(
+                'Området kunne ikke skrives til en midlertidig fil: %s'
+                % skriver.errorMessage())
+        for f in objekter:
+            skriver.addFeature(f)
+        del skriver
+        return sti
+
+    @staticmethod
+    def _gpkg_muligheder():
+        muligheder = QgsVectorFileWriter.SaveVectorOptions()
+        muligheder.driverName = 'GPKG'
+        muligheder.layerName = 'omraade'
+        return muligheder
 
     def name(self):
         return 'Interpoler terræn'
