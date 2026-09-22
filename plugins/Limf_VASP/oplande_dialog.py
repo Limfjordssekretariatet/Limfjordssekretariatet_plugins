@@ -156,6 +156,17 @@ class OplandeDialog(QDialog):
         ind.addLayout(raekke)
 
         raekke = QHBoxLayout()
+        raekke.addWidget(QLabel("Stationen:"))
+        self._station_kilde = QComboBox()
+        self._station_kilde.setToolTip(
+            "Som udgangspunkt findes stationen ved at lægge udløbspunktet "
+            "ind på profilets linje. Har punkterne allerede en station fra "
+            "VASP, er det mere præcist at bruge det felt.")
+        self._station_kilde.currentIndexChanged.connect(self._opdater)
+        raekke.addWidget(self._station_kilde, 1)
+        ind.addLayout(raekke)
+
+        raekke = QHBoxLayout()
         raekke.addWidget(QLabel("Datasæt:"))
         self._datasaet_valg = QComboBox()
         self._datasaet_valg.currentIndexChanged.connect(self._opdater)
@@ -249,6 +260,8 @@ class OplandeDialog(QDialog):
             if i >= 0:
                 self._felt.setCurrentIndex(i)
                 break
+        self._fyld_stationskilde(lag)
+        self._foreslaa_akkumulering(lag)
         valgt = lag.selectedFeatureCount() if lag is not None else 0
         self._kun_valgte.setEnabled(bool(valgt))
         self._kun_valgte.setText(
@@ -259,6 +272,47 @@ class OplandeDialog(QDialog):
         if lag is not None and not self._navn.text().strip():
             self._navn.setText(lag.name())
         self._felt_skiftet()
+
+    def _fyld_stationskilde(self, lag):
+        """Stationen kan regnes på profilet eller stå i et felt i forvejen."""
+        self._station_kilde.blockSignals(True)
+        self._station_kilde.clear()
+        self._station_kilde.addItem("Findes på længdeprofilet", None)
+        if lag is not None:
+            for felt in lag.fields():
+                if felt.isNumeric():
+                    self._station_kilde.addItem(
+                        "Fra feltet «%s»" % felt.name(), felt.name())
+            # Et felt der hedder "station", er stationen — så brug den.
+            for felt in lag.fields():
+                if felt.isNumeric() and felt.name().lower() in (
+                        "station", "stationering"):
+                    self._station_kilde.setCurrentIndex(
+                        self._station_kilde.findData(felt.name()))
+                    break
+        self._station_kilde.blockSignals(False)
+
+    def _foreslaa_akkumulering(self, lag):
+        """Gæt om arealerne er deloplande ud fra lagets eget metode-felt.
+
+        "Udpeg oplande" skriver ", disjunkt" i feltet, når oplandene er
+        klippet fra hinanden — og kun så er det deloplande, der skal
+        lægges sammen. Står der noget andet, rummer hvert opland alt det,
+        der ligger opstrøms, og så må de ikke lægges sammen.
+        """
+        if lag is None or lag.fields().indexFromName("metode") < 0:
+            return
+        metoder = set()
+        for f in lag.getFeatures():
+            metoder.add((f["metode"] or "").lower())
+            if len(metoder) > 4:
+                break
+        if not metoder:
+            return
+        deloplande = all("disjunkt" in m for m in metoder)
+        self._deloplande.blockSignals(True)
+        self._deloplande.setCurrentIndex(0 if deloplande else 1)
+        self._deloplande.blockSignals(False)
 
     def _felt_skiftet(self, *_):
         """Sæt enheden efter feltnavnet, når det er et felt vi kender."""
@@ -328,38 +382,71 @@ class OplandeDialog(QDialog):
         oplandslag i ETRS89 kan bruges på et profil i ED50.
         """
         lag = self._aktivt_lag()
-        felt = self._felt.currentText()
-        if lag is None or not felt:
+        if lag is None:
             return [], []
-        faktor = dict(ENHEDER)[self._enhed.currentText()]
         felter = lag.fields()
         har_udloeb = (felter.indexFromName(UDLOEB_X) >= 0
                       and felter.indexFromName(UDLOEB_Y) >= 0)
-        id_felt = "punkt_id" if felter.indexFromName("punkt_id") >= 0 else None
-
         transform = self._transform(lag)
-        objekter = (lag.selectedFeatures() if self._kun_valgte.isChecked()
-                    else lag.getFeatures())
         udloeb, noter = [], []
-        for f in objekter:
-            vaerdi = f[felt]
-            if vaerdi is None:
-                noter.append("Et objekt har intet areal i «%s» og springes "
-                             "over." % felt)
-                continue
-            try:
-                areal = float(vaerdi) * faktor
-            except (TypeError, ValueError):
-                noter.append("«%s» kan ikke læses som et tal i alle objekter."
-                             % felt)
+        for f, areal, tekst, fejl in self._arealer(lag):
+            if fejl:
+                noter.append(fejl)
                 continue
             punkt = self._punkt(f, har_udloeb, transform)
             if punkt is None:
                 noter.append("Et objekt har ingen geometri og springes over.")
                 continue
-            tekst = str(f[id_felt]) if id_felt else str(f.id())
             udloeb.append((punkt[0], punkt[1], areal, tekst))
         return udloeb, noter
+
+    def _poster_fra_felt(self, felt_station):
+        """Træk (station, areal, bemærkning) ud, når stationen står i laget."""
+        lag = self._aktivt_lag()
+        if lag is None:
+            return [], []
+        poster, noter = [], []
+        for f, areal, tekst, fejl in self._arealer(lag):
+            if fejl:
+                noter.append(fejl)
+                continue
+            vaerdi = f[felt_station]
+            try:
+                station = float(vaerdi)
+            except (TypeError, ValueError):
+                noter.append("«%s» kan ikke læses som en station i alle "
+                             "objekter." % felt_station)
+                continue
+            poster.append((station, areal, tekst))
+        return poster, noter
+
+    def _arealer(self, lag):
+        """Gå objekterne igennem og læs areal og navn på hvert opland.
+
+        Giver (objekt, areal i km², tekst, fejlbesked) — er fejlbeskeden
+        sat, skal objektet springes over.
+        """
+        felt = self._felt.currentText()
+        if not felt:
+            return
+        faktor = dict(ENHEDER)[self._enhed.currentText()]
+        felter = lag.fields()
+        id_felt = "punkt_id" if felter.indexFromName("punkt_id") >= 0 else None
+        objekter = (lag.selectedFeatures() if self._kun_valgte.isChecked()
+                    else lag.getFeatures())
+        for f in objekter:
+            vaerdi = f[felt]
+            if vaerdi is None:
+                yield f, None, None, ("Et objekt har intet areal i «%s» og "
+                                      "springes over." % felt)
+                continue
+            try:
+                areal = float(vaerdi) * faktor
+            except (TypeError, ValueError):
+                yield f, None, None, ("«%s» kan ikke læses som et tal i alle "
+                                      "objekter." % felt)
+                continue
+            yield f, areal, (str(f[id_felt]) if id_felt else str(f.id())), None
 
     def _transform(self, lag):
         """Omregning fra lagets koordinatsystem til profilets, eller None."""
@@ -405,16 +492,23 @@ class OplandeDialog(QDialog):
 
     def _opdater(self, *_):
         """Regn tabellen ud igen og vis den."""
-        udloeb, noter = self._udloeb()
         retning = self._retning()
         self._vis_retning(retning)
-        if not udloeb or not self._bundlinje:
-            self._raekker, self._noter = [], noter
+        felt_station = self._station_kilde.currentData()
+        if felt_station:
+            # Punkterne har stationen med i forvejen — så er profilet kun
+            # med til at sige, hvilken vej vandet løber.
+            poster, noter = self._poster_fra_felt(felt_station)
+            raekker, flere = oplandsserie.raekker_af_poster(poster, retning)
         else:
-            self._raekker, flere = oplandsserie.byg_serie(
-                udloeb, self._bundlinje, retning=retning,
-                maks_afstand=MAKS_AFSTAND_M)
-            self._noter = noter + flere
+            udloeb, noter = self._udloeb()
+            if not udloeb or not self._bundlinje:
+                raekker, flere = [], []
+            else:
+                raekker, flere = oplandsserie.byg_serie(
+                    udloeb, self._bundlinje, retning=retning,
+                    maks_afstand=MAKS_AFSTAND_M)
+        self._raekker, self._noter = raekker, noter + flere
         self._vis_tabel()
         self._opdater_knap()
 
@@ -456,6 +550,10 @@ class OplandeDialog(QDialog):
         for note in dict.fromkeys(self._noter):
             beskeder.append("⚠ " + note)
         self._besked.setText("\n".join(beskeder))
+        # Den fejl, der gør tallene mange gange for store, skal ses.
+        alvorlig = oplandsserie.ADVARSEL_FULDE in self._noter
+        self._besked.setStyleSheet(
+            "color: #b00020; font-weight: bold;" if alvorlig else "")
 
     def _opdater_knap(self, *_):
         klar = bool(self._raekker and self._navn.text().strip()

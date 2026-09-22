@@ -25,6 +25,11 @@ MED_STROEMMEN = 1       # nedstrøms = stigende station
 MOD_STROEMMEN = -1      # nedstrøms = faldende station
 INGEN_AKKUMULERING = 0  # arealerne er allerede fulde oplande
 
+ADVARSEL_FULDE = (
+    "Arealerne vokser allerede nedstrøms — de ser ud til at være fulde "
+    "oplande, ikke deloplande. Lægges de sammen, bliver tallene mange gange "
+    "for store. Vælg «Fulde oplande» i stedet.")
+
 
 def _punkter(centerline):
     """Træk (station, x, y) ud af bundlinjen, sorteret og uden huller."""
@@ -93,18 +98,48 @@ def stroemretning(centerline):
     return MED_STROEMMEN if sidst < foerst else MOD_STROEMMEN
 
 
-def _slaa_sammen(poster):
-    """Læg punkter på samme station sammen til én post."""
+def _slaa_sammen(poster, laeg_sammen=True):
+    """Saml punkter på samme station i én post.
+
+    Er arealerne deloplande, skal de lægges sammen. Er de derimod fulde
+    oplande, er to punkter på samme station det samme opland målt to
+    gange — så beholdes det største i stedet.
+    """
     samlet = {}
     for station, areal, tekst in poster:
         noegle = round(station, 3)
         if noegle in samlet:
             gammel = samlet[noegle]
-            samlet[noegle] = (gammel[0], gammel[1] + areal,
+            nyt = gammel[1] + areal if laeg_sammen else max(gammel[1], areal)
+            samlet[noegle] = (gammel[0], nyt,
                               "; ".join(t for t in (gammel[2], tekst) if t))
         else:
             samlet[noegle] = (station, areal, tekst)
     return [samlet[n] for n in sorted(samlet)]
+
+
+def ligner_fulde_oplande(poster, retning=MED_STROEMMEN):
+    """Ser arealerne ud til allerede at være fulde oplande?
+
+    Et fuldt opland vokser nedstrøms — hvert punkt rummer alt det, der
+    ligger opstrøms for det. Deloplande er derimod uafhængige stykker,
+    hvis arealer ikke følger nogen retning. Vokser stort set alle skridt
+    nedstrøms, er arealerne allerede fulde oplande, og så må de ikke
+    lægges sammen: så bliver hele oplandet ganget op med antallet af
+    punkter.
+    """
+    if retning == INGEN_AKKUMULERING:
+        return True
+    samlet = _slaa_sammen(poster, laeg_sammen=False)
+    if len(samlet) < 4:
+        return False
+    vaerdier = [v for _, v, _ in samlet]
+    if retning == MOD_STROEMMEN:
+        vaerdier.reverse()
+    skridt = len(vaerdier) - 1
+    vokser = sum(1 for i in range(skridt)
+                 if vaerdier[i + 1] >= vaerdier[i] - 1e-9)
+    return vokser >= skridt * 0.9
 
 
 def akkumuler(poster, retning=MED_STROEMMEN):
@@ -117,7 +152,7 @@ def akkumuler(poster, retning=MED_STROEMMEN):
     Med INGEN_AKKUMULERING lægges intet sammen — så er arealerne allerede
     fulde oplande, og rækkerne sorteres blot.
     """
-    samlet = _slaa_sammen(poster)
+    samlet = _slaa_sammen(poster, laeg_sammen=(retning != INGEN_AKKUMULERING))
     if retning == INGEN_AKKUMULERING or not samlet:
         return samlet
     # Opstrøms først, så summen vokser i strømmens retning.
@@ -159,4 +194,19 @@ def byg_serie(udloeb, centerline, retning=None, maks_afstand=None):
                             ("%.0f" % afstand).replace(".", ","),
                             ("%.0f" % station).replace(".", ",")))
         poster.append((station, float(areal), tekst or ""))
+    raekker, flere = raekker_af_poster(poster, retning)
+    return raekker, noter + flere
+
+
+def raekker_af_poster(poster, retning=MED_STROEMMEN):
+    """Byg rækkerne ud fra punkter, der allerede har en station.
+
+    ``poster`` er (station, areal, bemærkning). Returnerer (rækker,
+    noter). Ser arealerne ud til allerede at være fulde oplande, siges
+    det tydeligt — at lægge dem sammen er den fejl, der gør tallene mange
+    gange for store.
+    """
+    noter = []
+    if retning != INGEN_AKKUMULERING and ligner_fulde_oplande(poster, retning):
+        noter.append(ADVARSEL_FULDE)
     return akkumuler(poster, retning), noter

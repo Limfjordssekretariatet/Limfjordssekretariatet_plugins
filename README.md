@@ -15,7 +15,7 @@ videregive dem. Se [Licens og kreditering](#licens-og-kreditering).
 | **Vandprojekter – Dræn** | 0.2.19 | Find drænudløbspunkter baseret på fald og DEM |
 | **Vandprojekter – Lodsejeratlas** | 0.2.15 | Genererer et lodsejer-atlas (mapbook) ud fra en layout-skabelon med auto-mapping af felter, valgfrie tiltagslag og signaturforklaring |
 | **Vandprojekter – Lodsejerudtræk** | 0.1.17 | Henter matrikler og ejeroplysninger for et valgt polygon via Datafordeleren/CVR |
-| **Vandprojekter – VASP** | 1.2.24 | Integration mellem VASP Access-database og QGIS – henter terræn-/profildata ind som lag, flere længdeprofiler ad gangen |
+| **Vandprojekter – VASP** | 1.2.25 | Integration mellem VASP Access-database og QGIS – henter terræn-/profildata ind som lag, flere længdeprofiler ad gangen |
 | **Vandprojekter – N-regneark** | 2.24 | Udfylder kvælstof-regnearket (N) for et vådområdeprojekt: oplande, arealer og tilførsel |
 
 ---
