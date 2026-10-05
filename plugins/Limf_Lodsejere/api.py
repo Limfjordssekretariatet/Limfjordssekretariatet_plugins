@@ -239,12 +239,18 @@ class DatafordelerClient:
             bfe_raw = txt('samletFastEjendomLokalId')
             bfe     = str(int(bfe_raw)) if bfe_raw else ''
 
+            # Areal, vejareal og arealtype følger med, fordi de er det,
+            # vej- og banematrikler kendes på — og de er værd at have i
+            # laget bagefter, så man selv kan sortere videre.
             results.append({
-                'geometri_wkt':   geom_wkt,
-                'ejerlavskode':   int(txt('ejerlavskode') or 0),
-                'ejerlavsnavn':   '',
-                'matrikelnummer': txt('matrikelnummer'),
-                'bfe_nummer':     bfe,
+                'geometri_wkt':      geom_wkt,
+                'ejerlavskode':      int(txt('ejerlavskode') or 0),
+                'ejerlavsnavn':      '',
+                'matrikelnummer':    txt('matrikelnummer'),
+                'bfe_nummer':        bfe,
+                'registreret_areal': txt('registreretAreal'),
+                'vejareal':          txt('vejareal'),
+                'arealtype':         txt('arealtype'),
             })
         return results
 

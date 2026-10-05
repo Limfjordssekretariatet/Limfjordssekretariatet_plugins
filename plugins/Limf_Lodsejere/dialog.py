@@ -3,7 +3,7 @@ import os
 from qgis.PyQt.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QProgressBar, QCheckBox,
-    QMessageBox, QApplication
+    QDoubleSpinBox, QSpinBox, QMessageBox, QApplication
 )
 from qgis.PyQt.QtCore import QSettings, Qt, QUrl, QVariant
 from qgis.PyQt.QtGui import QDesktopServices
@@ -12,7 +12,7 @@ from qgis.core import (
     QgsField, QgsFields, QgsCoordinateReferenceSystem, QgsCoordinateTransform
 )
 
-from . import faelles_ui
+from . import faelles_ui, filtrering
 from .api import AdgangAfvist, DatafordelerClient
 
 
@@ -22,6 +22,8 @@ class LodsejerDialog(QDialog):
         self.iface = iface
         self.geometry = geometry
         self._source_crs = source_crs
+        #: Tekst om hvad der blev sorteret fra, til beskeden bagefter.
+        self._frasorteret = ''
         self.setWindowTitle('Hent Lodsejere')
         self.setMinimumWidth(500)
         self._build_ui()
@@ -58,6 +60,9 @@ class LodsejerDialog(QDialog):
         vis_layout.addWidget(self.vis_secret_cb)
         adgang_l.addLayout(vis_layout)
         layout.addWidget(adgang)
+
+        # --- Hvilke matrikler ------------------------------------------
+        layout.addWidget(self._afgraensningsboks())
 
         # --- Hvad der hentes --------------------------------------------
         udtraek, udtraek_l = faelles_ui.afsnit('Udtræk')
@@ -111,6 +116,58 @@ class LodsejerDialog(QDialog):
         layout.addLayout(faelles_ui.bundraekke(self.run_btn, luk_btn))
 
         faelles_ui.anvend_stil(self)
+
+    def _afgraensningsboks(self):
+        """Hvilke matrikler der kommer med — og hvilke der sorteres fra."""
+        boks, ind = faelles_ui.afsnit('Afgrænsning')
+
+        raekke = QHBoxLayout()
+        raekke.addWidget(QLabel('Udvid området med:'))
+        self.buffer_spin = QDoubleSpinBox()
+        self.buffer_spin.setRange(0, 2000)
+        self.buffer_spin.setDecimals(0)
+        self.buffer_spin.setSingleStep(10)
+        self.buffer_spin.setSuffix(' m')
+        self.buffer_spin.setToolTip(
+            'Lægger en bræmme uden om det valgte polygon, så naboer kommer '
+            'med. 0 m tager kun de matrikler, projektområdet selv ligger på.')
+        raekke.addWidget(self.buffer_spin)
+        raekke.addStretch(1)
+        ind.addLayout(raekke)
+
+        note = QLabel(
+            'Med 0 m kommer kun de matrikler med, som området overlapper. '
+            'Naboer, der kun deler skel, kommer ikke med.')
+        note.setWordWrap(True)
+        note.setStyleSheet('color: gray;')
+        ind.addWidget(note)
+
+        self.udelad_vej_cb = QCheckBox('Udelad vej- og jernbanematrikler')
+        self.udelad_vej_cb.setChecked(True)
+        self.udelad_vej_cb.setToolTip(
+            'Udskilte veje kendes på, at hele arealet er vejareal — det '
+            'gælder både vejlitra i 7000-serien og byveje med almindeligt '
+            'matrikelnummer. Banearealer kendes på arealtypen.')
+        ind.addWidget(self.udelad_vej_cb)
+
+        raekke = QHBoxLayout()
+        self.mindste_areal_cb = QCheckBox('Udelad matrikler under')
+        self.mindste_areal_cb.setToolTip(
+            'Matriklen oplyser ikke, hvad der står på en matrikel, så der '
+            'er ingen boligtype at gå efter. Byhuse og sommerhuse ligger '
+            'til gengæld på små grunde, så en nedre arealgrænse rammer dem.')
+        raekke.addWidget(self.mindste_areal_cb)
+        self.mindste_areal_spin = QSpinBox()
+        self.mindste_areal_spin.setRange(1, 1000000)
+        self.mindste_areal_spin.setSingleStep(500)
+        self.mindste_areal_spin.setValue(1500)
+        self.mindste_areal_spin.setSuffix(' m²')
+        self.mindste_areal_spin.setEnabled(False)
+        self.mindste_areal_cb.toggled.connect(self.mindste_areal_spin.setEnabled)
+        raekke.addWidget(self.mindste_areal_spin)
+        raekke.addStretch(1)
+        ind.addLayout(raekke)
+        return boks
 
     # Vejledningerne ligger i pluginmappen: Word-dokumentet med trin 1-7 og
     # skærmbilleder, og tillægget med felterne, entiteterne og fejlsøgningen.
@@ -166,12 +223,43 @@ class LodsejerDialog(QDialog):
         self.wfs_apikey_edit.setText(s.value('lodsejere/wfs_apikey', ''))
         self.client_id_edit.setText(s.value('lodsejere/client_id', ''))
         self.secret_edit.setText(s.value('lodsejere/client_secret', ''))
+        # Afgrænsningen huskes, så den ikke skal sættes forfra hver gang.
+        self.buffer_spin.setValue(
+            float(s.value('lodsejere/buffer_m', 0) or 0))
+        self.udelad_vej_cb.setChecked(
+            s.value('lodsejere/udelad_vej', True, type=bool))
+        self.mindste_areal_cb.setChecked(
+            s.value('lodsejere/mindste_areal_til', False, type=bool))
+        self.mindste_areal_spin.setValue(
+            int(s.value('lodsejere/mindste_areal_m2', 1500) or 1500))
 
     def _save_settings(self):
         s = QSettings()
         s.setValue('lodsejere/wfs_apikey', self.wfs_apikey_edit.text().strip())
         s.setValue('lodsejere/client_id', self.client_id_edit.text().strip())
         s.setValue('lodsejere/client_secret', self.secret_edit.text().strip())
+        s.setValue('lodsejere/buffer_m', self.buffer_spin.value())
+        s.setValue('lodsejere/udelad_vej', self.udelad_vej_cb.isChecked())
+        s.setValue('lodsejere/mindste_areal_til',
+                   self.mindste_areal_cb.isChecked())
+        s.setValue('lodsejere/mindste_areal_m2',
+                   self.mindste_areal_spin.value())
+
+    def _mindste_areal(self):
+        """Nedre arealgrænse i m², eller 0 når der ikke er sat nogen."""
+        if not self.mindste_areal_cb.isChecked():
+            return 0.0
+        return float(self.mindste_areal_spin.value())
+
+    def _omraade(self, geom_25832):
+        """Projektområdet med den valgte bræmme lagt uden om."""
+        bredde = self.buffer_spin.value()
+        if bredde <= 0:
+            return geom_25832
+        udvidet = geom_25832.buffer(bredde, 8)
+        # Slår bufferen fejl (fx ved en ugyldig geometri), bruges polygonet
+        # som det er, frem for at hente hele rektanglet igen.
+        return geom_25832 if udvidet.isEmpty() else udvidet
 
     def _run(self):
         wfs_apikey = self.wfs_apikey_edit.text().strip()
@@ -202,12 +290,30 @@ class LodsejerDialog(QDialog):
             QApplication.processEvents()
 
             geom_25832 = self._to_epsg25832(self.geometry)
-            jordstykker = client.get_jordstykker(geom_25832)
+            omraade = self._omraade(geom_25832)
+            fundne = client.get_jordstykker(omraade)
 
-            if not jordstykker:
+            if not fundne:
                 QMessageBox.information(
                     self, 'Lodsejere', 'Ingen matrikler fundet i det valgte område.'
                 )
+                return
+
+            # Matriklen svarer på et rektangel, så svaret skæres til her —
+            # før ejeropslagene, der tager ét kald pr. matrikel.
+            jordstykker, grunde = filtrering.frasorter(
+                fundne, omraade,
+                udelad_vej_og_bane=self.udelad_vej_cb.isChecked(),
+                mindste_areal_m2=self._mindste_areal())
+            self._frasorteret = filtrering.forklar(grunde)
+
+            if not jordstykker:
+                QMessageBox.information(
+                    self, 'Lodsejere',
+                    'Alle %d matrikler i rektanglet omkring området blev '
+                    'sorteret fra.\n\n%s\n\nPrøv at udvide området eller '
+                    'slå en af frasorteringerne fra.'
+                    % (len(fundne), self._frasorteret))
                 return
 
             self.progress.setRange(0, len(jordstykker))
@@ -282,6 +388,11 @@ class LodsejerDialog(QDialog):
             ('ejerlavsnavn',       QVariant.String),
             ('matrikelnummer',     QVariant.String),
             ('bfe_nummer',         QVariant.String),
+            # Areal, vejareal og arealtype følger med, så man selv kan
+            # sortere videre i laget bagefter.
+            ('areal_m2',           QVariant.Double),
+            ('vejareal_m2',        QVariant.Double),
+            ('arealtype',          QVariant.String),
             ('ejernavn',           QVariant.String),
             ('ejeradresse',        QVariant.String),
             ('postnr',             QVariant.String),
@@ -310,6 +421,8 @@ class LodsejerDialog(QDialog):
             vaerdier = {
                 'ejerlavskode': r.get('ejerlavskode'),
                 'bfe_nummer': str(r.get('bfe_nummer', '')),
+                'areal_m2': filtrering.tal(r.get('registreret_areal')),
+                'vejareal_m2': filtrering.tal(r.get('vejareal')),
             }
             feat.setAttributes([
                 vaerdier[name] if name in vaerdier else r.get(name, '')
@@ -320,7 +433,8 @@ class LodsejerDialog(QDialog):
         provider.addFeatures(features)
         layer.updateExtents()
         QgsProject.instance().addMapLayer(layer)
-        self.iface.messageBar().pushSuccess(
-            'Lodsejere', f'Lag oprettet med {len(features)} matrikler.'
-        )
+        besked = f'Lag oprettet med {len(features)} matrikler.'
+        if self._frasorteret:
+            besked += ' ' + self._frasorteret
+        self.iface.messageBar().pushSuccess('Lodsejere', besked)
         self.accept()

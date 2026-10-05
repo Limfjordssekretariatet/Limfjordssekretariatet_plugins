@@ -35,6 +35,43 @@ Bemærk at ejeroplysningerne hentes fra **GraphQL-tjenesten `flexibleCurrent`**
 — ikke REST-udstillingen af EJF. Adgang til den ene giver ikke adgang til den
 anden.
 
+## Afgrænsning af udtrækket
+
+Matriklens WFS kan kun spørges med et **rektangel**. Et projektområde er
+sjældent et rektangel, så svaret rummer også alt det, der ligger i
+hjørnerne udenom. Grænser området op til en by eller et sommerhusområde,
+kan det alene være hundreder af matrikler — i en prøve på et 11 ha smalt
+forløb svarede Matriklen med 359 matrikler, hvoraf kun 73 rørte selve
+området.
+
+Derfor skæres svaret til, før der hentes ejeroplysninger. Det sker under
+*Afgrænsning* i dialogen:
+
+| Valg | Hvad det gør |
+|---|---|
+| **Udvid området med** | Lægger en bræmme uden om polygonet, så naboerne kommer med. 0 m tager kun de matrikler, området selv ligger på — naboer, der kun deler skel, kommer ikke med. |
+| **Udelad vej- og jernbanematrikler** | Slået til som udgangspunkt. |
+| **Udelad matrikler under … m²** | Slået fra som udgangspunkt, foreslår 1.500 m². |
+
+Rækkefølgen betyder noget for ventetiden: ejeropslaget er ét kald pr.
+matrikel, så frasorteringen sker først.
+
+### Hvordan vej og jernbane kendes
+
+- **Vejmatrikler:** en udskilt vej har hele det registrerede areal
+  opgjort som vejareal. Det rammer både vejlitra (matrikelnumre i
+  7000-serien) og de byveje, der har et almindeligt matrikelnummer. På
+  2.598 matrikler i Nordjylland var der 103 vejlitra — alle med areal =
+  vejareal — og yderligere 30 vejstykker, som kun kunne kendes på det.
+- **Jernbane:** banearealer har `arealtype` = "Jernbane" og kun et lille
+  vejareal, så de findes på arealtypen, ikke på vejreglen.
+
+Felterne `areal_m2`, `vejareal_m2` og `arealtype` følger med i laget, så
+man kan sortere videre selv. Bemærk at Matriklen **ikke** oplyser, hvad
+der står på en matrikel — der er altså ingen boligtype at gå efter. Skal
+byhuse og sommerhuse væk, er arealgrænsen det nærmeste, man kommer, uden
+at hente BBR eller zonekort ind.
+
 ## Trin 3–4: Ansøg om dataadgang, og hvilke entiteter
 
 Forespørgslen bruger entiteten **`EJFCustom_EjerskabBegraenset`** og henter

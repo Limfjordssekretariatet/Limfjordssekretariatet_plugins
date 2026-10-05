@@ -2,10 +2,10 @@
 name=Vandprojekter – Lodsejerudtræk
 qgisMinimumVersion=3.34
 description=Henter matrikler og ejeroplysninger for et valgt polygon-område via Datafordeleren
-version=0.1.17
+version=0.1.18
 author=Henrik Rosenskjold, Limfjordsrådets sekretariat
 email=henrik.rosenskjold@aalborg.dk
-about=Vælg et polygon i QGIS og hent alle matrikler med ejeroplysninger (navn, adresse, ejerforhold) via Datafordeleren og CVR.
+about=Vælg et polygon i QGIS og hent alle matrikler med ejeroplysninger (navn, adresse, ejerforhold) via Datafordeleren og CVR. Udtrækket afgrænses af polygonet selv — med en bræmme udenom, hvis man vil have naboerne med — og vej- og jernbanematrikler kan sorteres fra sammen med matrikler under en valgt størrelse.
 tracker=https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues
 repository=https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins
 tags=matrikel,lodsejere,ejendom,datafordeler,cvr
