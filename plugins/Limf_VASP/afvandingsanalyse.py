@@ -325,6 +325,14 @@ class AfvandingsanalyseAlgorithm(QgsProcessingAlgorithm):
             "native:modelerrastercalc", alg_params,
             context=context, feedback=feedback, is_child_algorithm=True)
 
+        # Den afgørende oplysning, hvis resultatet ser kantet ud: hvor fin
+        # er den flade, klasserne skæres ud af?
+        dybde_celle = self._cellestoerrelse(outputs["Dybde"]["OUTPUT"])
+        if dybde_celle:
+            feedback.pushInfo(
+                "Afvandingsdybden er regnet i %.2f m celler — det er den, "
+                "klassegrænserne følger." % dybde_celle)
+
         feedback.setCurrentStep(3)
         if feedback.isCanceled():
             return {}
@@ -809,6 +817,37 @@ class AfvandingsanalyseAlgorithm(QgsProcessingAlgorithm):
         if omraade.isEmpty():
             return vsp_raster
 
+        groft = self._cellestoerrelse(vsp_raster)
+        feedback.pushInfo(
+            "Terrænmodellen har %.2f m celler; vandspejlet er interpoleret i "
+            "%.2f m." % (celle_x, groft or _VSP_CELLE_M))
+
+        # Er området stort, bliver nettet for tungt at bære i hukommelsen.
+        # Så gøres cellen grovere — men kun lige så meget som nødvendigt.
+        # Før faldt trinnet helt ud, og så stod vandspejlets firkanter
+        # tilbage i resultatet, uden at nogen lagde mærke til det.
+        antal = ((omraade.width() / celle_x + 1)
+                 * (omraade.height() / celle_y + 1))
+        if antal > _GLAT_MAKS_CELLER:
+            faktor = (antal / _GLAT_MAKS_CELLER) ** 0.5
+            celle_x *= faktor
+            celle_y *= faktor
+            feedback.pushInfo(
+                "Området er stort, så vandspejlet lægges på %.2f m celler i "
+                "stedet for terrænmodellens %.2f m — stadig meget finere end "
+                "de %.2f m, det er interpoleret i."
+                % (celle_x, dhm.rasterUnitsPerPixelX(),
+                   groft or _VSP_CELLE_M))
+
+        # Er målet ikke finere end det, vi kommer fra, er der intet at hente.
+        if groft and celle_x >= groft * 0.95:
+            _advar(feedback,
+                   "Vandspejlet kan ikke lægges finere end de %.2f m, det er "
+                   "interpoleret i (terrænmodellen har %.2f m celler). "
+                   "Klassegrænserne kan derfor blive kantede på det flade."
+                   % (groft, celle_x))
+            return vsp_raster
+
         # Snap til terrænmodellens net, så cellerne flugter nøjagtigt.
         dhm_omraade = dhm.extent()
         x0 = (dhm_omraade.xMinimum()
@@ -819,14 +858,6 @@ class AfvandingsanalyseAlgorithm(QgsProcessingAlgorithm):
               // celle_y * celle_y)
         kolonner = int((omraade.xMaximum() - x0) / celle_x) + 1
         raekker = int((omraade.yMaximum() - y0) / celle_y) + 1
-        if kolonner * raekker > _GLAT_MAKS_CELLER:
-            _advar(feedback,
-                   "Området er for stort til at lægge vandspejlet over på "
-                   "terrænets net (%d × %d celler). Vandspejlet bruges i %.1f "
-                   "m celler, og klassegrænserne kan derfor blive kantede på "
-                   "det flade. Vælg et mindre område, hvis det generer."
-                   % (kolonner, raekker, _VSP_CELLE_M))
-            return vsp_raster
 
         # Hvilken værdi der betyder "ingen vandspejl", læses af rasteret
         # selv frem for at blive antaget — ellers ville de tomme celler
@@ -860,6 +891,19 @@ class AfvandingsanalyseAlgorithm(QgsProcessingAlgorithm):
             "(interpoleret i %.1f m)."
             % (kolonner, raekker, celle_x, _VSP_CELLE_M))
         return ud
+
+    @staticmethod
+    def _cellestoerrelse(raster_sti):
+        """Rasterets cellestørrelse i x, eller None."""
+        try:
+            ds = gdal.Open(raster_sti)
+            if ds is not None:
+                gt = ds.GetGeoTransform()
+                ds = None
+                return abs(gt[1]) or None
+        except Exception:
+            pass
+        return None
 
     @staticmethod
     def _nodata(raster_sti):
