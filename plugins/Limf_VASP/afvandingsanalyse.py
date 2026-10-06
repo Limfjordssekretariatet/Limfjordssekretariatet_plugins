@@ -65,6 +65,11 @@ _UDENFOR = -9999
 _VSP_CELLE_M = 5.0
 _VSP_MAX_CELLER = 2000
 
+# Loft over vandspejlsrasteret, når det lægges over på terrænmodellens net.
+# Dybderasteret bliver alligevel lige så stort, så loftet er kun der, for at
+# et urimeligt stort område ikke vælter på netop dette trin.
+_GLAT_MAKS_CELLER = 250_000_000
+
 
 def _advar(feedback, besked):
     """Advarsel der virker på både nyere og ældre QGIS-versioner."""
@@ -280,6 +285,13 @@ class AfvandingsanalyseAlgorithm(QgsProcessingAlgorithm):
         outputs["Vandspejlsraster"] = processing.run(
             "gdal:gridinversedistancenearestneighbor", alg_params,
             context=context, feedback=feedback, is_child_algorithm=True)
+
+        # Vandspejlet lægges over på terrænmodellens eget net, glat.
+        # Uden det ville det blive læst som blokke — se _glat_vandspejl.
+        outputs["Vandspejlsraster"] = {
+            "OUTPUT": self._glat_vandspejl(
+                parameters, context, feedback,
+                outputs["Vandspejlsraster"]["OUTPUT"])}
 
         feedback.setCurrentStep(2)
         if feedback.isCanceled():
@@ -596,6 +608,107 @@ class AfvandingsanalyseAlgorithm(QgsProcessingAlgorithm):
                 % (omraade.xMinimum(), omraade.xMaximum(),
                    omraade.yMinimum(), omraade.yMaximum(),
                    kolonner, raekker))
+
+    def _glat_vandspejl(self, parameters, context, feedback, vsp_raster):
+        """Læg vandspejlet over på terrænmodellens net — glat.
+
+        Vandspejlet interpoleres i 5 m celler, for et vandspejl er en blød
+        flade, og at regne IDW i terrænmodellens 0,4 m ville tage mange
+        minutter uden at blive klogere. Men trækkes de to rastre fra
+        hinanden direkte, læses vandspejlet med nærmeste nabo: det står
+        så fast inden for hver 5 m firkant, og afvandingsdybden kommer til
+        at ligge i trapper.
+
+        Det ses ikke, hvor terrænet har fald — der er det terrænet, der
+        afgør, hvor klassegrænsen løber. Men på det flade, hvor dybden
+        ligger lige omkring en klassegrænse, følger grænsen vandspejlets
+        firkanter, og resultatet bliver kantet med lodrette og vandrette
+        spring.
+
+        Derfor samples vandspejlet om til terrænets eget net med bilineær
+        interpolation, før der trækkes fra. Nettet lægges oven i
+        terrænmodellens egne celler, så det sidste fratræk er celle mod
+        celle. Kan det ikke lade sig gøre, bruges rasteret som det er —
+        et kantet resultat er bedre end intet.
+        """
+        dhm = self.parameterAsRasterLayer(parameters, self.PARAM_DHM, context)
+        if dhm is None:
+            return vsp_raster
+        celle_x = dhm.rasterUnitsPerPixelX()
+        celle_y = dhm.rasterUnitsPerPixelY()
+        if not celle_x or not celle_y:
+            return vsp_raster
+
+        omraade = self.parameterAsExtent(
+            parameters, self.PARAM_EXTENT, context, dhm.crs())
+        if omraade.isEmpty():
+            return vsp_raster
+
+        # Snap til terrænmodellens net, så cellerne flugter nøjagtigt.
+        dhm_omraade = dhm.extent()
+        x0 = (dhm_omraade.xMinimum()
+              + (omraade.xMinimum() - dhm_omraade.xMinimum())
+              // celle_x * celle_x)
+        y0 = (dhm_omraade.yMinimum()
+              + (omraade.yMinimum() - dhm_omraade.yMinimum())
+              // celle_y * celle_y)
+        kolonner = int((omraade.xMaximum() - x0) / celle_x) + 1
+        raekker = int((omraade.yMaximum() - y0) / celle_y) + 1
+        if kolonner * raekker > _GLAT_MAKS_CELLER:
+            _advar(feedback,
+                   "Området er for stort til at lægge vandspejlet over på "
+                   "terrænets net (%d × %d celler). Vandspejlet bruges i %.1f "
+                   "m celler, og klassegrænserne kan derfor blive kantede på "
+                   "det flade. Vælg et mindre område, hvis det generer."
+                   % (kolonner, raekker, _VSP_CELLE_M))
+            return vsp_raster
+
+        # Hvilken værdi der betyder "ingen vandspejl", læses af rasteret
+        # selv frem for at blive antaget — ellers ville de tomme celler
+        # blive blandet ind i fladen ved omsamplingen.
+        tom = self._nodata(vsp_raster)
+
+        ud = QgsProcessingUtils.generateTempFilename("vandspejl_glat.tif")
+        try:
+            resultat = gdal.Warp(
+                ud, vsp_raster,
+                xRes=celle_x, yRes=celle_y,
+                outputBounds=(x0, y0, x0 + kolonner * celle_x,
+                              y0 + raekker * celle_y),
+                resampleAlg="bilinear",
+                srcNodata=tom, dstNodata=tom,
+                outputType=gdal.GDT_Float32)
+        except Exception as exc:
+            _advar(feedback,
+                   "Vandspejlet kunne ikke lægges over på terrænets net "
+                   "(%s). Klassegrænserne kan blive kantede." % exc)
+            return vsp_raster
+        if resultat is None:
+            _advar(feedback,
+                   "Vandspejlet kunne ikke lægges over på terrænets net. "
+                   "Klassegrænserne kan blive kantede.")
+            return vsp_raster
+        resultat = None
+
+        feedback.pushInfo(
+            "Vandspejlet lagt over på terrænets net: %d × %d celler á %.2f m "
+            "(interpoleret i %.1f m)."
+            % (kolonner, raekker, celle_x, _VSP_CELLE_M))
+        return ud
+
+    @staticmethod
+    def _nodata(raster_sti):
+        """Rasterets egen "ingen værdi", eller _UDENFOR hvis den ikke er sat."""
+        try:
+            ds = gdal.Open(raster_sti)
+            if ds is not None:
+                vaerdi = ds.GetRasterBand(1).GetNoDataValue()
+                ds = None
+                if vaerdi is not None:
+                    return vaerdi
+        except Exception:
+            pass
+        return _UDENFOR
 
     @staticmethod
     def _celler(laengde):
