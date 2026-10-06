@@ -63,9 +63,10 @@ class Limfjordssekretariatet_toolsDialog(QtWidgets.QDialog, FORM_CLASS):
     def stoettepunkter(self):
         """Åbn støttepunkt-panelet.
 
-        Denne dialog lukkes først. Panelets trin forudsætter, at man kan
-        arbejde på kortet imellem — indlæse højdemodellen, digitalisere
-        punkter — og det kan man ikke bag to modale dialoger.
+        Denne dialog lukkes først, og panelet åbnes ikke-modalt: dets trin
+        forudsætter, at man kan arbejde på kortet imellem — indlæse
+        højdemodellen, digitalisere punkter — og trin 4 trykkes igen, hver
+        gang der er kommet nye punkter til.
         """
         from .stoettepunkter.panel import StoettepunktPanel
 
