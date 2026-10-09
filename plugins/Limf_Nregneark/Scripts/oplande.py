@@ -282,6 +282,10 @@ def koer(alg_id: str, parametre: dict, log: Log, beskrivelse: str = "") -> dict:
 
 NODATA = -9999.0
 
+# Hvor mange celler der tages ad gangen, naar et raster gennemgaas blokvis.
+# Holder de midlertidige arrays smaa, uanset hvor stort rasteret er.
+D8_BLOK = 4_000_000
+
 # De otte naboretninger som (raekke, kolonne). Raekke voksende = mod syd.
 _NABOER = {"NØ": (-1, 1), "Ø": (0, 1), "SØ": (1, 1), "S": (1, 0),
            "SV": (1, -1), "V": (0, -1), "NV": (-1, -1), "N": (-1, 0)}
@@ -302,28 +306,45 @@ def d8_afkodning(pointer_sti: Path, dem_sti: Path, log: Log) -> dict[int, tuple[
     import numpy as np
     from osgeo import gdal
 
+    # Typerne holdes saa smaa som data tillader. Paa et stort raster er det
+    # forskellen paa om trinnet kan koere: 222 mio. celler som int64+float64
+    # er 3,6 GB alene for de to rastere, og int64-indekser oveni. En kollega
+    # loeb toer for hukommelse praecis her.
     ds = gdal.Open(str(pointer_sti))
-    pntr = ds.GetRasterBand(1).ReadAsArray().astype("int64")
+    pntr = ds.GetRasterBand(1).ReadAsArray()
     ds = None
+    if not np.issubdtype(pntr.dtype, np.integer):
+        # WhiteBox skriver tit pointeren som float32; vaerdierne er 1..128.
+        pntr = pntr.astype(np.int32)
     ds = gdal.Open(str(dem_sti))
-    dem = ds.GetRasterBand(1).ReadAsArray().astype("float64")
+    dem = ds.GetRasterBand(1).ReadAsArray()
     ds = None
+    if dem.dtype != np.float32 and dem.dtype != np.float64:
+        dem = dem.astype(np.float32)
     if pntr.shape != dem.shape:
         raise OplandsFejl("D8-raster og DEM har forskellige dimensioner")
 
     hoejde, bredde = pntr.shape
-    r_idx, c_idx = np.indices(pntr.shape)
+    # Flade indekser frem for to fulde indeks-rastere (np.indices koster to
+    # arrays paa stoerrelse med rasteret). int32 raekker til godt 2 mia.
+    # celler; derover skal der int64 til.
+    idx_type = np.int64 if pntr.size > 2 ** 31 - 1 else np.int32
     rng = np.random.default_rng(0)
     afkodning: dict[int, tuple[int, int]] = {}
 
+    pntr_flad = pntr.ravel()
     for vaerdi in (v for v in np.unique(pntr) if v != 0):
-        m = pntr == vaerdi
-        idx = np.argwhere(m)
-        if idx.shape[0] < 100:
+        # flatnonzero giver int64; paa alt under 2 mia. celler er det dobbelt
+        # op, og raekke/kolonne regnes videre i samme type. Maalt paa 9 mio.
+        # celler: 218 MB med int64 hele vejen, 182 MB naar den skæres til.
+        flad_idx = np.flatnonzero(pntr_flad == vaerdi).astype(idx_type)
+        if flad_idx.size < 100:
             continue
-        if idx.shape[0] > 200_000:
-            idx = idx[rng.choice(idx.shape[0], 200_000, replace=False)]
-        rr, cc = idx[:, 0], idx[:, 1]
+        if flad_idx.size > 200_000:
+            flad_idx = flad_idx[rng.choice(flad_idx.size, 200_000,
+                                           replace=False)]
+        rr = flad_idx // bredde
+        cc = flad_idx % bredde
         egen = dem[rr, cc]
         bedst, bedst_andel = None, -1.0
         for (dr, dc) in _NABOER.values():
@@ -336,17 +357,49 @@ def d8_afkodning(pointer_sti: Path, dem_sti: Path, log: Log) -> dict[int, tuple[
                 bedst, bedst_andel = (dr, dc), andel
         afkodning[int(vaerdi)] = bedst
 
-    # Selvkontrol: naesten alle celler skal stroemme til en celle paa eller under egen kote
-    ned = np.full(pntr.size, -1, dtype=np.int64)
+    # Selvkontrol: naesten alle celler skal stroemme til en celle paa eller
+    # under egen kote. Den koeres blokvis og uden at lægge nedstroems-cellen
+    # for hele rasteret i hukommelsen — det array alene var 1,8 GB paa et
+    # stort raster, og de fulde kote-opslag oveni var dér, det slap op.
+    if not afkodning:
+        raise OplandsFejl(
+            "D8-afkodningen kunne ikke fastlaegges: ingen af vaerdierne i "
+            "D8-rasteret optraeder tit nok til at udlede en retning."
+        )
+    maks_vaerdi = max(afkodning)
+    dr_tabel = np.zeros(maks_vaerdi + 1, dtype=np.int64)
+    dc_tabel = np.zeros(maks_vaerdi + 1, dtype=np.int64)
+    kendt = np.zeros(maks_vaerdi + 1, dtype=bool)
     for vaerdi, (dr, dc) in afkodning.items():
-        m = pntr == vaerdi
-        rr, cc = r_idx[m] + dr, c_idx[m] + dc
-        ok = (rr >= 0) & (rr < hoejde) & (cc >= 0) & (cc < bredde)
-        ned[(r_idx[m] * bredde + c_idx[m])[ok]] = (rr * bredde + cc)[ok]
+        dr_tabel[vaerdi] = dr
+        dc_tabel[vaerdi] = dc
+        kendt[vaerdi] = True
 
-    har = ned >= 0
     flad = dem.ravel()
-    nedad = float((flad[ned[har]] <= flad[np.flatnonzero(har)]).mean())
+    BLOK = D8_BLOK
+    i_alt = 0
+    gik_nedad = 0
+    for start in range(0, pntr_flad.size, BLOK):
+        slut = min(start + BLOK, pntr_flad.size)
+        p = pntr_flad[start:slut]
+        # Vaerdier uden for tabellen (nodata, ukendte koder) springes over.
+        i_tabel = (p >= 0) & (p <= maks_vaerdi)
+        brug = np.zeros(p.shape, dtype=bool)
+        brug[i_tabel] = kendt[p[i_tabel]]
+        if not brug.any():
+            continue
+        idx = np.arange(start, slut, dtype=np.int64)[brug]
+        pv = p[brug]
+        rr = idx // bredde + dr_tabel[pv]
+        cc = idx % bredde + dc_tabel[pv]
+        ok = (rr >= 0) & (rr < hoejde) & (cc >= 0) & (cc < bredde)
+        if not ok.any():
+            continue
+        maal = rr[ok] * bredde + cc[ok]
+        kilde = idx[ok]
+        gik_nedad += int((flad[maal] <= flad[kilde]).sum())
+        i_alt += int(ok.sum())
+    nedad = float(gik_nedad) / i_alt if i_alt else 0.0
     log.skriv(f"  D8-afkodning udledt, {nedad:.4f} af cellerne stroemmer nedad")
     if nedad < 0.999:
         raise OplandsFejl(
