@@ -590,6 +590,117 @@ class BeregnStroemningsveje(QgsProcessingAlgorithm):
             'hvis det skal hentes forfra.')
         return True
 
+    # Hvor meget uden for oplandsgrænsen der hentes. Grænsen er tegnet i en
+    # grovere målestok end terrænet, så den må ikke tages helt bogstaveligt.
+    OPLANDSMARGIN_M = 500.0
+    # Der hentes altid mindst så meget om selve projektområdet — også hvis
+    # oplandsgrænsen skulle skære tæt forbi.
+    MINDST_OM_OMRAADET_M = 1000.0
+    # Over så mange celler bliver kørslen urimelig. Et projekt kan ligge på et
+    # opland, der er et helt vandsystem (det største i laget er 2.637 km²), og
+    # så er oplandsvejen ikke farbar.
+    OPLANDSZONE_MAKS_CELLER = 120_000_000
+
+    def _oplandszone(self, projekt_lag, res, context, feedback):
+        """Download-området udlagt efter det opland, projektet ligger i.
+
+        En fast radius om projektområdet rammer skævt begge veje: for lidt
+        dér hvor oplandet fortsætter (så det sporede opland bliver skåret
+        over ved rasterkanten og arealet et minimum), og for meget ud i
+        havet eller ind i naboens opland. Oplandsgrænsen ved bedre, hvor
+        vandet kommer fra.
+
+        Målt på 58 af husets projektområder halverer det medianen —
+        fra ca. 29 til 13,7 mio. celler — og resultatet bliver komplet.
+
+        Returnerer et lag med zonen, eller None hvis oplandsvejen ikke kan
+        bruges: ingen oplandsfil, intet opland under projektområdet, eller
+        et opland så stort at kørslen ville blive urimelig. Så falder
+        kalderen tilbage til den faste buffer.
+        """
+        from qgis.core import (QgsCoordinateReferenceSystem,
+                               QgsCoordinateTransform, QgsFeatureRequest,
+                               QgsGeometry)
+        try:
+            from utils import find_grunddata
+            grunddata = find_grunddata()
+        except Exception:
+            grunddata = None
+        if not grunddata:
+            return None
+        opland_sti = os.path.join(grunddata, 'Oplande',
+                                  'oplande_1orden_region.shp')
+        if not os.path.isfile(opland_sti):
+            return None
+        oplande = QgsVectorLayer(opland_sti, 'oplande', 'ogr')
+        if not oplande.isValid():
+            return None
+
+        dhm_crs = QgsCoordinateReferenceSystem('EPSG:25832')
+        tr = None
+        if projekt_lag.crs().isValid() and projekt_lag.crs() != dhm_crs:
+            tr = QgsCoordinateTransform(projekt_lag.crs(), dhm_crs,
+                                        QgsProject.instance())
+        dele = []
+        for f in projekt_lag.getFeatures():
+            g = f.geometry()
+            if g is None or g.isEmpty():
+                continue
+            g = QgsGeometry(g)
+            if tr is not None and g.transform(tr) != 0:
+                continue
+            dele.append(g)
+        if not dele:
+            return None
+        omraade = QgsGeometry.unaryUnion(dele)
+
+        # Kun de oplande projektområdet selv ligger i. Tages naboerne med
+        # (fx via en bufferzone), vokser kassen uden at dække mere af det,
+        # der rent faktisk afvander hertil.
+        req = QgsFeatureRequest().setFilterRect(omraade.boundingBox())
+        roerte = []
+        for f in oplande.getFeatures(req):
+            g = f.geometry()
+            if g and not g.isEmpty() and g.intersects(omraade):
+                roerte.append(g)
+        if not roerte:
+            feedback.pushInfo(
+                'Projektområdet ligger ikke i noget kortlagt opland — '
+                'henter efter den faste buffer i stedet.')
+            return None
+
+        zone = QgsGeometry.unaryUnion(roerte).buffer(self.OPLANDSMARGIN_M, 8)
+        zone = zone.combine(omraade.buffer(self.MINDST_OM_OMRAADET_M, 8))
+        if zone.isEmpty():
+            return None
+
+        bb = zone.boundingBox()
+        celler = (bb.width() / res) * (bb.height() / res)
+        if celler > self.OPLANDSZONE_MAKS_CELLER:
+            feedback.pushInfo(
+                'Oplandet er %.0f km² og ville give %.0f mio. celler ved '
+                '%.1f m — for stort til at hente. Henter efter den faste '
+                'buffer i stedet; oplandet kan derfor blive skåret over ved '
+                'rasterkanten, og arealet bliver et minimum.'
+                % (zone.area() / 1e6, celler / 1e6, res))
+            return None
+
+        feedback.pushInfo(
+            'Henter terrænmodel for %d opland(e) på %.0f km² + %.0f m '
+            '(%.1f × %.1f km, %.0f mio. celler ved %.1f m).'
+            % (len(roerte), zone.area() / 1e6, self.OPLANDSMARGIN_M,
+               bb.width() / 1000, bb.height() / 1000, celler / 1e6, res))
+
+        lag = QgsVectorLayer('Polygon?crs=EPSG:25832', 'downloadzone',
+                             'memory')
+        f = QgsFeature()
+        f.setGeometry(zone)
+        lag.dataProvider().addFeature(f)
+        lag.updateExtents()
+        # Laget skal leve videre i konteksten, til downloadscriptet har brugt det.
+        context.temporaryLayerStore().addMapLayer(lag)
+        return lag
+
     def _hent_terraen(self, parameters, context, feedback, stier, projekt_lag):
         """Henter terrænet via 'Hent DHM (WCS)' — uden brænding, så det er råt.
 
@@ -615,17 +726,28 @@ class BeregnStroemningsveje(QgsProcessingAlgorithm):
                 'højdemodel", eller peg på et bibliotek med præberegnet '
                 'oplandsgrundlag under Avanceret.')
 
-        feedback.pushInfo(f'Henter terrænmodel for projektområdet + {buffer_m:.0f} m …')
-        buffer_resultat = processing.run('native:buffer', {
-            'INPUT': projekt_lag,
-            'DISTANCE': buffer_m,
-            'SEGMENTS': 5,
-            'END_CAP_STYLE': 0,
-            'JOIN_STYLE': 0,
-            'MITER_LIMIT': 2,
-            'DISSOLVE': False,
-            'OUTPUT': QgsProcessing.TEMPORARY_OUTPUT,
-        }, context=context, feedback=feedback, is_child_algorithm=True)['OUTPUT']
+        # Først: lad oplandet bestemme, hvor langt der skal hentes. En fast
+        # radius rammer skævt begge veje — for lidt dér hvor oplandet
+        # fortsætter, og for meget ud i havet eller ind i naboens opland.
+        res = self.parameterAsDouble(parameters, self.OPLOESNING, context)
+        zone = self._oplandszone(projekt_lag, res, context, feedback)
+
+        if zone is not None:
+            buffer_resultat = zone
+        else:
+            feedback.pushInfo(
+                f'Henter terrænmodel for projektområdet + {buffer_m:.0f} m …')
+            buffer_resultat = processing.run('native:buffer', {
+                'INPUT': projekt_lag,
+                'DISTANCE': buffer_m,
+                'SEGMENTS': 5,
+                'END_CAP_STYLE': 0,
+                'JOIN_STYLE': 0,
+                'MITER_LIMIT': 2,
+                'DISSOLVE': False,
+                'OUTPUT': QgsProcessing.TEMPORARY_OUTPUT,
+            }, context=context, feedback=feedback,
+                is_child_algorithm=True)['OUTPUT']
 
         if stier['dem_raa'].exists():
             # GDAL kan ikke skrive til en fil der er åben i lagpanelet, og en halvt
