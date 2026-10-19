@@ -37,6 +37,7 @@ from qgis.gui import QgsColorButton
 
 from . import faelles_ui
 from .atlas_builder import STANDARD_FYLD, STANDARD_KANT, STANDARD_OMRAADE
+from .reference_data import STANDARD_PERIODE, perioder
 from .template_spec import PLACEHOLDERS, postnr_par
 
 # Værdi i felt-combo der betyder "intet felt – lad pluginnet generere".
@@ -44,9 +45,10 @@ GENERATE_SENTINEL = "__generate__"
 NONE_SENTINEL = "__none__"
 # Baggrundskort: brug projektets rasterlag automatisk.
 AUTO_BACKGROUND_SENTINEL = "__auto_bg__"
-# Hvor i projektfilen valget af ekstra lag huskes til næste gang.
+# Hvor i projektfilen valgene huskes til næste gang.
 PROJEKT_SCOPE = "Limf_Atlas"
 PROJEKT_EKSTRA_LAG = "ekstra_lag"
+PROJEKT_PERIODE = "reference_periode"
 
 
 class AtlasDialogResult:
@@ -66,6 +68,8 @@ class AtlasDialogResult:
         #: Baggrundskort: True = auto (rasterlag), None = intet, ellers et lag.
         self.background_auto = True
         self.background_layer = None
+        #: Referencekortets periode til arealtabellen ("2021-2023"/"2017-2021").
+        self.reference_periode = STANDARD_PERIODE
         #: Projektets lag der skal med i kortene og signaturforklaringen,
         #: top-først som i lagpanelet (fx genslyngning og andre tiltag).
         self.extra_layers = []
@@ -161,12 +165,20 @@ class AtlasDialog(QDialog):
         self.background_combo = QComboBox()
         grp_form.addRow("Baggrundskort-lag", self.background_combo)
 
+        self.periode_combo = QComboBox()
+        for p in perioder():
+            self.periode_combo.addItem(p, p)
+        self._vaelg_husket_periode()
+        grp_form.addRow("Referencekort (arealtabel)", self.periode_combo)
+
         grp_hint = QLabel(
             "Atlasset får én side pr. ejer; alle ejerens matrikler vises "
             "samlet. Oversigtskortet zoomer til projektområde-laget. "
             "Baggrundskort: «Auto» bruger projektets rasterlag, eller vælg "
-            "et bestemt lag. Arealtabellen udfyldes automatisk fra pluginnets "
-            "medfølgende referencekort."
+            "et bestemt lag. Arealtabellen (omdrift/græs/natur) udfyldes fra "
+            "Landbrugsstyrelsens referencekort for den valgte periode – "
+            "årstallene står i tabellens overskrift. Hvert kort hentes én "
+            "gang og gemmes lokalt."
         )
         grp_hint.setWordWrap(True)
         grp_hint.setStyleSheet("color: gray;")
@@ -297,6 +309,20 @@ class AtlasDialog(QDialog):
             lyr = QgsProject.instance().mapLayer(guessed_layer_id)
             if lyr is not None:
                 self._set_active_layer(lyr)
+
+    def _vaelg_husket_periode(self):
+        """Sæt periode-comboen til sidste valg i dette projekt.
+
+        Huskes samme sted som de ekstra lag, så et nyt atlas over samme
+        projekt bruger samme referencekort uden at skulle vælges igen.
+        """
+        husket, _ok = QgsProject.instance().readEntry(
+            PROJEKT_SCOPE, PROJEKT_PERIODE, STANDARD_PERIODE)
+        i = self.periode_combo.findData(husket)
+        if i < 0:
+            i = self.periode_combo.findData(STANDARD_PERIODE)
+        if i >= 0:
+            self.periode_combo.setCurrentIndex(i)
 
     def _udfyld_ekstra_lag(self):
         """Projektets vektorlag i lagpanelets rækkefølge, med afkrydsning.
@@ -557,6 +583,11 @@ class AtlasDialog(QDialog):
             if self.ekstra_liste.item(i).checkState() == Qt.Checked]
         QgsProject.instance().writeEntry(
             PROJEKT_SCOPE, PROJEKT_EKSTRA_LAG, valgte_id)
+
+        periode = self.periode_combo.currentData() or STANDARD_PERIODE
+        self._result.reference_periode = periode
+        QgsProject.instance().writeEntry(
+            PROJEKT_SCOPE, PROJEKT_PERIODE, periode)
 
         bg = self.background_combo.currentData()
         if bg == AUTO_BACKGROUND_SENTINEL:

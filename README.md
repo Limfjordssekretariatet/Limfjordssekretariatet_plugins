@@ -13,7 +13,7 @@ videregive dem. Se [Licens og kreditering](#licens-og-kreditering).
 | **Vandprojekter – Jordbund** | 3.2.16 | Håndtering af jordprøver – grid (markkort-baseret), centerpunkter, QField-klargøring og rapporteksport |
 | **Vandprojekter – Vådområder** | 4.0.32 | Diverse GIS-værktøjer (udpeg opland, støttepunkter, jordberegning, terræninterpolation, Trace m.m.) |
 | **Vandprojekter – Dræn** | 0.2.19 | Find drænudløbspunkter baseret på fald og DEM |
-| **Vandprojekter – Lodsejeratlas** | 0.2.15 | Genererer et lodsejer-atlas (mapbook) ud fra en layout-skabelon med auto-mapping af felter, valgfrie tiltagslag og signaturforklaring |
+| **Vandprojekter – Lodsejeratlas** | 0.2.16 | Genererer et lodsejer-atlas (mapbook) ud fra en layout-skabelon med auto-mapping af felter, valgfrie tiltagslag og signaturforklaring |
 | **Vandprojekter – Lodsejerudtræk** | 0.1.18 | Henter matrikler og ejeroplysninger for et valgt polygon via Datafordeleren/CVR |
 | **Vandprojekter – VASP** | 1.2.29 | Integration mellem VASP Access-database og QGIS – henter terræn-/profildata ind som lag, flere længdeprofiler ad gangen |
 | **Vandprojekter – N-regneark** | 2.26 | Udfylder kvælstof-regnearket (N) for et vådområdeprojekt: oplande, arealer og tilførsel |
@@ -59,6 +59,7 @@ plugin-opdateringer). Kræver internetadgang ved første kørsel.
 |--------|---------|-----------|---------|
 | Vandprojekter – Jordbund | Markkort (grid) | ~110 MB | `markkort-v2` |
 | Vandprojekter – Lodsejeratlas | Referencekort (arealtabel 2021-2023) | ~110 MB | `referencekort-v1` |
+| Vandprojekter – Lodsejeratlas | Referencekort (arealtabel 2017-2021) | ~138 MB | `referencekort-2017-2021-v1` |
 | Vandprojekter – N-regneark | Jordbundskort 2024 | 375 MB | `grunddata-v1` |
 | Vandprojekter – N-regneark | Marker 2024 | 353 MB | `grunddata-v1` |
 | Vandprojekter – N-regneark | Befæstet areal | 147 MB | `grunddata-v1` |

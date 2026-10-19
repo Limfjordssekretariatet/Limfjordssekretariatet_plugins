@@ -16,12 +16,13 @@ from qgis.core import QgsProject
 from . import faelles_gui
 from .dialog import AtlasDialog
 from .atlas_builder import AtlasBuilder, AtlasBuildError
-from .reference_data import ensure_reference
+from .reference_data import ensure_reference, kategorifelt
 
 PLUGIN_DIR = os.path.dirname(__file__)
 TEMPLATE_PATH = os.path.join(PLUGIN_DIR, "resources", "mapbook_skabelon.qpt")
-# Referencekortet (arealtabel: Omdrift/Permanent græs) er for stort til plugin-
-# zippen og downloades fra en GitHub release ved første brug (se reference_data).
+# Referencekortene (arealtabel: Omdrift/Permanent græs) er for store til plugin-
+# zippen og downloades fra en GitHub release ved første brug – ét pr. periode,
+# som brugeren vælger i dialogen (se reference_data).
 
 
 class AtlasMapbook:
@@ -66,8 +67,10 @@ class AtlasMapbook:
         result = dialog.result()  # AtlasDialogResult
         layer = result.layer
 
-        # Referencekortet downloades fra release ved første brug (caches lokalt).
-        reference_path = ensure_reference(self.iface.mainWindow())
+        # Referencekortet for den valgte periode downloades fra release ved
+        # første brug (caches lokalt, ét kort pr. periode).
+        periode = result.reference_periode
+        reference_path = ensure_reference(self.iface.mainWindow(), periode)
         if reference_path is None:
             return  # bruger annullerede download eller fejl (allerede vist)
 
@@ -91,6 +94,8 @@ class AtlasMapbook:
                 background_auto=result.background_auto,
                 background_layer=result.background_layer,
                 reference_path=reference_path,
+                reference_field=kategorifelt(periode),
+                reference_years=periode,
                 extra_layers=result.extra_layers,
             )
         except AtlasBuildError as exc:

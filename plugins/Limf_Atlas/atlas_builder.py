@@ -118,15 +118,18 @@ AREA_OMDRIFT = "Omdrift_ha"
 AREA_GRAES = "Græs_ha"
 AREA_NATUR = "Natur_ha"
 
-# Hvilke Satskort-kategorier i referencekortet der tæller som hhv. omdrift og
-# permanent græs (case-insensitivt 'contains'-match).
+# Hvilke kategorier i referencekortet der tæller som hhv. omdrift og permanent
+# græs (case-insensitivt 'contains'-match). 2017-2021 staver kategorien
+# "Permenent græs", så der matches kun på "græs" – det rammer begge perioder.
 SATS_OMDRIFT_HINT = "omdrift"
 SATS_GRAES_HINT = "græs"
 
-# Feltet i det medfølgende referencekort der angiver arealanvendelse.
+# Feltet i referencekortet der angiver arealanvendelse. Det hedder ikke det
+# samme i de to perioder (2021-2023: Satskort, 2017-2021: Arealtype), så
+# build() får navnet med fra reference_data – her står kun standarden.
 REFERENCE_CATEGORY_FIELD = "Satskort"
 
-# Årstal-interval for det medfølgende referencekort (vises i overskriften).
+# Årstal-interval for referencekortet (vises i overskriften).
 REFERENCE_YEARS = "2021-2023"
 
 
@@ -146,7 +149,10 @@ class AtlasBuilder:
               generate_postnr, layout_name, owner_field=None,
               project_area_layer=None, background_auto=True,
               background_layer=None, reference_path=None,
-              extra_layers=None):
+              extra_layers=None, reference_field=None,
+              reference_years=None):
+        reference_field = reference_field or REFERENCE_CATEGORY_FIELD
+        reference_years = reference_years or REFERENCE_YEARS
         parcel_layer = coverage_layer  # input = matrikellag
         if parcel_layer is None or not parcel_layer.isValid():
             raise AtlasBuildError("Det valgte lodsejerlag er ugyldigt.")
@@ -218,7 +224,7 @@ class AtlasBuilder:
         #    får en side (kræver et projektgrænse-lag; ellers medtages alle).
         owner_layer = self._build_owner_layer(
             parcel_layer, owner_field, resolved, project_area_layer,
-            reference_layer, REFERENCE_CATEGORY_FIELD)
+            reference_layer, reference_field)
         # Hovedkort: geometrien klippes til ejeren via atlas-clipping (tegn alle),
         # men etiketter begrænses til ejerens matrikler (clipping rammer ikke labels).
         # Navnet står i signaturforklaringen.
@@ -265,7 +271,7 @@ class AtlasBuilder:
         # 3) Indlæs og tilpas skabelonens XML.
         doc = self._load_template_doc()
         self._rewrite_template_fields(doc, cov_resolved)
-        self._update_reference_years(doc)
+        self._update_reference_years(doc, reference_years)
         has_table = reference_layer is not None
         if has_table:
             # Behold arealtabellen og bind den til ejer-laget (ha-felterne der).
@@ -503,7 +509,7 @@ class AtlasBuilder:
     # ------------------------------------------------ referencekort/arealtabel
     def _prepare_reference(self, reference_layer, reference_field, boundary,
                            parcel_layer):
-        """Forbered referencekortet: forenet geometri pr. Satskort-kategori.
+        """Forbered referencekortet: forenet geometri pr. arealkategori.
 
         Returnerer dict {'omdrift': QgsGeometry, 'graes': QgsGeometry} eller
         None hvis intet referencekort. Referencekortet klippes til projekt-
@@ -858,11 +864,12 @@ class AtlasBuilder:
             text = re.sub(pattern, '"{}"'.format(new), text)
         return text
 
-    def _update_reference_years(self, doc):
+    def _update_reference_years(self, doc, years=REFERENCE_YEARS):
         """Opdatér årstal-intervallet i overskriften til referencekortets år.
 
         Skabelonen har fx 'hektar (Reference 2017-2021)'; vi erstatter ethvert
-        ÅÅÅÅ-ÅÅÅÅ med REFERENCE_YEARS (referencekortets faktiske periode).
+        ÅÅÅÅ-ÅÅÅÅ med den valgte periode, så overskriften altid siger hvilket
+        referencekort tallene i arealtabellen kommer fra.
         """
         items = doc.elementsByTagName("LayoutItem")
         for i in range(items.count()):
@@ -870,7 +877,7 @@ class AtlasBuilder:
             if not el.hasAttribute("labelText"):
                 continue
             text = el.attribute("labelText")
-            new_text = re.sub(r"\d{4}\s*-\s*\d{4}", REFERENCE_YEARS, text)
+            new_text = re.sub(r"\d{4}\s*-\s*\d{4}", years, text)
             if new_text != text:
                 el.setAttribute("labelText", new_text)
 
