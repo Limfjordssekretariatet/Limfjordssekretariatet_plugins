@@ -43,7 +43,7 @@ class Lodsejere:
         layer = sel_dlg.selected_layer()
 
         if geometry is None or geometry.isEmpty():
-            QMessageBox.warning(None, 'Lodsejere', 'Den valgte geometri er tom.')
+            QMessageBox.warning(None, 'Lodsejere', 'Den valgte geometri er tom!')
             return
 
         from .dialog import LodsejerDialog
