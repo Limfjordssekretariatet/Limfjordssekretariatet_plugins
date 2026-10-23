@@ -109,10 +109,10 @@ COV_ADRESSE = "adresse"
 COV_POSTNR = "postnr"
 COV_LOBENR = "lobenr"
 
-# Standardgrænse for mindste matrikel-areal (m²) INDEN FOR projektgrænsen for
-# at en ejer får en atlas-side. 0,1 ha = 1000 m². Brugeren kan ændre grænsen i
-# dialogen eller slå filteret helt fra (0 = ingen grænse), så build() får den
-# med som argument – her står kun standarden.
+# Arealfilteret er som standard SLÅET FRA: alle lodsejere får en side, uanset
+# hvor lidt de rager ind i projektet. Slår brugeren det til i dialogen, er det
+# her det foreslåede udgangspunkt står – mindste matrikel-areal (m²) INDEN FOR
+# projektgrænsen for at en ejer kommer med. 0,1 ha = 1000 m².
 MIN_AREA_M2 = 1000.0
 
 # Arealtabellens felter på coverage-laget (matcher skabelonens kolonner).
@@ -152,7 +152,7 @@ class AtlasBuilder:
               project_area_layer=None, background_auto=True,
               background_layer=None, reference_path=None,
               extra_layers=None, reference_field=None,
-              reference_years=None, min_area_m2=MIN_AREA_M2):
+              reference_years=None, min_area_m2=0.0):
         reference_field = reference_field or REFERENCE_CATEGORY_FIELD
         reference_years = reference_years or REFERENCE_YEARS
         parcel_layer = coverage_layer  # input = matrikellag
@@ -382,7 +382,7 @@ class AtlasBuilder:
     # --------------------------------------------------- dissolve pr. ejer
     def _build_owner_layer(self, parcel_layer, owner_field, resolved,
                            project_area_layer=None, reference_layer=None,
-                           reference_field=None, min_area_m2=MIN_AREA_M2):
+                           reference_field=None, min_area_m2=0.0):
         """Byg et midlertidigt lag med én feature pr. ejer.
 
         Geometrien er foreningen (collect) af alle ejerens matrikler, så
@@ -391,7 +391,8 @@ class AtlasBuilder:
 
         Er et projektgrænse-lag givet OG ``min_area_m2`` større end 0, udelades
         ejere hvis samlede matrikel-areal INDEN FOR projektgrænsen er under
-        grænsen. ``min_area_m2 = 0`` (eller intet grænselag) tager alle med.
+        grænsen. ``min_area_m2 = 0`` – standarden – tager alle med, og det gør
+        et manglende grænselag også.
 
         Er et referencekort givet, beregnes arealtabellens felter pr. ejer
         (Omdrift_ha / Græs_ha; Natur = 0) ud fra matrikel ∩ referencekort,

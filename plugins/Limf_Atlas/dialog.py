@@ -76,8 +76,8 @@ class AtlasDialogResult:
         #: Referencekortets periode til arealtabellen ("2021-2023"/"2017-2021").
         self.reference_periode = STANDARD_PERIODE
         #: Mindste areal (m²) i projektgrænsen for at en ejer får en side.
-        #: 0 = intet arealfilter, alle lodsejere kommer med.
-        self.min_area_m2 = MIN_AREA_M2
+        #: 0 = intet arealfilter, alle lodsejere kommer med. Det er standarden.
+        self.min_area_m2 = 0.0
         #: Projektets lag der skal med i kortene og signaturforklaringen,
         #: top-først som i lagpanelet (fx genslyngning og andre tiltag).
         self.extra_layers = []
@@ -207,9 +207,9 @@ class AtlasDialog(QDialog):
             "et bestemt lag. Arealtabellen (omdrift/græs/natur) udfyldes fra "
             "Landbrugsstyrelsens referencekort for den valgte periode – "
             "årstallene står i tabellens overskrift. Hvert kort hentes én "
-            "gang og gemmes lokalt. Arealfilteret udelader lodsejere der kun "
-            "rager en smule ind i projektet; det kræver et projektområde-lag "
-            "og kan slås fra, hvis alle skal med."
+            "gang og gemmes lokalt. Arealfilteret er slået fra, så alle "
+            "lodsejere får en side; slå det til for at udelade dem der kun "
+            "rager en smule ind i projektet (kræver et projektområde-lag)."
         )
         grp_hint.setWordWrap(True)
         grp_hint.setStyleSheet("color: gray;")
@@ -358,12 +358,15 @@ class AtlasDialog(QDialog):
     def _vaelg_husket_arealfilter(self):
         """Sæt arealfilteret til sidste valg i dette projekt.
 
+        Er der intet husket, er filteret slået FRA – alle lodsejere kommer
+        med, og spinboksen står klar på MIN_AREA_M2, hvis man slår det til.
+
         Grænsen gemmes som hele m² – writeEntry har ingen float-overload i
         PyQGIS, og spinboksen har ingen decimaler, så der tabes intet.
         """
         projekt = QgsProject.instance()
         til, _ok = projekt.readBoolEntry(
-            PROJEKT_SCOPE, PROJEKT_AREALFILTER, True)
+            PROJEKT_SCOPE, PROJEKT_AREALFILTER, False)
         m2, _ok2 = projekt.readNumEntry(
             PROJEKT_SCOPE, PROJEKT_MIN_AREAL, int(MIN_AREA_M2))
         if m2 < self.areal_spin.minimum():
