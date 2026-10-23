@@ -27,6 +27,8 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
     QListWidget,
     QListWidgetItem,
+    QCheckBox,
+    QDoubleSpinBox,
 )
 from qgis.PyQt.QtCore import Qt
 from qgis.core import (
@@ -36,7 +38,8 @@ from qgis.core import (
 from qgis.gui import QgsColorButton
 
 from . import faelles_ui
-from .atlas_builder import STANDARD_FYLD, STANDARD_KANT, STANDARD_OMRAADE
+from .atlas_builder import (MIN_AREA_M2, STANDARD_FYLD, STANDARD_KANT,
+                            STANDARD_OMRAADE)
 from .reference_data import STANDARD_PERIODE, perioder
 from .template_spec import PLACEHOLDERS, postnr_par
 
@@ -49,6 +52,8 @@ AUTO_BACKGROUND_SENTINEL = "__auto_bg__"
 PROJEKT_SCOPE = "Limf_Atlas"
 PROJEKT_EKSTRA_LAG = "ekstra_lag"
 PROJEKT_PERIODE = "reference_periode"
+PROJEKT_AREALFILTER = "arealfilter_til"
+PROJEKT_MIN_AREAL = "arealfilter_m2"
 
 
 class AtlasDialogResult:
@@ -70,6 +75,9 @@ class AtlasDialogResult:
         self.background_layer = None
         #: Referencekortets periode til arealtabellen ("2021-2023"/"2017-2021").
         self.reference_periode = STANDARD_PERIODE
+        #: Mindste areal (m²) i projektgrænsen for at en ejer får en side.
+        #: 0 = intet arealfilter, alle lodsejere kommer med.
+        self.min_area_m2 = MIN_AREA_M2
         #: Projektets lag der skal med i kortene og signaturforklaringen,
         #: top-først som i lagpanelet (fx genslyngning og andre tiltag).
         self.extra_layers = []
@@ -171,6 +179,27 @@ class AtlasDialog(QDialog):
         self._vaelg_husket_periode()
         grp_form.addRow("Referencekort (arealtabel)", self.periode_combo)
 
+        # Arealfilter: til/fra + grænsen. Kræver et projektområde-lag.
+        areal_raekke = QWidget()
+        areal_layout = QHBoxLayout(areal_raekke)
+        areal_layout.setContentsMargins(0, 0, 0, 0)
+        self.arealfilter_box = QCheckBox("Udelad ejere under")
+        self.areal_spin = QDoubleSpinBox()
+        self.areal_spin.setRange(1.0, 1000000.0)
+        self.areal_spin.setDecimals(0)
+        self.areal_spin.setSingleStep(100.0)
+        self.areal_spin.setSuffix(" m²")
+        self.areal_spin.setToolTip(
+            "Arealet måles pr. ejer – alle ejerens matrikler lagt sammen – og "
+            "kun det der ligger inden for projektgrænsen.\n"
+            "1.000 m² = 0,1 ha.")
+        areal_layout.addWidget(self.arealfilter_box)
+        areal_layout.addWidget(self.areal_spin)
+        areal_layout.addStretch(1)
+        self.arealfilter_box.toggled.connect(self.areal_spin.setEnabled)
+        self._vaelg_husket_arealfilter()
+        grp_form.addRow("Arealfilter", areal_raekke)
+
         grp_hint = QLabel(
             "Atlasset får én side pr. ejer; alle ejerens matrikler vises "
             "samlet. Oversigtskortet zoomer til projektområde-laget. "
@@ -178,7 +207,9 @@ class AtlasDialog(QDialog):
             "et bestemt lag. Arealtabellen (omdrift/græs/natur) udfyldes fra "
             "Landbrugsstyrelsens referencekort for den valgte periode – "
             "årstallene står i tabellens overskrift. Hvert kort hentes én "
-            "gang og gemmes lokalt."
+            "gang og gemmes lokalt. Arealfilteret udelader lodsejere der kun "
+            "rager en smule ind i projektet; det kræver et projektområde-lag "
+            "og kan slås fra, hvis alle skal med."
         )
         grp_hint.setWordWrap(True)
         grp_hint.setStyleSheet("color: gray;")
@@ -323,6 +354,30 @@ class AtlasDialog(QDialog):
             i = self.periode_combo.findData(STANDARD_PERIODE)
         if i >= 0:
             self.periode_combo.setCurrentIndex(i)
+
+    def _vaelg_husket_arealfilter(self):
+        """Sæt arealfilteret til sidste valg i dette projekt.
+
+        Grænsen gemmes som hele m² – writeEntry har ingen float-overload i
+        PyQGIS, og spinboksen har ingen decimaler, så der tabes intet.
+        """
+        projekt = QgsProject.instance()
+        til, _ok = projekt.readBoolEntry(
+            PROJEKT_SCOPE, PROJEKT_AREALFILTER, True)
+        m2, _ok2 = projekt.readNumEntry(
+            PROJEKT_SCOPE, PROJEKT_MIN_AREAL, int(MIN_AREA_M2))
+        if m2 < self.areal_spin.minimum():
+            m2 = MIN_AREA_M2
+        self.areal_spin.setValue(m2)
+        self.arealfilter_box.setChecked(til)
+        self.areal_spin.setEnabled(til)
+
+    @staticmethod
+    def _gem_arealfilter(til, m2):
+        """Husk arealfilteret i projektfilen. Grænsen gemmes som hele m²."""
+        projekt = QgsProject.instance()
+        projekt.writeEntry(PROJEKT_SCOPE, PROJEKT_AREALFILTER, bool(til))
+        projekt.writeEntry(PROJEKT_SCOPE, PROJEKT_MIN_AREAL, int(round(m2)))
 
     def _udfyld_ekstra_lag(self):
         """Projektets vektorlag i lagpanelets rækkefølge, med afkrydsning.
@@ -588,6 +643,11 @@ class AtlasDialog(QDialog):
         self._result.reference_periode = periode
         QgsProject.instance().writeEntry(
             PROJEKT_SCOPE, PROJEKT_PERIODE, periode)
+
+        til = self.arealfilter_box.isChecked()
+        m2 = self.areal_spin.value()
+        self._result.min_area_m2 = m2 if til else 0.0
+        self._gem_arealfilter(til, m2)
 
         bg = self.background_combo.currentData()
         if bg == AUTO_BACKGROUND_SENTINEL:

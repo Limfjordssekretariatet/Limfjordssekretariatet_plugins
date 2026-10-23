@@ -109,8 +109,10 @@ COV_ADRESSE = "adresse"
 COV_POSTNR = "postnr"
 COV_LOBENR = "lobenr"
 
-# Mindste matrikel-areal (m²) INDEN FOR projektgrænsen for at en ejer får en
-# atlas-side. 0,1 ha = 1000 m². Ejere derunder udelades.
+# Standardgrænse for mindste matrikel-areal (m²) INDEN FOR projektgrænsen for
+# at en ejer får en atlas-side. 0,1 ha = 1000 m². Brugeren kan ændre grænsen i
+# dialogen eller slå filteret helt fra (0 = ingen grænse), så build() får den
+# med som argument – her står kun standarden.
 MIN_AREA_M2 = 1000.0
 
 # Arealtabellens felter på coverage-laget (matcher skabelonens kolonner).
@@ -150,7 +152,7 @@ class AtlasBuilder:
               project_area_layer=None, background_auto=True,
               background_layer=None, reference_path=None,
               extra_layers=None, reference_field=None,
-              reference_years=None):
+              reference_years=None, min_area_m2=MIN_AREA_M2):
         reference_field = reference_field or REFERENCE_CATEGORY_FIELD
         reference_years = reference_years or REFERENCE_YEARS
         parcel_layer = coverage_layer  # input = matrikellag
@@ -220,11 +222,11 @@ class AtlasBuilder:
         ).format(pf=owner_field, cov=COV_OWNER)
 
         # 2) Byg dissolvet ejer-lag (coverage) + to matrikellag + projektgrænse.
-        #    Kun ejere med ≥ MIN_AREA_HA matrikel-areal INDEN FOR projektgrænsen
+        #    Kun ejere med ≥ min_area_m2 matrikel-areal INDEN FOR projektgrænsen
         #    får en side (kræver et projektgrænse-lag; ellers medtages alle).
         owner_layer = self._build_owner_layer(
             parcel_layer, owner_field, resolved, project_area_layer,
-            reference_layer, reference_field)
+            reference_layer, reference_field, min_area_m2)
         # Hovedkort: geometrien klippes til ejeren via atlas-clipping (tegn alle),
         # men etiketter begrænses til ejerens matrikler (clipping rammer ikke labels).
         # Navnet står i signaturforklaringen.
@@ -369,23 +371,35 @@ class AtlasBuilder:
         if layer.fields().indexFromName(GENERATED_POSTNR_FIELD) < 0:
             raise AtlasBuildError("Kunne ikke generere postnr-felt på laget.")
 
+    @staticmethod
+    def _areal_tekst(m2):
+        """Arealgrænsen som den skal læses af et menneske: ha for de store."""
+        if m2 >= 1000:
+            ha = ("%.2f" % (m2 / 10000.0)).rstrip("0").rstrip(".")
+            return "{} ha".format(ha.replace(".", ",") or "0")
+        return "{:.0f} m²".format(m2)
+
     # --------------------------------------------------- dissolve pr. ejer
     def _build_owner_layer(self, parcel_layer, owner_field, resolved,
                            project_area_layer=None, reference_layer=None,
-                           reference_field=None):
+                           reference_field=None, min_area_m2=MIN_AREA_M2):
         """Byg et midlertidigt lag med én feature pr. ejer.
 
         Geometrien er foreningen (collect) af alle ejerens matrikler, så
         atlas-zoom dækker hele ejendommen. Tekstfelterne tages fra ejerens
         første matrikel (de er ens pr. ejer i lodsejerdata).
 
-        Hvis et projektgrænse-lag er givet, udelades ejere hvis samlede
-        matrikel-areal INDEN FOR projektgrænsen er under MIN_AREA_M2.
+        Er et projektgrænse-lag givet OG ``min_area_m2`` større end 0, udelades
+        ejere hvis samlede matrikel-areal INDEN FOR projektgrænsen er under
+        grænsen. ``min_area_m2 = 0`` (eller intet grænselag) tager alle med.
 
         Er et referencekort givet, beregnes arealtabellens felter pr. ejer
         (Omdrift_ha / Græs_ha; Natur = 0) ud fra matrikel ∩ referencekort,
         afgrænset til projektgrænsen.
         """
+        # 0 eller None = tag alle ejere med, uanset hvor lidt de rager ind.
+        min_area_m2 = max(0.0, float(min_area_m2 or 0.0))
+
         # Projektgrænsens geometri (forening af alle dens features) til at
         # afgøre areal inden for grænsen. None = intet arealfilter.
         boundary = self._boundary_geometry(project_area_layer, parcel_layer)
@@ -456,13 +470,15 @@ class AtlasBuilder:
                 g = geom if geom.isGeosValid() else geom.makeValid()
                 inside = g.intersection(boundary)
 
-            # Arealfilter: kun ejere med ≥ MIN_AREA_M2 inden for projektgrænsen.
-            if boundary is not None:
+            # Arealfilter: kun ejere med ≥ min_area_m2 inden for projektgrænsen.
+            # Er filteret slået fra (0), medtages alle – men arealerne til
+            # tabellen regnes stadig på det der ligger inden for grænsen.
+            if boundary is not None and min_area_m2 > 0:
                 area_inside = inside.area() if inside and not inside.isEmpty() else 0.0
                 if len(out_feats) + skipped < 5:
                     _log("  ejer {!r}: areal i grænse = {:.0f} m²".format(
                         owner_key[:30], area_inside))
-                if area_inside < MIN_AREA_M2:
+                if area_inside < min_area_m2:
                     skipped += 1
                     continue
 
@@ -499,11 +515,21 @@ class AtlasBuilder:
 
         owner_layer.dataProvider().addFeatures(out_feats)
         owner_layer.updateExtents()
-        _log("Ejere: {} medtaget, {} udeladt (<0,1 ha i projektgrænsen)".format(
-            len(out_feats), skipped))
+        if boundary is not None and min_area_m2 > 0:
+            graense = self._areal_tekst(min_area_m2)
+            _log("Ejere: {} medtaget, {} udeladt (<{} i projektgrænsen)".format(
+                len(out_feats), skipped, graense))
+        else:
+            graense = None
+            _log("Ejere: {} medtaget (intet arealfilter)".format(len(out_feats)))
         if owner_layer.featureCount() == 0:
-            raise AtlasBuildError(
-                "Ingen ejere har mindst 0,1 ha inden for projektgrænsen.")
+            if graense:
+                raise AtlasBuildError(
+                    "Ingen ejere har mindst {} inden for projektgrænsen.\n\n"
+                    "Sænk grænsen i dialogen, eller slå arealfilteret fra, "
+                    "hvis alle lodsejere skal med.".format(graense))
+            raise AtlasBuildError("Lodsejerlaget gav ingen ejere at bygge "
+                                  "atlas over.")
         return owner_layer
 
     # ------------------------------------------------ referencekort/arealtabel

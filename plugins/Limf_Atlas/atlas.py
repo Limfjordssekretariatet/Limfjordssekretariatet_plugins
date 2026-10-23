@@ -96,6 +96,7 @@ class AtlasMapbook:
                 reference_path=reference_path,
                 reference_field=kategorifelt(periode),
                 reference_years=periode,
+                min_area_m2=result.min_area_m2,
                 extra_layers=result.extra_layers,
             )
         except AtlasBuildError as exc:
