@@ -56,10 +56,10 @@ def _img_tag(path):
             return '<span style="color:#bbb;font-style:italic;">Foto fejlede</span>'
         # Skaler ned til maks 800 px på den lange side
         if img.width() > 800 or img.height() > 800:
-            img = img.scaled(800, 800, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            img = img.scaled(800, 800, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         ba = QByteArray()
         buf = QBuffer(ba)
-        buf.open(QBuffer.WriteOnly)
+        buf.open(QBuffer.OpenModeFlag.WriteOnly)
         img.save(buf, 'JPEG', 70)   # kvalitet 70 → markant mindre filstørrelse
         data = base64.b64encode(ba.data()).decode()
         return f'<img src="data:image/jpeg;base64,{data}" style="max-width:100%;max-height:180px;">'

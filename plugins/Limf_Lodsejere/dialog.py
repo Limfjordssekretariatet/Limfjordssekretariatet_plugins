@@ -39,7 +39,7 @@ class LodsejerDialog(QDialog):
             adgang_l.addWidget(vejledning)
         adgang_l.addWidget(QLabel('Matriklen API-nøgle:'))
         self.wfs_apikey_edit = QLineEdit()
-        self.wfs_apikey_edit.setEchoMode(QLineEdit.Password)
+        self.wfs_apikey_edit.setEchoMode(QLineEdit.EchoMode.Password)
         adgang_l.addWidget(self.wfs_apikey_edit)
 
         adgang_l.addWidget(QLabel('EJF Client ID:'))
@@ -50,7 +50,7 @@ class LodsejerDialog(QDialog):
 
         adgang_l.addWidget(QLabel('EJF Shared Secret:'))
         self.secret_edit = QLineEdit()
-        self.secret_edit.setEchoMode(QLineEdit.Password)
+        self.secret_edit.setEchoMode(QLineEdit.EchoMode.Password)
         adgang_l.addWidget(self.secret_edit)
 
         vis_layout = QHBoxLayout()
@@ -103,7 +103,7 @@ class LodsejerDialog(QDialog):
         layout.addWidget(self.progress)
 
         self.status_label = QLabel('')
-        self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.status_label)
 
         layout.addStretch(1)
@@ -214,7 +214,7 @@ class LodsejerDialog(QDialog):
         self.cpr_cb.setEnabled(not kun_virksomheder)
 
     def _toggle_secret(self, checked):
-        mode = QLineEdit.Normal if checked else QLineEdit.Password
+        mode = QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
         self.wfs_apikey_edit.setEchoMode(mode)
         self.secret_edit.setEchoMode(mode)
 

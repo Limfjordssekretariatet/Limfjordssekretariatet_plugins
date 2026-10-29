@@ -55,7 +55,7 @@ class TvpDialog(QDialog):
         layout.addWidget(self._hint)
 
         buttons = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -77,7 +77,7 @@ class TvpDialog(QDialog):
         self._list.clear()
         for prof in profiler:
             item = QListWidgetItem(self._label(prof))
-            item.setData(Qt.UserRole, prof)
+            item.setData(Qt.ItemDataRole.UserRole, prof)
             self._list.addItem(item)
         if self._list.count():
             self._list.setCurrentRow(0)
@@ -97,4 +97,4 @@ class TvpDialog(QDialog):
     def selected_profile(self):
         """Returnér den valgte profil-dict, eller None hvis intet er valgt."""
         item = self._list.currentItem()
-        return item.data(Qt.UserRole) if item else None
+        return item.data(Qt.ItemDataRole.UserRole) if item else None

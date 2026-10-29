@@ -24,16 +24,16 @@ class JordproverDialog(QtWidgets.QDialog, FORM_CLASS):
 
     def lav_grid(self):
         dlg = LavGridDialog(self)
-        dlg.exec_()
+        dlg.exec()
 
     def lav_centerpunkter(self):
         dlg = LavCenterpunkterDialog(self)
-        dlg.exec_()
+        dlg.exec()
 
     def klargor_qfield(self):
         dlg = KlargorQFieldDialog(self)
-        dlg.exec_()
+        dlg.exec()
 
     def eksporter_rapport(self):
         dlg = EksporterRapportDialog(self)
-        dlg.exec_()
+        dlg.exec()

@@ -74,12 +74,12 @@ class MainDialog(QDialog):
 
         self._db_label = QLabel()
         self._db_label.setStyleSheet("font-weight: bold;")
-        self._db_label.setSizePolicy(QSizePolicy.Ignored,
-                                     QSizePolicy.Preferred)
+        self._db_label.setSizePolicy(QSizePolicy.Policy.Ignored,
+                                     QSizePolicy.Policy.Preferred)
         indhold.addWidget(self._db_label)
 
         btn_db = self._knap("Vælg database …", self._vaelg_database,
-                            ikon=QStyle.SP_DirOpenIcon)
+                            ikon=QStyle.StandardPixmap.SP_DirOpenIcon)
         indhold.addWidget(btn_db)
 
         # Vises indtil en database/datafil er klar.
@@ -162,7 +162,7 @@ class MainDialog(QDialog):
             "Genindlæs database", on_opdater,
             tip="Genopbygger datafilen fra VASP-databasen, så nye profiler "
                 "kommer med.",
-            ikon=QStyle.SP_BrowserReload, handlingsknap=True)
+            ikon=QStyle.StandardPixmap.SP_BrowserReload, handlingsknap=True)
         raekke.addWidget(btn_opdater)
         raekke.addStretch(1)
 
@@ -211,7 +211,7 @@ class MainDialog(QDialog):
         bredde = max(160, self._db_label.width())
         metrics = QFontMetrics(self._db_label.font())
         self._db_label.setText(
-            metrics.elidedText(tekst, Qt.ElideMiddle, bredde))
+            metrics.elidedText(tekst, Qt.TextElideMode.ElideMiddle, bredde))
 
     def _update_enabled(self):
         """Gråtone handlings-knapperne indtil datafilen (gpkg) er klar."""

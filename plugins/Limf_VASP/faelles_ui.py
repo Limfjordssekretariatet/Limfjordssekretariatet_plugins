@@ -103,7 +103,7 @@ def goer_rulbar(dialog):
     panel = _Rullepanel(dialog)
     panel.setObjectName(RULLEPANEL)
     panel.setWidgetResizable(True)
-    panel.setFrameShape(QFrame.NoFrame)
+    panel.setFrameShape(QFrame.Shape.NoFrame)
     panel.setWidget(indhold)
 
     ydre = QVBoxLayout(dialog)
@@ -160,4 +160,4 @@ def forkort_sti(label, sti, mindst=160):
     bredde = max(mindst, label.width())
     label.setToolTip(sti or "")
     label.setText(metrics.elidedText(
-        sti or "(ingen valgt)", Qt.ElideMiddle, bredde))
+        sti or "(ingen valgt)", Qt.TextElideMode.ElideMiddle, bredde))

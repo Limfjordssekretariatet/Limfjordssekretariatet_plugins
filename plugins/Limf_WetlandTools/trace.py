@@ -132,7 +132,7 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
 
         self.baand_forslag = QgsRubberBand(canvas, QgsWkbTypes.LineGeometry)
         self.baand_forslag.setColor(QColor(255, 140, 0, 200))
-        self.baand_forslag.setLineStyle(Qt.DashLine)
+        self.baand_forslag.setLineStyle(Qt.PenStyle.DashLine)
         self.baand_forslag.setWidth(3)
 
         self.snapmarkering = QgsSnapIndicator(canvas)
@@ -276,7 +276,7 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
 
         omfang = QgsRectangle(behov)
         omfang.scale(self.UDSNIT_MARGIN)
-        QApplication.setOverrideCursor(Qt.WaitCursor)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             ok = self._byg_net(omfang)
         finally:
@@ -485,13 +485,13 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
         punkt = self._afklar_punkt(e)
         self._sidste_punkt = punkt
 
-        if e.button() == Qt.RightButton:
+        if e.button() == Qt.MouseButton.RightButton:
             if self.punkter:
                 self._foelg(punkt)
                 self._laas_spor()
             self._afslut_skitse()
             return
-        if e.button() != Qt.LeftButton:
+        if e.button() != Qt.MouseButton.LeftButton:
             return
 
         if not self.punkter:
@@ -508,17 +508,17 @@ class TraceTool(QgsMapToolAdvancedDigitizing):
 
     def keyPressEvent(self, e):
         tast = e.key()
-        if tast == Qt.Key_Escape:
+        if tast == Qt.Key.Key_Escape:
             self._nulstil_skitse()
             e.ignore()
             return
-        if tast in (Qt.Key_Return, Qt.Key_Enter):
+        if tast in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             if self.punkter:
                 self._laas_spor()
             self._afslut_skitse()
             e.ignore()
             return
-        if tast in (Qt.Key_Backspace, Qt.Key_Delete):
+        if tast in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete):
             if len(self.spor) > 1:
                 # Først det usikre spor efter sidste klik.
                 self.spor = [self.punkter[-1]]

@@ -10,22 +10,28 @@ videregive dem. Se [Licens og kreditering](#licens-og-kreditering).
 
 | Plugin (vises i QGIS) | Version | Beskrivelse |
 |-----------------------|---------|-------------|
-| **Vandprojekter – Jordbund** | 3.2.16 | Håndtering af jordprøver – grid (markkort-baseret), centerpunkter, QField-klargøring og rapporteksport |
-| **Vandprojekter – Vådområder** | 4.0.32 | Diverse GIS-værktøjer (udpeg opland, støttepunkter, jordberegning, terræninterpolation, Trace m.m.) |
-| **Vandprojekter – Dræn** | 0.2.19 | Find drænudløbspunkter baseret på fald og DEM |
-| **Vandprojekter – Lodsejeratlas** | 0.2.18 | Genererer et lodsejer-atlas (mapbook) ud fra en layout-skabelon med auto-mapping af felter, valgfrie tiltagslag og signaturforklaring |
-| **Vandprojekter – Lodsejerudtræk** | 0.1.18 | Henter matrikler og ejeroplysninger for et valgt polygon via Datafordeleren/CVR |
-| **Vandprojekter – VASP** | 1.2.29 | Integration mellem VASP Access-database og QGIS – henter terræn-/profildata ind som lag, flere længdeprofiler ad gangen |
-| **Vandprojekter – N-regneark** | 2.26 | Udfylder kvælstof-regnearket (N) for et vådområdeprojekt: oplande, arealer og tilførsel |
+| **Vandprojekter – Jordbund** | 3.2.17 | Håndtering af jordprøver – grid (markkort-baseret), centerpunkter, QField-klargøring og rapporteksport |
+| **Vandprojekter – Vådområder** | 4.0.33 | Diverse GIS-værktøjer (udpeg opland, støttepunkter, jordberegning, terræninterpolation, Trace m.m.) |
+| **Vandprojekter – Dræn** | 0.2.20 | Find drænudløbspunkter baseret på fald og DEM |
+| **Vandprojekter – Lodsejeratlas** | 0.2.19 | Genererer et lodsejer-atlas (mapbook) ud fra en layout-skabelon med auto-mapping af felter, valgfrie tiltagslag og signaturforklaring |
+| **Vandprojekter – Lodsejerudtræk** | 0.1.19 | Henter matrikler og ejeroplysninger for et valgt polygon via Datafordeleren/CVR |
+| **Vandprojekter – VASP** | 1.2.30 | Integration mellem VASP Access-database og QGIS – henter terræn-/profildata ind som lag, flere længdeprofiler ad gangen |
+| **Vandprojekter – N-regneark** | 2.27 | Udfylder kvælstof-regnearket (N) for et vådområdeprojekt: oplande, arealer og tilførsel |
 
 ---
 
 ## Installation i QGIS
 
-**Kræver QGIS 3.34 eller nyere.** Lodsejeratlas, Lodsejerudtræk og
-N-regneark vises ikke i udvidelseshåndteringen på ældre versioner — QGIS
-skjuler plugins, der kræver en nyere version end den, du kører. De fire
-øvrige (Dræn, Jordbund, VASP, Vådområder) går tilbage til QGIS 3.0.
+**Kræver QGIS 3.34 eller nyere — og virker også i QGIS 4.x.** Lodsejeratlas,
+Lodsejerudtræk og N-regneark vises ikke i udvidelseshåndteringen på ældre
+versioner — QGIS skjuler plugins, der kræver en nyere version end den, du
+kører. De fire øvrige (Dræn, Jordbund, VASP, Vådområder) går tilbage til
+QGIS 3.0.
+
+**Undtagelse: N-regneark kører kun i QGIS 3.x.** Dens hoveddialog crasher
+under Qt6, så den er bevidst holdt på `qgisMaximumVersion=3.99` og vises
+derfor ikke i QGIS 4. De øvrige seks er bygget om til scopede Qt-enums og
+virker i både Qt5 (QGIS 3) og Qt6 (QGIS 4).
 
 ### Trin 1 – Tilføj repository
 

@@ -171,12 +171,12 @@ def sikr(navne, feedback=None, forael=None):
         f'Følgende data mangler og skal hentes: {liste}.\n\n'
         f'Det fylder ca. {i_alt_mb} MB og hentes kun én gang — det gemmes i '
         'QGIS-profilen og overlever en plugin-opdatering.\n\nHent nu?',
-        QMessageBox.Yes | QMessageBox.No)
-    if svar != QMessageBox.Yes:
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+    if svar != QMessageBox.StandardButton.Yes:
         return False
 
     linje = QProgressDialog('Henter referencedata …', 'Annullér', 0, 100, forael)
-    linje.setWindowModality(Qt.WindowModal)
+    linje.setWindowModality(Qt.WindowModality.WindowModal)
     linje.setMinimumDuration(0)
     try:
         for navn in savnede:

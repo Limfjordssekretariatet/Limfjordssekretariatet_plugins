@@ -37,6 +37,16 @@ jobs:
             DESCRIPTION=$(grep '^description=' "$META" | cut -d'=' -f2)
             ABOUT=$(grep '^about='        "$META" | cut -d'=' -f2)
             QGIS_MIN=$(grep '^qgisMinimumVersion=' "$META" | cut -d'=' -f2)
+            # Maksimumversionen SKAL med. Mangler <qgis_maximum_version> i
+            # plugins.xml, sætter QGIS' egen plugin-installer den til
+            # "<major fra min>.99" — altså 3.99 — og så er pluginnet usynligt
+            # i QGIS 4 (installer_data.py: "if not qgisMaximumVersion").
+            QGIS_MAX=$(grep '^qgisMaximumVersion=' "$META" | cut -d'=' -f2)
+            [ -z "$QGIS_MAX" ] && QGIS_MAX="3.99"
+            # Qt6-parathed: QGIS 4.2 filtrerer ikke på den endnu, men
+            # plugins.qgis.org og kommende versioner gør.
+            QT6=$(grep '^supportsQt6=' "$META" | cut -d'=' -f2)
+            [ -z "$QT6" ] && QT6="False"
             # Vist navn = name= fra metadata.txt (falder tilbage til mappenavnet).
             # Mappenavnet ($NAME) bruges fortsat til zip/id, så download-URL og
             # opdateringer ikke knækker.
@@ -71,6 +81,8 @@ jobs:
               <about>${ABOUT}</about>
               <version>${VERSION}</version>
               <qgis_minimum_version>${QGIS_MIN}</qgis_minimum_version>
+              <qgis_maximum_version>${QGIS_MAX}</qgis_maximum_version>
+              <supports_qt6>${QT6}</supports_qt6>
               <homepage>${BASE_URL}</homepage>
               <file_name>${ZIP_NAME}</file_name>
               <icon>icon.png</icon>

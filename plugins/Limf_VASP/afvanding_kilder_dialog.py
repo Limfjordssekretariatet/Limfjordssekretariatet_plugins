@@ -55,7 +55,7 @@ class AfvandingKilderDialog(QDialog):
             "filter eller markerede punkter, bruges kun de punkter."))
 
         self._list = QListWidget()
-        self._list.setSelectionMode(QListWidget.ExtendedSelection)
+        self._list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         layout.addWidget(self._list, 1)
 
         knapper = QHBoxLayout()
@@ -78,7 +78,7 @@ class AfvandingKilderDialog(QDialog):
         layout.addLayout(knapper)
 
         self._buttons = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         self._buttons.accepted.connect(self.accept)
         self._buttons.rejected.connect(self.reject)
         layout.addWidget(self._buttons)
@@ -99,7 +99,7 @@ class AfvandingKilderDialog(QDialog):
             intro="Vælg de vandspejlsberegninger der skal med i "
                   "afvandingen:",
             multi=True)
-        if dlg.exec_() != VspDialog.Accepted:
+        if dlg.exec() != VspDialog.DialogCode.Accepted:
             return
         for calc in dlg.selected_calcs():
             punkter, scenarie = self._hent_vsp_punkter(calc)
@@ -123,7 +123,7 @@ class AfvandingKilderDialog(QDialog):
                 "Der er ingen punktlag i projektet. Indlæs punktfilen med de "
                 "opmålte vandspejl først.")
             return
-        if dlg.exec_() != QDialog.Accepted:
+        if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         lag, felt = dlg.valg()
         if lag is None or not felt:
@@ -150,7 +150,7 @@ class AfvandingKilderDialog(QDialog):
 
     def _opdater_tilstand(self):
         self._btn_fjern.setEnabled(self._list.count() > 0)
-        self._buttons.button(QDialogButtonBox.Ok).setEnabled(
+        self._buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(
             bool(self._kilder))
 
     def valgte_kilder(self):
@@ -194,11 +194,11 @@ class _PunktlagDialog(QDialog):
         self._felt_combo.currentIndexChanged.connect(self._opdater_hint)
 
         buttons = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
-        self._ok = buttons.button(QDialogButtonBox.Ok)
+        self._ok = buttons.button(QDialogButtonBox.StandardButton.Ok)
 
         self._opdater_felter()
         faelles_ui.anvend_stil(self)

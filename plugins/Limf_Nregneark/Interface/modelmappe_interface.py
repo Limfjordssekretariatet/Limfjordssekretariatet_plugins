@@ -247,7 +247,7 @@ class ModelMappeDialog(QtWidgets.QDialog):
         self._opdater_aaben_resultater_knapper()
 
         # Maskér token-feltet (vises som ****) og gem automatisk ved ændring
-        self.lineEditToken.setEchoMode(QLineEdit.Password)
+        self.lineEditToken.setEchoMode(QLineEdit.EchoMode.Password)
         self.lineEditToken.textChanged.connect(self._gem_token)
 
         # Token bruges KUN til WCS-download af højdemodel. Skjul derfor token-
@@ -363,8 +363,8 @@ class ModelMappeDialog(QtWidgets.QDialog):
             'Det rydder valgt mappe/placering, projektnavn, token, '
             'projektområder og valgte højdemodeller.\n\n'
             'Dine filer på disken (resultater, output) slettes IKKE.',
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if svar != QMessageBox.Yes:
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        if svar != QMessageBox.StandardButton.Yes:
             return
 
         from qgis.core import QgsSettings
@@ -556,7 +556,7 @@ class ModelMappeDialog(QtWidgets.QDialog):
             mrk = getattr(self, navn, None)
             if mrk is not None:
                 mrk.setFixedWidth(24)
-                mrk.setAlignment(Qt.AlignCenter)
+                mrk.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
     def _aktiver_kor_eller_vaelg(self):
         """Styler hvert trins knap ens og giver trin-labelen fast bredde, så
@@ -575,7 +575,7 @@ class ModelMappeDialog(QtWidgets.QDialog):
                 _ikon = getattr(self, _navn, None)
                 if isinstance(_ikon, QLabel) and _ikon.text() == '?':
                     _ikon.setFixedSize(18, 18)
-                    _ikon.setAlignment(Qt.AlignCenter)
+                    _ikon.setAlignment(Qt.AlignmentFlag.AlignCenter)
                     _ikon.setStyleSheet(_HJAELP_STIL)
 
         def _fastgoer_label(knap):
@@ -1250,11 +1250,11 @@ class ModelMappeDialog(QtWidgets.QDialog):
             'Download af højdemodel kræver et Dataforsyningen-token.\n\n'
             'Vil du åbne Dataforsyningens token-side i browseren?\n'
             '(Vælg "No" hvis du allerede har et token klar.)',
-            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
-            QMessageBox.Yes)
-        if svar == QMessageBox.Cancel:
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Yes)
+        if svar == QMessageBox.StandardButton.Cancel:
             return False
-        if svar == QMessageBox.Yes:
+        if svar == QMessageBox.StandardButton.Yes:
             self._aaben_dataforsyningen_token()
 
         nyt, ok = QInputDialog.getText(
@@ -1499,7 +1499,7 @@ class ModelMappeDialog(QtWidgets.QDialog):
             'Arbejder… — vent venligst', "Annuller", 0, 0, self
         )
         progress_dialog.setWindowTitle("Kører model")
-        progress_dialog.setWindowModality(Qt.WindowModal)
+        progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
         progress_dialog.setMinimumDuration(0)
         progress_dialog.setAutoClose(False)
         progress_dialog.setAutoReset(False)
@@ -2599,7 +2599,7 @@ class ModelMappeDialog(QtWidgets.QDialog):
 def run():
     """Start dialogen fra QGIS Python-konsol."""
     dialog = ModelMappeDialog()
-    dialog.exec_()
+    dialog.exec()
 
 
 # Kør direkte hvis scriptet eksekveres som __main__ (til test uden QGIS)
@@ -2608,4 +2608,4 @@ if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
     dialog = ModelMappeDialog()
     dialog.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())

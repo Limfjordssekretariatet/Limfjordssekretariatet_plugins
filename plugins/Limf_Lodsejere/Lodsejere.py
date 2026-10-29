@@ -36,7 +36,7 @@ class Lodsejere:
             )
             return
 
-        if sel_dlg.exec_() != QDialog.Accepted:
+        if sel_dlg.exec() != QDialog.DialogCode.Accepted:
             return
 
         geometry = sel_dlg.selected_geometry()
@@ -48,4 +48,4 @@ class Lodsejere:
 
         from .dialog import LodsejerDialog
         dlg = LodsejerDialog(self.iface, geometry, layer.crs())
-        dlg.exec_()
+        dlg.exec()

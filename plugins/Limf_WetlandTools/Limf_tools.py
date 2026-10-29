@@ -196,4 +196,4 @@ class Limfjordssekretariatet_tools:
             self.dlg = Limfjordssekretariatet_toolsDialog(iface=self.iface)
 
         self.dlg.show()
-        self.dlg.exec_()
+        self.dlg.exec()

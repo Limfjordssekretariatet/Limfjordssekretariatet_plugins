@@ -84,7 +84,7 @@ class StoettepunktPanel:
         dialog.setWindowTitle(TITEL)
         # Lukkes panelet, ryddes det væk — næste gang bygges et nyt, så
         # lagvalget og status altid passer med projektet, som det ser ud.
-        dialog.setAttribute(Qt.WA_DeleteOnClose, True)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         dialog.finished.connect(self._lukket)
         layout = QVBoxLayout(dialog)
 
@@ -101,7 +101,7 @@ class StoettepunktPanel:
         layout.addWidget(self._digitaliserboks(dialog))
         layout.addWidget(self._udfyldboks(dialog))
 
-        knapper = QDialogButtonBox(QDialogButtonBox.Close, dialog)
+        knapper = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, dialog)
         knapper.rejected.connect(dialog.close)
         layout.addWidget(knapper)
 

@@ -101,7 +101,7 @@ class ProfileDialog(QDialog):
             self._build_terrain_controls(layout)
 
         buttons = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -129,8 +129,8 @@ class ProfileDialog(QDialog):
         """Husk afkrydsningen, så den overlever en ny søgning."""
         if self._fylder:
             return
-        prof = item.data(Qt.UserRole)
-        if item.checkState() == Qt.Checked:
+        prof = item.data(Qt.ItemDataRole.UserRole)
+        if item.checkState() == Qt.CheckState.Checked:
             self._valgte[prof["lgdid"]] = prof
         else:
             self._valgte.pop(prof["lgdid"], None)
@@ -139,7 +139,7 @@ class ProfileDialog(QDialog):
     def _saet_viste(self, valgt):
         for i in range(self._list.count()):
             self._list.item(i).setCheckState(
-                Qt.Checked if valgt else Qt.Unchecked)
+                Qt.CheckState.Checked if valgt else Qt.CheckState.Unchecked)
 
     def _ryd_valg(self):
         """Ryd alle valg — også dem, søgningen har skjult."""
@@ -205,12 +205,12 @@ class ProfileDialog(QDialog):
                 label = "%s  —  %d punkter  (LGDID %s, projekt %s)" % (
                     prof["navn"], prof["punkter"], prof["lgdid"], prj)
             item = QListWidgetItem(label)
-            item.setData(Qt.UserRole, prof)
+            item.setData(Qt.ItemDataRole.UserRole, prof)
             if self._flere:
-                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
                 item.setCheckState(
-                    Qt.Checked if prof["lgdid"] in self._valgte
-                    else Qt.Unchecked)
+                    Qt.CheckState.Checked if prof["lgdid"] in self._valgte
+                    else Qt.CheckState.Unchecked)
             self._list.addItem(item)
         if self._list.count():
             self._list.setCurrentRow(0)
@@ -236,7 +236,7 @@ class ProfileDialog(QDialog):
     def selected_profile(self):
         """Returnér den valgte profil-dict, eller None hvis intet er valgt."""
         item = self._list.currentItem()
-        return item.data(Qt.UserRole) if item else None
+        return item.data(Qt.ItemDataRole.UserRole) if item else None
 
     def selected_profiles(self):
         """De valgte profiler, i listens rækkefølge.

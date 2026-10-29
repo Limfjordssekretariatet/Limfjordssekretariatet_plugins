@@ -112,7 +112,7 @@ class VaspPlugin:
             on_afvandingsanalyse=self.run_afvandingsanalyse,
             on_oplande_til_vasp=self.run_oplande_til_vasp,
             parent=self.iface.mainWindow())
-        dialog.exec_()
+        dialog.exec()
 
     def run_braend_vandloeb(self):
         """Brænd tværprofiler ned i terrænmodellen.
@@ -139,7 +139,7 @@ class VaspPlugin:
             return
 
         dialog = TvpDialog(profiler, win)
-        if dialog.exec_() != TvpDialog.Accepted:
+        if dialog.exec() != TvpDialog.DialogCode.Accepted:
             return
 
         prof = dialog.selected_profile()
@@ -204,7 +204,7 @@ class VaspPlugin:
             dialog.setObjectName(objekt_navn)
             dialog.show()
             self._fold_avanceret_ind(dialog, flyt)
-            dialog.exec_()
+            dialog.exec()
             dialog.close()
         except Exception as exc:
             QMessageBox.critical(
@@ -341,7 +341,7 @@ class VaspPlugin:
         dialog = ProfileDialog(
             profiles, mode=ProfileDialog.MODE_TERRAIN,
             parent=self.iface.mainWindow())
-        if dialog.exec_() != ProfileDialog.Accepted:
+        if dialog.exec() != ProfileDialog.DialogCode.Accepted:
             return
         prof = dialog.selected_profile()
         if not prof:
@@ -364,7 +364,7 @@ class VaspPlugin:
         dialog = ProfileDialog(
             profiles, mode=ProfileDialog.MODE_PROFILE,
             parent=self.iface.mainWindow())
-        if dialog.exec_() != ProfileDialog.Accepted:
+        if dialog.exec() != ProfileDialog.DialogCode.Accepted:
             return
         valgte = dialog.selected_profiles()
         if not valgte:
@@ -408,7 +408,7 @@ class VaspPlugin:
             return
 
         dialog = GisLineDialog(linjer, win)
-        if dialog.exec_() != GisLineDialog.Accepted:
+        if dialog.exec() != GisLineDialog.DialogCode.Accepted:
             return
         linje = dialog.selected_line()
         if not linje:
@@ -455,7 +455,7 @@ class VaspPlugin:
             return
 
         dialog = VspDialog(calcs, win)
-        if dialog.exec_() != VspDialog.Accepted:
+        if dialog.exec() != VspDialog.DialogCode.Accepted:
             return
         calc = dialog.selected_calc()
         if not calc:
@@ -612,7 +612,7 @@ class VaspPlugin:
                 "VASP", "Kunne ikke hente vandspejlsberegninger: %s" % exc)
 
         dialog = AfvandingKilderDialog(calcs, self._vsp_punkter, win)
-        if dialog.exec_() != AfvandingKilderDialog.Accepted:
+        if dialog.exec() != AfvandingKilderDialog.DialogCode.Accepted:
             return
         kilder = dialog.valgte_kilder()
         if not kilder:
@@ -648,8 +648,8 @@ class VaspPlugin:
                 "fælles vandspejlsflade og hele resultatet forkert. "
                 "Vandspejlene skal høre til samme vandløbssystem."
                 "\n\nFortsæt alligevel?" % (afstand / 1000),
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if svar != QMessageBox.Yes:
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+            if svar != QMessageBox.StandardButton.Yes:
                 return
 
         try:
@@ -872,7 +872,7 @@ class VaspPlugin:
                 win, "VASP", "Beregningen indeholdt ingen scenarier.")
             return None, ""
         dialog = ScenarieDialog(scenarier, calc["navn"], win)
-        if dialog.exec_() != ScenarieDialog.Accepted:
+        if dialog.exec() != ScenarieDialog.DialogCode.Accepted:
             return None, ""
         i = dialog.selected_index()
         if i is None:
@@ -920,7 +920,7 @@ class VaspPlugin:
         if profiles is None:
             return
         dialog = OplandeDialog(profiles, self._centerline_for, parent=win)
-        if dialog.exec_() != OplandeDialog.Accepted:
+        if dialog.exec() != OplandeDialog.DialogCode.Accepted:
             return
         valg = dialog.valg()
         datasaet = valg["datasaet"]
@@ -958,8 +958,8 @@ class VaspPlugin:
             "eksisterende serier bliver ikke rørt.%s"
             % (valg["navn"], len(valg["raekker"]), datasaet["navn"],
                datasaet["hydatid"], noter),
-            QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Yes)
-        return svar == QMessageBox.Yes
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Yes)
+        return svar == QMessageBox.StandardButton.Yes
 
     def run_opdater_data(self):
         """Genopbyg GeoPackagen fra den aktive Access-database.
@@ -973,8 +973,8 @@ class VaspPlugin:
             "Genopbyg datafilen fra VASP-databasen nu?\n\n%s\n\n"
             "Det henter alle profiler (også nye) ind igen og kan tage et "
             "øjeblik. QGIS er optaget imens." % config.db_path(),
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if svar != QMessageBox.Yes:
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        if svar != QMessageBox.StandardButton.Yes:
             return
         if self._rebuild_gpkg(config.db_path()):
             QMessageBox.information(
@@ -1011,7 +1011,7 @@ class VaspPlugin:
             "Bygger datafil fra VASP-databasen …\n"
             "Dette kan tage nogle minutter.", None, 0, 0, win)
         progress.setWindowTitle("VASP")
-        progress.setWindowModality(Qt.WindowModal)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(0)
         progress.setCancelButton(None)   # kan ikke annulleres midt i byg
         progress.show()
@@ -1029,7 +1029,7 @@ class VaspPlugin:
 
         worker.done.connect(_on_done)
         worker.start()
-        loop.exec_()          # holder UI'en i live indtil tråden er færdig
+        loop.exec()          # holder UI'en i live indtil tråden er færdig
         worker.wait()
         progress.close()
 
@@ -1144,7 +1144,7 @@ class VaspPlugin:
         fremdrift = QProgressDialog(
             "Henter længdeprofiler fra VASP …", "Afbryd", 0, len(profs), win)
         fremdrift.setWindowTitle("VASP — importerer")
-        fremdrift.setWindowModality(Qt.WindowModal)
+        fremdrift.setWindowModality(Qt.WindowModality.WindowModal)
         fremdrift.setMinimumDuration(0)
 
         lag, sprunget, punkter_i_alt = [], [], 0
@@ -1332,8 +1332,8 @@ class VaspPlugin:
             "Navn:      %s\n"
             "Database:  %s"
             % (len(points), navn, config.db_path()),
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
-        if svar != QMessageBox.Yes:
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes)
+        if svar != QMessageBox.StandardButton.Yes:
             self.iface.messageBar().pushInfo(
                 "VASP", "Terrænlaget blev ikke skrevet til VASP.")
             return

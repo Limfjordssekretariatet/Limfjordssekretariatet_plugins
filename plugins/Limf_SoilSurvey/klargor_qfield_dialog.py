@@ -69,10 +69,10 @@ class KlargorQFieldDialog(QtWidgets.QDialog, FORM_CLASS):
 
         # Kolonnebredder
         hdr = self.tblFelter.horizontalHeader()
-        hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(1, QHeaderView.Stretch)
-        hdr.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
 
         if self.cboLag.count():
             self._load_fields()
@@ -121,7 +121,7 @@ class KlargorQFieldDialog(QtWidgets.QDialog, FORM_CLASS):
 
             # Feltnavn (ikke redigerbar)
             name_item = QTableWidgetItem(name)
-            name_item.setFlags(Qt.ItemIsEnabled)
+            name_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
             if is_standard:
                 font = name_item.font()
                 font.setBold(True)
@@ -135,17 +135,17 @@ class KlargorQFieldDialog(QtWidgets.QDialog, FORM_CLASS):
             # Medtages: felt er ikke skjult
             included = layer.editorWidgetSetup(row).type() != 'Hidden'
             chk_med = QTableWidgetItem()
-            chk_med.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
-            chk_med.setCheckState(Qt.Checked if included else Qt.Unchecked)
-            chk_med.setTextAlignment(Qt.AlignCenter)
+            chk_med.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
+            chk_med.setCheckState(Qt.CheckState.Checked if included else Qt.CheckState.Unchecked)
+            chk_med.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.tblFelter.setItem(row, 2, chk_med)
 
             # Redigerbar: felt er ikke read-only
             editable = not form_cfg.readOnly(row)
             chk_red = QTableWidgetItem()
-            chk_red.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
-            chk_red.setCheckState(Qt.Checked if editable else Qt.Unchecked)
-            chk_red.setTextAlignment(Qt.AlignCenter)
+            chk_red.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
+            chk_red.setCheckState(Qt.CheckState.Checked if editable else Qt.CheckState.Unchecked)
+            chk_red.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.tblFelter.setItem(row, 3, chk_red)
 
     def kor(self):
@@ -164,8 +164,8 @@ class KlargorQFieldDialog(QtWidgets.QDialog, FORM_CLASS):
         for row in range(self.tblFelter.rowCount()):
             field_name = self.tblFelter.item(row, 0).text()
             new_alias  = self.tblFelter.item(row, 1).text().strip()
-            included   = self.tblFelter.item(row, 2).checkState() == Qt.Checked
-            editable   = self.tblFelter.item(row, 3).checkState() == Qt.Checked
+            included   = self.tblFelter.item(row, 2).checkState() == Qt.CheckState.Checked
+            editable   = self.tblFelter.item(row, 3).checkState() == Qt.CheckState.Checked
 
             idx = fields.indexOf(field_name)
             if idx < 0:

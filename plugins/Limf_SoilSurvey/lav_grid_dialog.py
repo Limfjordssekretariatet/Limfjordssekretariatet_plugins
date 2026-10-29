@@ -275,17 +275,17 @@ class LavGridDialog(QtWidgets.QDialog, FORM_CLASS):
 
         cache_dir = _markkort_cache_dir()
         msg = QMessageBox(self)
-        msg.setIcon(QMessageBox.Question)
+        msg.setIcon(QMessageBox.Icon.Question)
         msg.setWindowTitle('Hent markkort')
         msg.setText(
             'Markkortet skal hentes første gang (ca. 100 MB).\n'
             'Det gemmes lokalt, så det kun hentes én gang.\n\nHent nu?')
-        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        if msg.exec_() != QMessageBox.Yes:
+        msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if msg.exec() != QMessageBox.StandardButton.Yes:
             return False
 
         progress = QProgressDialog('Henter markkort…', 'Annullér', 0, 100, self)
-        progress.setWindowModality(Qt.WindowModal)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(0)
         progress.setValue(0)
         QApplication.processEvents()

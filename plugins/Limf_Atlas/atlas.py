@@ -61,7 +61,7 @@ class AtlasMapbook:
             return
 
         dialog = AtlasDialog(self.iface, parent=self.iface.mainWindow())
-        if not dialog.exec_():
+        if not dialog.exec():
             return  # brugeren annullerede
 
         result = dialog.result()  # AtlasDialogResult

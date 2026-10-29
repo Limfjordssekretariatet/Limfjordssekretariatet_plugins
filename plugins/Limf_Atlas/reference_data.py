@@ -106,19 +106,19 @@ def ensure_reference(parent=None, periode=STANDARD_PERIODE):
     cache_dir = reference_cache_dir(periode)
     url = reference_url(periode)
     msg = QMessageBox(parent)
-    msg.setIcon(QMessageBox.Question)
+    msg.setIcon(QMessageBox.Icon.Question)
     msg.setWindowTitle('Hent referencekort')
     msg.setText(
         'Referencekortet for {} (arealtabel) skal hentes første gang '
         '(ca. {} MB).\nDet gemmes lokalt, så hver periode kun hentes én '
         'gang.\n\nHent nu?'.format(periode, p['mb']))
-    msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-    if msg.exec_() != QMessageBox.Yes:
+    msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+    if msg.exec() != QMessageBox.StandardButton.Yes:
         return None
 
     progress = QProgressDialog('Henter referencekort {}…'.format(periode),
                                'Annullér', 0, 100, parent)
-    progress.setWindowModality(Qt.WindowModal)
+    progress.setWindowModality(Qt.WindowModality.WindowModal)
     progress.setMinimumDuration(0)
     progress.setValue(0)
     QApplication.processEvents()

@@ -48,7 +48,7 @@ def vaerktoejslinje(iface):
     _behold(linje)
     # Kun ikoner: de bærer selv navnet, og teksten ved siden af gjorde blot
     # linjen bred. Navnet står i menuen og i knappens tooltip.
-    linje.setToolButtonStyle(Qt.ToolButtonIconOnly)
+    linje.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
     # QGIS husker ikke plugin-linjers placering, så en ny linje lander sidst
     # i den øverste række. Er rækken fuld, kollapser alle knapperne ned i
     # ">>"-menuen, og linjen ligner ingenting. Et linjeskift giver de seks

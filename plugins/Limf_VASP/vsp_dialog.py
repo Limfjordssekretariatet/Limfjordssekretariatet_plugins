@@ -53,12 +53,12 @@ class VspDialog(QDialog):
         self._list = QListWidget()
         self._list.itemDoubleClicked.connect(lambda _: self.accept())
         if multi:
-            self._list.setSelectionMode(QListWidget.ExtendedSelection)
+            self._list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         layout.addWidget(self._list)
         self._populate(calcs)
 
         buttons = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -79,7 +79,7 @@ class VspDialog(QDialog):
         self._list.clear()
         for c in calcs:
             item = QListWidgetItem(self._label(c))
-            item.setData(Qt.UserRole, c)
+            item.setData(Qt.ItemDataRole.UserRole, c)
             self._list.addItem(item)
         if self._list.count():
             self._list.setCurrentRow(0)
@@ -100,12 +100,12 @@ class VspDialog(QDialog):
     def selected_calc(self):
         """Returnér den valgte beregnings-dict, eller None."""
         item = self._list.currentItem()
-        return item.data(Qt.UserRole) if item else None
+        return item.data(Qt.ItemDataRole.UserRole) if item else None
 
     def selected_calcs(self):
         """Returnér de valgte beregnings-dicts (multi=True), i listens
         rækkefølge. Tom liste hvis intet er valgt."""
-        return [self._list.item(i).data(Qt.UserRole)
+        return [self._list.item(i).data(Qt.ItemDataRole.UserRole)
                 for i in range(self._list.count())
                 if self._list.item(i).isSelected()]
 
@@ -129,14 +129,14 @@ class ScenarieDialog(QDialog):
             navn = (scen.get("navn") or "").strip() or "Scenarie %d" % (i + 1)
             item = QListWidgetItem(
                 "%s  —  %d punkter" % (navn, len(scen.get("points") or [])))
-            item.setData(Qt.UserRole, i)
+            item.setData(Qt.ItemDataRole.UserRole, i)
             self._list.addItem(item)
         if self._list.count():
             self._list.setCurrentRow(0)
         layout.addWidget(self._list)
 
         buttons = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -146,4 +146,4 @@ class ScenarieDialog(QDialog):
     def selected_index(self):
         """Returnér indekset på det valgte scenarie, eller None."""
         item = self._list.currentItem()
-        return item.data(Qt.UserRole) if item else None
+        return item.data(Qt.ItemDataRole.UserRole) if item else None

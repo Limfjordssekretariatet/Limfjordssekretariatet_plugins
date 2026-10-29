@@ -284,10 +284,10 @@ class AtlasDialog(QDialog):
 
         # --- Knapper ---------------------------------------------------
         self.buttons = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
-        self.buttons.button(QDialogButtonBox.Ok).setText("Byg atlas")
-        self.buttons.button(QDialogButtonBox.Cancel).setText("Annullér")
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Byg atlas")
+        self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Annullér")
         self.buttons.accepted.connect(self._on_accept)
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
@@ -397,10 +397,10 @@ class AtlasDialog(QDialog):
             if not isinstance(lyr, QgsVectorLayer) or not lyr.isValid():
                 continue
             element = QListWidgetItem(lyr.name())
-            element.setData(Qt.UserRole, lyr.id())
-            element.setFlags(element.flags() | Qt.ItemIsUserCheckable)
+            element.setData(Qt.ItemDataRole.UserRole, lyr.id())
+            element.setFlags(element.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             element.setCheckState(
-                Qt.Checked if lyr.id() in husket else Qt.Unchecked)
+                Qt.CheckState.Checked if lyr.id() in husket else Qt.CheckState.Unchecked)
             if not knude.isVisible():
                 element.setToolTip("Laget er slukket i kortet lige nu, men "
                                    "kommer med i atlasset, hvis det er valgt.")
@@ -417,9 +417,9 @@ class AtlasDialog(QDialog):
         lag = []
         for i in range(self.ekstra_liste.count()):
             element = self.ekstra_liste.item(i)
-            if element.checkState() != Qt.Checked:
+            if element.checkState() != Qt.CheckState.Checked:
                 continue
-            lyr = projekt.mapLayer(element.data(Qt.UserRole))
+            lyr = projekt.mapLayer(element.data(Qt.ItemDataRole.UserRole))
             if lyr is not None and lyr.id() not in udelad:
                 lag.append(lyr)
         return lag
@@ -636,9 +636,9 @@ class AtlasDialog(QDialog):
 
         self._result.extra_layers = self._valgte_ekstra_lag()
         valgte_id = [
-            self.ekstra_liste.item(i).data(Qt.UserRole)
+            self.ekstra_liste.item(i).data(Qt.ItemDataRole.UserRole)
             for i in range(self.ekstra_liste.count())
-            if self.ekstra_liste.item(i).checkState() == Qt.Checked]
+            if self.ekstra_liste.item(i).checkState() == Qt.CheckState.Checked]
         QgsProject.instance().writeEntry(
             PROJEKT_SCOPE, PROJEKT_EKSTRA_LAG, valgte_id)
 

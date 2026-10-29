@@ -81,9 +81,9 @@ class OplandeDialog(QDialog):
         layout.addWidget(self._serieboks())
         layout.addWidget(self._tabelboks(), 1)
 
-        self._knapper = QDialogButtonBox(QDialogButtonBox.Cancel)
+        self._knapper = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
         self._skriv = self._knapper.addButton(
-            "Skriv til VASP", QDialogButtonBox.AcceptRole)
+            "Skriv til VASP", QDialogButtonBox.ButtonRole.AcceptRole)
         self._skriv.setEnabled(False)
         self._knapper.accepted.connect(self.accept)
         self._knapper.rejected.connect(self.reject)
@@ -208,11 +208,11 @@ class OplandeDialog(QDialog):
         self._tabel.setHorizontalHeaderLabels(
             ["Station [m]", "Opland [km²]", "Bemærkning"])
         self._tabel.verticalHeader().setVisible(False)
-        self._tabel.setEditTriggers(QTableWidget.NoEditTriggers)
+        self._tabel.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         hoved = self._tabel.horizontalHeader()
-        hoved.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        hoved.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        hoved.setSectionResizeMode(2, QHeaderView.Stretch)
+        hoved.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        hoved.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        hoved.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         ind.addWidget(self._tabel, 1)
 
         self._besked = QLabel()
@@ -334,7 +334,7 @@ class OplandeDialog(QDialog):
             titel="Vælg vandløb — stationeringen kommer herfra",
             intro="Vælg det længdeprofil, oplandene skal stationeres på. "
                   "Stationerne i tabellen bliver VASP's egne.")
-        if dialog.exec_() != QDialog.Accepted:
+        if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         prof = dialog.selected_profile()
         if not prof:
@@ -537,7 +537,7 @@ class OplandeDialog(QDialog):
                                         tekst)):
                 celle = QTableWidgetItem(vaerdi)
                 if j < 2:
-                    celle.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    celle.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self._tabel.setItem(i, j, celle)
         beskeder = []
         if self._raekker:
