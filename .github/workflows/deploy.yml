@@ -70,6 +70,27 @@ jobs:
             # Licensteksten skal med i hver zip: et installeret plugin ligger
             # for sig selv i QGIS-profilen, uden adgang til repoets rod.
             cp LICENSE "dist_tmp/$NAME/LICENSE"
+
+            # Vådområders "Grid til LER" søger langs AIS-vandløbene. Filen
+            # ligger ÉT sted i repoet (N-regnearkets Grunddata), så de to
+            # plugins ikke kan komme til at regne på hver sin udgave — men
+            # den skal med i BEGGE zip: N-regnearket kan ikke installeres i
+            # QGIS 4, og så ville Vådområder ikke kunne finde vandløbene der.
+            if [ "$NAME" = "Limf_WetlandTools" ]; then
+              AIS="plugins/Limf_Nregneark/Grunddata/Vandloeb_AIS"
+              if [ -d "$AIS" ]; then
+                mkdir -p "dist_tmp/$NAME/Grunddata/Vandloeb_AIS"
+                # Kun det shapefilen behøver — ikke ESRI-indeksene (.sbn/.sbx)
+                for EXT in shp shx dbf prj cpg; do
+                  cp "$AIS"/*."$EXT" \
+                     "dist_tmp/$NAME/Grunddata/Vandloeb_AIS/" 2>/dev/null || true
+                done
+                AIS_MB=$(du -sm "dist_tmp/$NAME/Grunddata/Vandloeb_AIS" | cut -f1)
+                echo "  AIS-vandløb lagt i $NAME-zippen (${AIS_MB} MB)"
+              else
+                echo "::warning::$AIS mangler — Grid til LER får ingen vandløb"
+              fi
+            fi
             cd dist_tmp
             zip -r "../dist/${ZIP_NAME}" "$NAME/"
             cd ..

@@ -5,3 +5,7 @@ __pycache__/
 dist/
 build/
 *.zip
+
+# AIS-vandloebene lægges i zippen af deploy'et fra N-regnearkets
+# Grunddata — de maa ikke committes her som en anden kopi.
+Grunddata/

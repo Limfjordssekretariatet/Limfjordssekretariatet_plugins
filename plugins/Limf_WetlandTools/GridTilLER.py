@@ -14,21 +14,29 @@ from qgis.core import (
 )
 import processing
 
-#: Vandløbsnetværket ligger i N-regnearkets Grunddata — samme kilde som
-#: "Udpeg opland" bruger, så de to værktøjer ikke kan komme til at regne på
-#: hver sin udgave af vandløbene.
+#: AIS-vandløbene, som de ligger under et plugins Grunddata-mappe.
 VANDLOEB_REL = os.path.join('Grunddata', 'Vandloeb_AIS',
                             'AIS_Jylland_med_inspire_geometri.shp')
+ROD = os.path.dirname(os.path.realpath(__file__))
 
 
 def vandloeb_standard():
     """Stien til AIS-vandløbene, eller None hvis de ikke er der.
+
+    Filen ligger ÉT sted i repoet (N-regnearkets Grunddata), men lægges af
+    deploy'et med i begge plugin-zip. Derfor ses der først i pluginnets egen
+    Grunddata-mappe — det er den der er med i zippen og den eneste der
+    findes i QGIS 4, hvor N-regnearket ikke kan installeres — og dernæst hos
+    N-regnearket, som er tilfældet når man kører direkte fra repoet.
 
     En sti der peger på noget der ikke findes, må ikke blive stående i
     dialogen og lyve: QGIS afviser den med "Incorrect parameter value",
     længe før koden når at forklare hvad der mangler. Et tomt felt er
     ærligt — vandløbene er valgfrie her.
     """
+    egen = os.path.join(ROD, VANDLOEB_REL)
+    if os.path.isfile(egen):
+        return egen
     try:
         from .udpeg_opland.algoritme import nregneark_mappe
         rod = nregneark_mappe()
