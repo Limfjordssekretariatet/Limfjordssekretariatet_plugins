@@ -13,7 +13,7 @@
     <icon>icon.png</icon>
     <author_name>Henrik Rosenskjold, Limfjordsrådets sekretariat</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_Atlas.zip</download_url>
-    <update_date>2026-11-02T09:36:24Z</update_date>
+    <update_date>2026-11-02T10:08:26Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
@@ -31,7 +31,7 @@
     <icon>icon.png</icon>
     <author_name>Henrik Rosenskjold, Limfjordsrådets sekretariat</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_DrainOutletAnalysis.zip</download_url>
-    <update_date>2026-11-02T09:36:24Z</update_date>
+    <update_date>2026-11-02T10:08:26Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
@@ -49,7 +49,7 @@
     <icon>icon.png</icon>
     <author_name>Henrik Rosenskjold, Limfjordsrådets sekretariat</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_Lodsejere.zip</download_url>
-    <update_date>2026-11-02T09:36:24Z</update_date>
+    <update_date>2026-11-02T10:08:26Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
@@ -67,7 +67,7 @@
     <icon>icon.png</icon>
     <author_name>Henrik Rosenskjold, Limfjordsrådets sekretariat</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_Nregneark.zip</download_url>
-    <update_date>2026-11-02T09:36:24Z</update_date>
+    <update_date>2026-11-02T10:08:27Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
@@ -85,7 +85,7 @@
     <icon>icon.png</icon>
     <author_name>Henrik Rosenskjold, Limfjordsrådets sekretariat</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_SoilSurvey.zip</download_url>
-    <update_date>2026-11-02T09:36:26Z</update_date>
+    <update_date>2026-11-02T10:08:28Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
@@ -103,16 +103,16 @@
     <icon>icon.png</icon>
     <author_name>Henrik Rosenskjold, Limfjordsrådets sekretariat</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_VASP.zip</download_url>
-    <update_date>2026-11-02T09:36:26Z</update_date>
+    <update_date>2026-11-02T10:08:28Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
     <repository>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins</repository>
   </pyqgis_plugin>
-  <pyqgis_plugin name="Vandprojekter – Vådområder" version="4.0.34">
+  <pyqgis_plugin name="Vandprojekter – Vådområder" version="4.0.35">
     <description>Værktøjer til vådområde- og lavbundsprojekter: afvanding, terræn og jordberegning</description>
     <about>Samling af værktøjer til vådområde- og lavbundsprojekter: støttepunkter til afvandingsanalysen, udpegning af opland (til et område, et punkt eller et punktlag — kræver N-regneark), terrænbearbejdning, grid til LER, jordberegning og Trace-tegneredskabet.</about>
-    <version>4.0.34</version>
+    <version>4.0.35</version>
     <qgis_minimum_version>3.0</qgis_minimum_version>
     <qgis_maximum_version>4.99</qgis_maximum_version>
     <supports_qt6>True</supports_qt6>
@@ -121,7 +121,7 @@
     <icon>icon.png</icon>
     <author_name>Henrik Rosenskjold, Limfjordsrådets sekretariat</author_name>
     <download_url>https://Limfjordssekretariatet.github.io/Limfjordssekretariatet_plugins/Limf_WetlandTools.zip</download_url>
-    <update_date>2026-11-02T09:36:26Z</update_date>
+    <update_date>2026-11-02T10:08:28Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <tracker>https://github.com/Limfjordssekretariatet/Limfjordssekretariatet_plugins/issues</tracker>
