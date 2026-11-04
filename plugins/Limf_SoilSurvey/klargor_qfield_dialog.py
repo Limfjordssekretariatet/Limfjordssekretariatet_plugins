@@ -54,6 +54,10 @@ STANDARD_FIELDS = [
 
 STANDARD_NAMES = {f[0] for f in STANDARD_FIELDS}
 
+#: Markerer en tabelrække for et standardfelt laget endnu ikke har. Feltet
+#: tilføjes først når man trykker Kør — se _load_fields().
+MANGLER = -1
+
 
 from . import faelles_ui
 
@@ -89,29 +93,24 @@ class KlargorQFieldDialog(QtWidgets.QDialog, FORM_CLASS):
         return QgsProject.instance().mapLayer(layer_id) if layer_id else None
 
     def _load_fields(self):
+        """Vis lagets felter. LÆSER KUN — laget må ikke ændres herfra.
+
+        Funktionen kører både når dialogen åbner og hver gang man skifter lag
+        i rullelisten. Tilføjede den felter (som den gjorde før), blev laget
+        ændret uden at nogen havde trykket på Kør — og et kig i rullelisten
+        ændrede hvert lag man kiggede på. Manglende standardfelter vises
+        derfor blot som kursive rækker; de oprettes i kor().
+        """
         layer = self._current_layer()
         if not layer:
             self.tblFelter.setRowCount(0)
             return
 
-        # Tilføj manglende standardfelter til laget
-        existing = [f.name() for f in layer.fields()]
-        new_fields = []
-        for name, vtype, alias, _, _ in STANDARD_FIELDS:
-            if name not in existing:
-                f = QgsField(name, vtype)
-                f.setAlias(alias)
-                new_fields.append(f)
-        if new_fields:
-            layer.startEditing()
-            for f in new_fields:
-                layer.addAttribute(f)
-            layer.commitChanges()
-
         # Byg tabellen
         form_cfg = layer.editFormConfig()
         fields = layer.fields()
-        self.tblFelter.setRowCount(fields.count())
+        mangler = [s for s in STANDARD_FIELDS if fields.indexOf(s[0]) < 0]
+        self.tblFelter.setRowCount(fields.count() + len(mangler))
 
         for row in range(fields.count()):
             field = fields.field(row)
@@ -119,9 +118,12 @@ class KlargorQFieldDialog(QtWidgets.QDialog, FORM_CLASS):
             alias = field.alias() or name
             is_standard = name in STANDARD_NAMES
 
-            # Feltnavn (ikke redigerbar)
+            # Feltnavn (ikke redigerbar). Feltindekset gemmes paa raekken, saa
+            # kor() ikke behoever at regne med at raekke == feltindeks — det
+            # holder ikke, naar der ligger raekker for felter laget ikke har.
             name_item = QTableWidgetItem(name)
             name_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            name_item.setData(Qt.ItemDataRole.UserRole, row)
             if is_standard:
                 font = name_item.font()
                 font.setBold(True)
@@ -148,12 +150,78 @@ class KlargorQFieldDialog(QtWidgets.QDialog, FORM_CLASS):
             chk_red.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.tblFelter.setItem(row, 3, chk_red)
 
+        # Standardfelter laget mangler: vist i kursiv som "tilfoejes naar du
+        # trykker Koer". Fjern fluebenet i Medtages, hvis et af dem ikke skal
+        # oprettes.
+        for i, (navn, _vtype, alias, _w, _c) in enumerate(mangler):
+            row = fields.count() + i
+            name_item = QTableWidgetItem(navn)
+            name_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            name_item.setData(Qt.ItemDataRole.UserRole, MANGLER)
+            font = name_item.font()
+            font.setBold(True)
+            font.setItalic(True)
+            name_item.setFont(font)
+            name_item.setToolTip(
+                'Standardfeltet mangler i laget. Det oprettes, når du '
+                'trykker Kør — ikke før.')
+            self.tblFelter.setItem(row, 0, name_item)
+
+            alias_item = QTableWidgetItem(alias)
+            self.tblFelter.setItem(row, 1, alias_item)
+
+            for col in (2, 3):
+                chk = QTableWidgetItem()
+                chk.setFlags(Qt.ItemFlag.ItemIsEnabled
+                             | Qt.ItemFlag.ItemIsUserCheckable)
+                chk.setCheckState(Qt.CheckState.Checked)
+                chk.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.tblFelter.setItem(row, col, chk)
+
+    def _opret_manglende_felter(self, layer):
+        """Opret de afkrydsede standardfelter laget mangler. -> True hvis ok.
+
+        Her — og kun her — ændres lagets skema. Kaldes fra kor().
+        """
+        nye = []
+        for row in range(self.tblFelter.rowCount()):
+            navn_item = self.tblFelter.item(row, 0)
+            if navn_item is None or navn_item.data(
+                    Qt.ItemDataRole.UserRole) != MANGLER:
+                continue
+            if self.tblFelter.item(row, 2).checkState() != Qt.CheckState.Checked:
+                continue    # fravalgt — opret det slet ikke
+            std = next((s for s in STANDARD_FIELDS
+                        if s[0] == navn_item.text()), None)
+            if std is None:
+                continue
+            f = QgsField(std[0], std[1])
+            f.setAlias(std[2])
+            nye.append(f)
+        if not nye:
+            return True
+        layer.startEditing()
+        for f in nye:
+            layer.addAttribute(f)
+        if not layer.commitChanges():
+            QMessageBox.critical(
+                self, 'Fejl',
+                'Kunne ikke tilføje standardfelterne til "%s":\n%s'
+                % (layer.name(), '\n'.join(layer.commitErrors())))
+            return False
+        return True
+
     def kor(self):
         layer = self._current_layer()
         if not layer:
             QMessageBox.warning(self, 'Fejl', 'Vælg et lag.')
             return
 
+        # Først her ændres laget: standardfelterne oprettes.
+        if not self._opret_manglende_felter(layer):
+            return
+
+        # Hentes EFTER oprettelsen, så de nye felter er med.
         form_cfg = layer.editFormConfig()
         fields = layer.fields()
 
