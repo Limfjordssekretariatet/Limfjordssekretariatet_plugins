@@ -383,8 +383,22 @@ class KlargorQFieldDialog(QtWidgets.QDialog, FORM_CLASS):
             sym_ikke    = QgsMarkerSymbol.createSimple({'color': '#e74c3c', 'outline_color': '#922b21', 'size': '3'})
             sym_udtaget = QgsMarkerSymbol.createSimple({'color': '#2ecc71', 'outline_color': '#1a7a43', 'size': '3'})
 
+        # Opsamlingskategori. UDEN den faar et objekt med en status der ikke
+        # er præcis en af de to INTET symbol — og saa tegnes det slet ikke.
+        # Et punkt der forsvinder fra kortet er det værste der kan ske her:
+        # man tror prøven ikke findes. Grå, saa det ogsaa er til at se at
+        # statussen er noget uventet.
+        if geom_type == QgsWkbTypes.PolygonGeometry:
+            sym_andet = QgsFillSymbol.createSimple(
+                {'color': '#bdc3c7', 'outline_color': '#7f8c8d',
+                 'outline_width': '0.4'})
+        else:
+            sym_andet = QgsMarkerSymbol.createSimple(
+                {'color': '#bdc3c7', 'outline_color': '#7f8c8d', 'size': '3'})
+
         categories = [
             QgsRendererCategory(VAL_IKKE,    sym_ikke,    VAL_IKKE),
             QgsRendererCategory(VAL_UDTAGET, sym_udtaget, VAL_UDTAGET),
+            QgsRendererCategory('', sym_andet, 'Anden/ukendt status', True),
         ]
         layer.setRenderer(QgsCategorizedSymbolRenderer(STATUS_FIELD, categories))
