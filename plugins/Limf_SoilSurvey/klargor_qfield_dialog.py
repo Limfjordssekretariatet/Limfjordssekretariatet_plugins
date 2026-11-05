@@ -56,7 +56,13 @@ STANDARD_FIELDS = [
     ('lag 4 type',  QVariant.String,  'Lag 4 jordtype',  'ValueMap',        {'map': [{v: v} for v in JORDTYPE_VALG]}),
     ('lag 5',       QVariant.String,  'Lag 5 (cm)',      'TextEdit',        {}),
     ('lag 5 type',  QVariant.String,  'Lag 5 jordtype',  'ValueMap',        {'map': [{v: v} for v in JORDTYPE_VALG]}),
-    ('comment',     QVariant.String,  'Kommentar',       'TextEdit',        {}),
+    # Begge bemærkningsfelter er flerlinjede (IsMultiline), så der er plads
+    # til at skrive i QField i stedet for én smal linje.
+    ('comment',     QVariant.String,  'Kommentar',       'TextEdit',        {'IsMultiline': True}),
+    # 'intern' kommer IKKE på rapporten: eksporter_rapport_dialog plukker
+    # felterne ved navn (lag 1-5, comment, Vol.lgd, Perm., VSP, Foto), og
+    # 'intern' står ikke på listen. Her kan man skrive til sig selv.
+    ('intern',      QVariant.String,  'Intern bemærkning (ikke i rapport)', 'TextEdit', {'IsMultiline': True}),
 ]
 
 STANDARD_NAMES = {f[0] for f in STANDARD_FIELDS}
