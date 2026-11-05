@@ -2,13 +2,20 @@ import os
 from qgis.PyQt import uic, QtWidgets
 from qgis.PyQt.QtCore import QVariant, Qt
 from qgis.PyQt.QtWidgets import QMessageBox, QTableWidgetItem, QHeaderView
+from qgis.PyQt.QtGui import QColor, QFont
 from qgis.core import (
+    Qgis,
     QgsProject, QgsField, QgsWkbTypes,
     QgsEditorWidgetSetup, QgsDefaultValue,
     QgsCategorizedSymbolRenderer,
     QgsRendererCategory,
     QgsFillSymbol,
     QgsMarkerSymbol,
+    QgsMapLayer,
+    QgsPalLayerSettings,
+    QgsTextBufferSettings,
+    QgsTextFormat,
+    QgsVectorLayerSimpleLabeling,
 )
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(os.path.dirname(__file__), 'klargor_qfield_dialog.ui'))
@@ -57,6 +64,9 @@ STANDARD_NAMES = {f[0] for f in STANDARD_FIELDS}
 #: Markerer en tabelrække for et standardfelt laget endnu ikke har. Feltet
 #: tilføjes først når man trykker Kør — se _load_fields().
 MANGLER = -1
+
+#: Feltet der skrives som label på prøvepunkterne — grid-nummeret.
+LABEL_FIELD = 'id'
 
 
 from . import faelles_ui
@@ -274,12 +284,89 @@ class KlargorQFieldDialog(QtWidgets.QDialog, FORM_CLASS):
 
         # Farverenderer
         self._apply_renderer(layer)
+
+        # Labels på prøvepunkterne — nummeret skal kunne læses i marken.
+        label_felt = self._saet_labels_paa_punkter(layer)
+
+        # Fladerne skal ikke kunne tappes i QField, kun punkterne.
+        uvalgbare = self._gor_flader_uvalgbare()
+
         layer.triggerRepaint()
         QgsProject.instance().setDirty(True)
 
-        QMessageBox.information(self, 'Klargøring færdig',
-                                f'"{layer.name()}" er nu klar til QField.')
+        linjer = [f'"{layer.name()}" er nu klar til QField.']
+        if label_felt:
+            linjer.append(f'\nLabels sat med feltet "{label_felt}".')
+        elif layer.geometryType() == QgsWkbTypes.PointGeometry:
+            linjer.append(f'\nIngen labels: laget har intet "{LABEL_FIELD}"-felt.')
+        if uvalgbare:
+            linjer.append('\nFladelag gjort uvalgbare (ingen pop-up i QField):')
+            linjer.extend(f'  • {n}' for n in uvalgbare)
+        QMessageBox.information(self, 'Klargøring færdig', '\n'.join(linjer))
         self.accept()
+
+    @staticmethod
+    def _gor_flader_uvalgbare():
+        """Slå Identifiable fra på alle fladelag i projektet.
+
+        QField bruger samme flag som QGIS: er et lag ikke identificerbart,
+        kan man hverken tappe det eller få feature-formularen op. Det er
+        netop det man vil for markerne/gridfladerne — de er baggrund, og man
+        skal ikke kunne komme til at ramme dem i stedet for prøvepunktet.
+        Punktlag røres ikke; det er dem prøverne registreres på.
+
+        Returnerer navnene på de lag der blev ændret.
+        """
+        aendrede = []
+        for lag in QgsProject.instance().mapLayers().values():
+            if lag.type() != lag.VectorLayer:
+                continue
+            if lag.geometryType() != QgsWkbTypes.PolygonGeometry:
+                continue
+            flag = lag.flags()
+            if not (flag & QgsMapLayer.LayerFlag.Identifiable):
+                continue        # allerede uvalgbart
+            lag.setFlags(QgsMapLayer.LayerFlags(
+                int(flag) & ~int(QgsMapLayer.LayerFlag.Identifiable)))
+            aendrede.append(lag.name())
+        return aendrede
+
+    @staticmethod
+    def _saet_labels_paa_punkter(layer):
+        """Labels med grid-nummeret på prøvepunkterne.
+
+        Labels følger med over i QField, så nummeret kan læses i marken
+        uden at åbne noget. Omrids om teksten, så den kan læses oven på et
+        ortofoto. Kun punktlag — fladerne får ingen labels.
+
+        Returnerer feltnavnet der blev brugt, eller None.
+        """
+        if layer.geometryType() != QgsWkbTypes.PointGeometry:
+            return None
+        if layer.fields().indexOf(LABEL_FIELD) < 0:
+            return None
+
+        font = QFont('Arial', 10)
+        font.setBold(True)
+        txt = QgsTextFormat()
+        txt.setFont(font)
+        txt.setSize(10)
+        txt.setColor(QColor('#000000'))
+        omrids = QgsTextBufferSettings()
+        omrids.setEnabled(True)
+        omrids.setSize(1.0)
+        omrids.setColor(QColor('#ffffff'))
+        txt.setBuffer(omrids)
+
+        opsaetning = QgsPalLayerSettings()
+        opsaetning.fieldName = LABEL_FIELD
+        opsaetning.placement = Qgis.LabelPlacement.AroundPoint
+        opsaetning.dist = 2.0
+        opsaetning.setFormat(txt)
+
+        layer.setLabeling(QgsVectorLayerSimpleLabeling(opsaetning))
+        layer.setLabelsEnabled(True)
+        return LABEL_FIELD
 
     def _apply_renderer(self, layer):
         geom_type = layer.geometryType()
