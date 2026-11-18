@@ -12,7 +12,10 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
-$conn = New-Object System.Data.OleDb.OleDbConnection "Provider=Microsoft.ACE.OLEDB.12.0;Data Source=$Mdb;"
+. (Join-Path $PSScriptRoot "access_provider.ps1")
+$prov = Get-AccessProvider $Mdb
+Write-Host "Access-driver: $prov"
+$conn = New-Object System.Data.OleDb.OleDbConnection "Provider=$prov;Data Source=$Mdb;"
 $conn.Open()
 
 function Export-Query($sql, $outFile, $header) {

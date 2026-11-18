@@ -36,14 +36,19 @@ Write-Host "=== VASP: genopbygger GeoPackage ==="
 # ACE-driveren findes kun i én arkitektur ad gangen, og hvilken afhænger af,
 # om Office er 32- eller 64-bit. Vi spørger derfor begge PowerShell-udgaver,
 # hvilken der har provideren registreret, i stedet for at gætte på 32-bit.
-function Find-AccessPowerShell {
+# Uden ACE (ingen Office) bruges Windows' indbyggede Jet 4.0, som kun findes
+# i 32-bit og kun kan læse .mdb - det rækker til VASP-databasen.
+# Selve valget af provider sker i dump_access.ps1 (access_provider.ps1).
+function Find-AccessPowerShell([string]$Mdb) {
     $kandidater = @(
         @{ navn = "64-bit"; sti = "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" },
         @{ navn = "32-bit"; sti = "$env:WINDIR\SysWOW64\WindowsPowerShell\v1.0\powershell.exe" }
     )
     $test = '(New-Object System.Data.OleDb.OleDbEnumerator).GetElements() | ' +
             'Select-Object -ExpandProperty SOURCES_NAME'
+    $erAccdb = [System.IO.Path]::GetExtension($Mdb) -ieq ".accdb"
     $undersoegt = @()
+    $jet = $null
     foreach ($k in $kandidater) {
         if (-not (Test-Path $k.sti)) { continue }
         $undersoegt += $k.navn
@@ -52,17 +57,22 @@ function Find-AccessPowerShell {
         if ($ace) {
             return @{ navn = $k.navn
                       sti = $k.sti
-                      provider = ($ace | Select-Object -First 1) }
+                      provider = ($ace | Sort-Object -Descending | Select-Object -First 1) }
+        }
+        if (-not $jet -and -not $erAccdb -and ($providere -contains "Microsoft.Jet.OLEDB.4.0")) {
+            $jet = @{ navn = $k.navn; sti = $k.sti; provider = "Microsoft.Jet.OLEDB.4.0" }
         }
     }
-    throw ("Access-driveren (Microsoft.ACE.OLEDB) er ikke installeret paa " +
-           "denne maskine - hverken 32- eller 64-bit (undersoegt: " +
+    if ($jet) { return $jet }
+    $hint = if ($erAccdb) { " (.accdb kraever ACE; Jet 4.0 kan kun laese .mdb)" } else { "" }
+    throw ("Ingen Access-driver fundet paa denne maskine$hint - hverken " +
+           "Microsoft.ACE.OLEDB eller Microsoft.Jet.OLEDB.4.0 (undersoegt: " +
            ($undersoegt -join ", ") + "). Hent 'Microsoft Access Database " +
            "Engine Redistributable' fra Microsoft i samme arkitektur som " +
            "din Office-installation, og proev igen.")
 }
 
-$ps = Find-AccessPowerShell
+$ps = Find-AccessPowerShell $Mdb
 Write-Host "[1/2] Dumper data fra Access ($($ps.navn), $($ps.provider)) ..."
 Write-Host "      ($Mdb)"
 & $ps.sti -NoProfile -ExecutionPolicy Bypass -File (Join-Path $toolsDir "dump_access.ps1") -Mdb $Mdb

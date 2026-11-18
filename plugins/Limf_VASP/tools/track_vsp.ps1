@@ -89,7 +89,9 @@ function Get-FileSnapshot($paths) {
   return $snap
 }
 
-$conn = New-Object System.Data.OleDb.OleDbConnection "Provider=Microsoft.ACE.OLEDB.12.0;Data Source=$Mdb;"
+. (Join-Path $scriptDir "access_provider.ps1")
+$prov = Get-AccessProvider $Mdb
+$conn = New-Object System.Data.OleDb.OleDbConnection "Provider=$prov;Data Source=$Mdb;"
 $conn.Open()
 if (-not $WatchPaths -or $WatchPaths.Count -eq 0) { $WatchPaths = Get-WatchPaths $conn }
 

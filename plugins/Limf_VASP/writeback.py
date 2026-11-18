@@ -21,8 +21,8 @@ class WritebackError(Exception):
     """Rejses ved fejl under tilbageskrivning, med en dansk besked."""
 
 
-def _har_ace(powershell):
-    """True hvis den PowerShell-udgave har Access-driveren registreret."""
+def _providere(powershell):
+    """OLE DB-providerne som den PowerShell-udgave har registreret."""
     kommando = ("(New-Object System.Data.OleDb.OleDbEnumerator).GetElements()"
                 " | Select-Object -ExpandProperty SOURCES_NAME")
     try:
@@ -31,17 +31,21 @@ def _har_ace(powershell):
             capture_output=True, text=True, timeout=60,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except (OSError, subprocess.SubprocessError):
-        return False
-    return "Microsoft.ACE.OLEDB" in (svar.stdout or "")
+        return ""
+    return svar.stdout or ""
 
 
-def _find_powershell():
-    """Find den powershell.exe der har Access-driveren (ACE).
+def _find_powershell(db_path=""):
+    """Find den powershell.exe der har en Access-driver.
 
-    Driveren findes kun i én arkitektur ad gangen, og hvilken afhænger af,
+    ACE findes kun i én arkitektur ad gangen, og hvilken afhænger af,
     om Office er 32- eller 64-bit. Derfor spørges begge udgaver i stedet for
     at antage 32-bit. På 64-bit Windows er SysWOW64 den 32-bit udgave og
     System32 den 64-bit — omvendt af hvad navnene antyder.
+
+    Uden ACE (ingen Office) bruges Windows' indbyggede Jet 4.0, der kun
+    findes i 32-bit og kun kan åbne .mdb. Selve provider-valget sker i
+    scriptet (tools/access_provider.ps1).
     """
     windir = os.environ.get("WINDIR") or os.environ.get("SystemRoot")
     kandidater = []
@@ -56,9 +60,16 @@ def _find_powershell():
     if fundet and fundet not in kandidater:
         kandidater.append(fundet)
 
+    jet = None
+    kan_jet = not db_path.lower().endswith(".accdb")
     for sti in kandidater:
-        if _har_ace(sti):
+        providere = _providere(sti)
+        if "Microsoft.ACE.OLEDB" in providere:
             return sti
+        if jet is None and kan_jet and "Microsoft.Jet.OLEDB.4.0" in providere:
+            jet = sti
+    if jet:
+        return jet
     # Ingen af dem har driveren. Returnér den første, så kaldet fejler med
     # PowerShells egen besked i stedet for at gætte forkert i tavshed.
     return kandidater[0] if kandidater else None
@@ -93,7 +104,7 @@ def write_terrain(source_lgdid, navn, points, db_path=None):
     if not os.path.exists(script):
         raise WritebackError("Mangler skrive-scriptet:\n%s" % script)
 
-    powershell = _find_powershell()
+    powershell = _find_powershell(db_path)
     if powershell is None:
         raise WritebackError("Kunne ikke finde powershell.exe.")
 

@@ -40,7 +40,9 @@ if (-not $existing) {
 $points = Import-Csv $PointsTsv -Delimiter "`t"
 if ($points.Count -eq 0) { Write-Host "ERROR: ingen punkter i $PointsTsv"; exit 1 }
 
-$conn = New-Object System.Data.OleDb.OleDbConnection "Provider=Microsoft.ACE.OLEDB.12.0;Data Source=$Mdb;"
+. (Join-Path $PSScriptRoot "access_provider.ps1")
+try { $prov = Get-AccessProvider $Mdb } catch { Write-Host "ERROR: $($_.Exception.Message)"; exit 1 }
+$conn = New-Object System.Data.OleDb.OleDbConnection "Provider=$prov;Data Source=$Mdb;"
 $conn.Open()
 $tx = $conn.BeginTransaction()
 try {
