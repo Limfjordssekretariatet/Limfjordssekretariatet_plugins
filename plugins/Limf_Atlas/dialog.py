@@ -10,6 +10,7 @@ Workflow:
 """
 
 import os
+from datetime import date
 
 from qgis.PyQt.QtWidgets import (
     QDialog,
@@ -29,10 +30,12 @@ from qgis.PyQt.QtWidgets import (
     QListWidgetItem,
     QCheckBox,
     QDoubleSpinBox,
+    QTabWidget,
 )
 from qgis.PyQt.QtCore import Qt
 from qgis.core import (
     QgsProject,
+    QgsSettings,
     QgsVectorLayer,
 )
 from qgis.gui import QgsColorButton
@@ -40,6 +43,8 @@ from qgis.gui import QgsColorButton
 from . import faelles_ui
 from .atlas_builder import (MIN_AREA_M2, STANDARD_FYLD, STANDARD_KANT,
                             STANDARD_OMRAADE)
+from .oversigtskort import (PAPIR_A3, PAPIR_A4, STANDARD_GRAENSE,
+                            UNIKKE_SYMBOLER, OversigtsValg)
 from .reference_data import STANDARD_PERIODE, perioder
 from .template_spec import PLACEHOLDERS, postnr_par
 
@@ -54,6 +59,37 @@ PROJEKT_EKSTRA_LAG = "ekstra_lag"
 PROJEKT_PERIODE = "reference_periode"
 PROJEKT_AREALFILTER = "arealfilter_til"
 PROJEKT_MIN_AREAL = "arealfilter_m2"
+PROJEKT_OV_TITEL = "oversigt_titel"
+PROJEKT_OV_PROJEKTNAVN = "oversigt_projektnavn"
+PROJEKT_OV_SAGSNUMMER = "oversigt_sagsnummer"
+PROJEKT_OV_PAPIR = "oversigt_papir"
+PROJEKT_OV_LOBENR = "oversigt_lobenr"
+# Det der følger personen frem for projektet, huskes i QGIS' indstillinger.
+BRUGER_INITIALER = "Limf_Atlas/oversigt_initialer"
+BRUGER_LOGO = "Limf_Atlas/oversigt_logo"
+BRUGER_FANE = "Limf_Atlas/fane"
+
+# Fanerne nederst i dialogen.
+FANE_ATLAS = 0
+FANE_OVERSIGT = 1
+
+#: Hvad dialogen skal bygge.
+BYG_ATLAS = "atlas"
+BYG_OVERSIGT = "oversigt"
+
+
+def _bruger_vaerdi(noegle, standard):
+    try:
+        return QgsSettings().value(noegle, standard)
+    except Exception:
+        return standard
+
+
+def _gem_bruger_vaerdi(noegle, vaerdi):
+    try:
+        QgsSettings().setValue(noegle, vaerdi)
+    except Exception:
+        pass
 
 
 class AtlasDialogResult:
@@ -85,6 +121,10 @@ class AtlasDialogResult:
         self.matrikel_kant = STANDARD_KANT
         self.matrikel_fyld = STANDARD_FYLD
         self.omraade_kant = STANDARD_OMRAADE
+        #: BYG_ATLAS eller BYG_OVERSIGT — hvilken fane brugeren byggede fra.
+        self.byg = BYG_ATLAS
+        #: Valgene under fanen «Oversigtskort» (OversigtsValg).
+        self.oversigt = OversigtsValg()
 
 
 class AtlasDialog(QDialog):
@@ -160,24 +200,96 @@ class AtlasDialog(QDialog):
             self.map_form.addRow(label, row)
         layout.addWidget(map_box)
 
-        # --- Gruppering & projektområde -------------------------------
-        grp_box = QGroupBox("3. Gruppering og oversigtskort")
+        # --- Gruppering & kortgrundlag (fælles for atlas og oversigt) -----
+        grp_box = QGroupBox("3. Gruppering og kortgrundlag")
         grp_form = QFormLayout(grp_box)
 
         self.owner_combo = QComboBox()
         grp_form.addRow("Gruppér pr. ejer (felt) *", self.owner_combo)
 
         self.area_combo = QComboBox()
-        grp_form.addRow("Projektområde-lag (oversigt)", self.area_combo)
+        grp_form.addRow("Projektområde-lag", self.area_combo)
 
         self.background_combo = QComboBox()
         grp_form.addRow("Baggrundskort-lag", self.background_combo)
 
+        grp_hint = QLabel(
+            "Alle ejerens matrikler samles: én side pr. ejer i atlasset, én "
+            "farve og skravering pr. ejer på oversigtskortet. Kortene zoomer "
+            "til projektområde-laget. Baggrundskort: «Auto» bruger projektets "
+            "rasterlag, eller vælg et bestemt lag."
+        )
+        grp_hint.setWordWrap(True)
+        grp_hint.setStyleSheet("color: gray;")
+        grp_form.addRow(grp_hint)
+        layout.addWidget(grp_box)
+
+        # --- Ekstra lag ------------------------------------------------
+        lag_boks = QGroupBox("4. Lag i kortet")
+        lag_layout = QVBoxLayout(lag_boks)
+        self.ekstra_liste = QListWidget()
+        self.ekstra_liste.setMaximumHeight(130)
+        lag_layout.addWidget(self.ekstra_liste)
+        lag_hint = QLabel(
+            "Sæt flueben ved de lag, der skal med i kortet — fx "
+            "genslyngning eller andre tiltag. De tegnes med den stil, de "
+            "har i projektet, og kommer med i signaturforklaringen sammen "
+            "med projektgrænse og lodsejere. Baggrundskortet vises ikke i "
+            "forklaringen."
+        )
+        lag_hint.setWordWrap(True)
+        lag_hint.setStyleSheet("color: gray;")
+        lag_layout.addWidget(lag_hint)
+        layout.addWidget(lag_boks)
+
+        # --- Hvad der skal bygges: atlas eller oversigtskort ------------
+        self.faner = QTabWidget()
+        self.faner.addTab(self._atlas_fane(), "Atlas – én side pr. lodsejer")
+        self.faner.addTab(self._oversigt_fane(), "Oversigtskort")
+        layout.addWidget(self.faner)
+
+        hint = QLabel(
+            "* Påkrævet. Mangler et felt i dataen, kan løbenummer og "
+            "postnr./by genereres automatisk (vælg «Generér automatisk»)."
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: gray;")
+        layout.addWidget(hint)
+
+        # --- Knapper ---------------------------------------------------
+        self.buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Byg atlas")
+        self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Annullér")
+        self.buttons.accepted.connect(self._on_accept)
+        self.buttons.rejected.connect(self.reject)
+        layout.addWidget(self.buttons)
+
+        # Åbn på den fane, der blev brugt sidst, med den rigtige knaptekst.
+        self.faner.currentChanged.connect(self._on_fane)
+        fane = _bruger_vaerdi(BRUGER_FANE, 0)
+        try:
+            fane = int(fane)
+        except (TypeError, ValueError):
+            fane = 0
+        self.faner.setCurrentIndex(fane if 0 <= fane < self.faner.count() else 0)
+        self._on_fane(self.faner.currentIndex())
+
+        faelles_ui.anvend_stil(self)
+
+    def _atlas_fane(self):
+        """Fanen med det, der kun gælder atlasset."""
+        fane = QWidget()
+        fane_layout = QVBoxLayout(fane)
+
+        areal_boks = QGroupBox("Arealtabel")
+        areal_form = QFormLayout(areal_boks)
         self.periode_combo = QComboBox()
         for p in perioder():
             self.periode_combo.addItem(p, p)
         self._vaelg_husket_periode()
-        grp_form.addRow("Referencekort (arealtabel)", self.periode_combo)
+        areal_form.addRow("Referencekort", self.periode_combo)
 
         # Arealfilter: til/fra + grænsen. Kræver et projektområde-lag.
         areal_raekke = QWidget()
@@ -198,44 +310,22 @@ class AtlasDialog(QDialog):
         areal_layout.addStretch(1)
         self.arealfilter_box.toggled.connect(self.areal_spin.setEnabled)
         self._vaelg_husket_arealfilter()
-        grp_form.addRow("Arealfilter", areal_raekke)
+        areal_form.addRow("Arealfilter", areal_raekke)
 
-        grp_hint = QLabel(
-            "Atlasset får én side pr. ejer; alle ejerens matrikler vises "
-            "samlet. Oversigtskortet zoomer til projektområde-laget. "
-            "Baggrundskort: «Auto» bruger projektets rasterlag, eller vælg "
-            "et bestemt lag. Arealtabellen (omdrift/græs/natur) udfyldes fra "
+        areal_hint = QLabel(
+            "Arealtabellen (omdrift/græs/andet) udfyldes fra "
             "Landbrugsstyrelsens referencekort for den valgte periode – "
             "årstallene står i tabellens overskrift. Hvert kort hentes én "
             "gang og gemmes lokalt. Arealfilteret er slået fra, så alle "
             "lodsejere får en side; slå det til for at udelade dem der kun "
             "rager en smule ind i projektet (kræver et projektområde-lag)."
         )
-        grp_hint.setWordWrap(True)
-        grp_hint.setStyleSheet("color: gray;")
-        grp_form.addRow(grp_hint)
-        layout.addWidget(grp_box)
+        areal_hint.setWordWrap(True)
+        areal_hint.setStyleSheet("color: gray;")
+        areal_form.addRow(areal_hint)
+        fane_layout.addWidget(areal_boks)
 
-        # --- Ekstra lag ------------------------------------------------
-        lag_boks = QGroupBox("4. Lag i kortet")
-        lag_layout = QVBoxLayout(lag_boks)
-        self.ekstra_liste = QListWidget()
-        self.ekstra_liste.setMaximumHeight(130)
-        lag_layout.addWidget(self.ekstra_liste)
-        lag_hint = QLabel(
-            "Sæt flueben ved de lag, der skal med i atlasset — fx "
-            "genslyngning eller andre tiltag. De tegnes oven på "
-            "baggrundskortet med den stil, de har i projektet, og kommer "
-            "med i signaturforklaringen sammen med projektgrænse og "
-            "matrikler. Baggrundskortet vises ikke i forklaringen."
-        )
-        lag_hint.setWordWrap(True)
-        lag_hint.setStyleSheet("color: gray;")
-        lag_layout.addWidget(lag_hint)
-        layout.addWidget(lag_boks)
-
-        # --- Farver ----------------------------------------------------
-        farve_boks = QGroupBox("5. Farver")
+        farve_boks = QGroupBox("Farver")
         farve_form = QFormLayout(farve_boks)
 
         self.kant_btn = QgsColorButton()
@@ -265,34 +355,115 @@ class AtlasDialog(QDialog):
         farve_hint.setWordWrap(True)
         farve_hint.setStyleSheet("color: gray;")
         farve_form.addRow(farve_hint)
-        layout.addWidget(farve_boks)
+        fane_layout.addWidget(farve_boks)
 
-        # --- Layoutnavn -----------------------------------------------
         name_row = QHBoxLayout()
         name_row.addWidget(QLabel("Navn på layout:"))
         self.name_edit = QLineEdit(self._result.layout_name)
         name_row.addWidget(self.name_edit, 1)
-        layout.addLayout(name_row)
+        fane_layout.addLayout(name_row)
+        fane_layout.addStretch(1)
+        return fane
 
-        hint = QLabel(
-            "* Påkrævet. Mangler et felt i dataen, kan løbenummer og "
-            "postnr./by genereres automatisk (vælg «Generér automatisk»)."
+    def _oversigt_fane(self):
+        """Fanen med oversigtskortet: ét kort med alle lodsejere."""
+        projekt = QgsProject.instance()
+        fane = QWidget()
+        fane_layout = QVBoxLayout(fane)
+
+        intro = QLabel(
+            "Ét kort over hele projektet, hvor hver lodsejer har sin egen "
+            "farve og skravering. Til højre står titel, en "
+            "signaturforklaring med lodsejernes navn og adresse, målestok, "
+            "sagsoplysninger og logo. Op til {} lodsejere får hver sin "
+            "kombination; ved flere gentages de, og løbenumre i fladerne "
+            "anbefales.\n\n"
+            "Symbolerne kan rettes bagefter: tryk «Ret symboler…» i Layout "
+            "Designer, eller højreklik laget «Lodsejere» i lagpanelet → "
+            "Egenskaber → Symbologi. Kortet og forklaringen følger med."
+            .format(UNIKKE_SYMBOLER)
         )
-        hint.setWordWrap(True)
-        hint.setStyleSheet("color: gray;")
-        layout.addWidget(hint)
+        intro.setWordWrap(True)
+        fane_layout.addWidget(intro)
 
-        # --- Knapper ---------------------------------------------------
-        self.buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Byg atlas")
-        self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Annullér")
-        self.buttons.accepted.connect(self._on_accept)
-        self.buttons.rejected.connect(self.reject)
-        layout.addWidget(self.buttons)
+        tekst_boks = QGroupBox("Tekst på kortet")
+        tekst_form = QFormLayout(tekst_boks)
 
-        faelles_ui.anvend_stil(self)
+        def projekt_tekst(noegle, standard=""):
+            vaerdi, _ok = projekt.readEntry(PROJEKT_SCOPE, noegle, standard)
+            return vaerdi or standard
+
+        self.ov_titel = QLineEdit(projekt_tekst(PROJEKT_OV_TITEL, "Lodsejerkort"))
+        tekst_form.addRow("Titel:", self.ov_titel)
+        self.ov_projektnavn = QLineEdit(projekt_tekst(PROJEKT_OV_PROJEKTNAVN))
+        self.ov_projektnavn.setPlaceholderText("fx 100-1 Storarden VLP")
+        tekst_form.addRow("Projektnavn:", self.ov_projektnavn)
+        self.ov_sagsnummer = QLineEdit(projekt_tekst(PROJEKT_OV_SAGSNUMMER))
+        self.ov_sagsnummer.setPlaceholderText("fx SBSYS-sagsnummer")
+        tekst_form.addRow("Sagsnummer:", self.ov_sagsnummer)
+        self.ov_initialer = QLineEdit(str(_bruger_vaerdi(BRUGER_INITIALER, "") or ""))
+        tekst_form.addRow("Initialer:", self.ov_initialer)
+        self.ov_dato = QLineEdit(date.today().strftime("%d.%m.%Y"))
+        tekst_form.addRow("Dato:", self.ov_dato)
+        fane_layout.addWidget(tekst_boks)
+
+        udseende_boks = QGroupBox("Udseende")
+        udseende_form = QFormLayout(udseende_boks)
+
+        self.ov_papir = QComboBox()
+        self.ov_papir.addItem("A3 liggende", PAPIR_A3)
+        self.ov_papir.addItem("A4 liggende", PAPIR_A4)
+        i = self.ov_papir.findData(projekt_tekst(PROJEKT_OV_PAPIR, PAPIR_A3))
+        self.ov_papir.setCurrentIndex(max(i, 0))
+        udseende_form.addRow("Papir:", self.ov_papir)
+
+        self.ov_graense_btn = QgsColorButton()
+        self.ov_graense_btn.setColor(STANDARD_GRAENSE)
+        self.ov_graense_btn.setDefaultColor(STANDARD_GRAENSE)
+        self.ov_graense_btn.setColorDialogTitle("Farve på projektgrænsen")
+        udseende_form.addRow("Projektgrænse:", self.ov_graense_btn)
+
+        lobenr, _ok = projekt.readBoolEntry(
+            PROJEKT_SCOPE, PROJEKT_OV_LOBENR, False)
+        self.ov_lobenr = QCheckBox("Løbenummer i fladerne og i forklaringen")
+        self.ov_lobenr.setChecked(lobenr)
+        self.ov_lobenr.setToolTip(
+            "Samme numre som atlassets sider. Forklaringen sorteres så "
+            "efter nummer i stedet for alfabetisk.")
+        udseende_form.addRow("", self.ov_lobenr)
+
+        logo_raekke = QWidget()
+        logo_layout = QHBoxLayout(logo_raekke)
+        logo_layout.setContentsMargins(0, 0, 0, 0)
+        self.ov_logo = QLineEdit(str(_bruger_vaerdi(BRUGER_LOGO, "") or ""))
+        self.ov_logo.setPlaceholderText("Intet logo")
+        logo_layout.addWidget(self.ov_logo, 1)
+        logo_knap = QPushButton("Gennemse…")
+        logo_knap.clicked.connect(self._on_vaelg_logo)
+        logo_layout.addWidget(logo_knap)
+        udseende_form.addRow("Logo:", logo_raekke)
+        fane_layout.addWidget(udseende_boks)
+
+        name_row = QHBoxLayout()
+        name_row.addWidget(QLabel("Navn på layout:"))
+        self.ov_navn_edit = QLineEdit("Lodsejerkort")
+        name_row.addWidget(self.ov_navn_edit, 1)
+        fane_layout.addLayout(name_row)
+        fane_layout.addStretch(1)
+        return fane
+
+    def _on_vaelg_logo(self):
+        start = self.ov_logo.text().strip()
+        sti, _ = QFileDialog.getOpenFileName(
+            self, "Vælg logo", os.path.dirname(start) if start else "",
+            "Billeder (*.png *.jpg *.jpeg *.svg *.bmp *.gif);;Alle filer (*.*)")
+        if sti:
+            self.ov_logo.setText(sti)
+
+    def _on_fane(self, indeks):
+        oversigt = indeks == FANE_OVERSIGT
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText(
+            "Byg oversigtskort" if oversigt else "Byg atlas")
 
     # -------------------------------------------------------------- layers
     def _populate_project_layers(self):
@@ -663,7 +834,43 @@ class AtlasDialog(QDialog):
             self._result.background_auto = False
             self._result.background_layer = QgsProject.instance().mapLayer(bg)
 
+        self._result.byg = (BYG_OVERSIGT
+                            if self.faner.currentIndex() == FANE_OVERSIGT
+                            else BYG_ATLAS)
+        _gem_bruger_vaerdi(BRUGER_FANE, self.faner.currentIndex())
+        self._result.oversigt = self._oversigt_valg()
+
         self.accept()
+
+    def _oversigt_valg(self):
+        """Fanen «Oversigtskort» som OversigtsValg — og husk valgene.
+
+        Titel, projektnavn, sagsnummer og papir hører til projektet;
+        initialer og logo til personen, så de står klar i næste projekt.
+        """
+        valg = OversigtsValg()
+        valg.titel = self.ov_titel.text().strip() or "Lodsejerkort"
+        valg.projektnavn = self.ov_projektnavn.text().strip()
+        valg.sagsnummer = self.ov_sagsnummer.text().strip()
+        valg.initialer = self.ov_initialer.text().strip()
+        valg.dato = self.ov_dato.text().strip()
+        valg.logo = self.ov_logo.text().strip()
+        valg.papir = self.ov_papir.currentData() or PAPIR_A3
+        valg.vis_lobenr = self.ov_lobenr.isChecked()
+        valg.graense_farve = self.ov_graense_btn.color()
+        valg.layout_navn = self.ov_navn_edit.text().strip() or "Lodsejerkort"
+
+        projekt = QgsProject.instance()
+        projekt.writeEntry(PROJEKT_SCOPE, PROJEKT_OV_TITEL, valg.titel)
+        projekt.writeEntry(PROJEKT_SCOPE, PROJEKT_OV_PROJEKTNAVN,
+                           valg.projektnavn)
+        projekt.writeEntry(PROJEKT_SCOPE, PROJEKT_OV_SAGSNUMMER,
+                           valg.sagsnummer)
+        projekt.writeEntry(PROJEKT_SCOPE, PROJEKT_OV_PAPIR, valg.papir)
+        projekt.writeEntry(PROJEKT_SCOPE, PROJEKT_OV_LOBENR, valg.vis_lobenr)
+        _gem_bruger_vaerdi(BRUGER_INITIALER, valg.initialer)
+        _gem_bruger_vaerdi(BRUGER_LOGO, valg.logo)
+        return valg
 
     def result(self):
         return self._result

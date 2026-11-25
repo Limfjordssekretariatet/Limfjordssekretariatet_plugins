@@ -10,12 +10,13 @@ Tilføjer en knap i QGIS' menu/værktøjslinje. Når brugeren klikker:
 import os
 
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction, QMessageBox
-from qgis.core import QgsProject
+from qgis.PyQt.QtWidgets import QAction, QMessageBox, QPushButton
+from qgis.core import Qgis, QgsProject
 
 from . import faelles_gui
-from .dialog import AtlasDialog
+from .dialog import BYG_OVERSIGT, AtlasDialog
 from .atlas_builder import AtlasBuilder, AtlasBuildError
+from .oversigtskort import OversigtskortBuilder
 from .reference_data import ensure_reference, kategorifelt
 
 PLUGIN_DIR = os.path.dirname(__file__)
@@ -66,6 +67,10 @@ class AtlasMapbook:
 
         result = dialog.result()  # AtlasDialogResult
         layer = result.layer
+
+        if result.byg == BYG_OVERSIGT:
+            self._byg_oversigt(result)
+            return
 
         # Referencekortet for den valgte periode downloades fra release ved
         # første brug (caches lokalt, ét kort pr. periode).
@@ -132,3 +137,74 @@ class AtlasMapbook:
                 result.layout_name, page_count
             ),
         )
+
+    def _byg_oversigt(self, result):
+        """Byg oversigtskortet (fanen «Oversigtskort») og åbn det.
+
+        Referencekortet hentes ikke — det bruges kun til atlassets
+        arealtabel.
+        """
+        try:
+            builder = OversigtskortBuilder(
+                project=QgsProject.instance(),
+                template_path=TEMPLATE_PATH,
+                iface=self.iface,
+            )
+            layout = builder.build(
+                parcel_layer=result.layer,
+                field_mapping=result.field_mapping,
+                generate_lobenr=result.generate_lobenr,
+                generate_postnr=result.generate_postnr,
+                owner_field=result.owner_field,
+                valg=result.oversigt,
+                project_area_layer=result.project_area_layer,
+                background_auto=result.background_auto,
+                background_layer=result.background_layer,
+                extra_layers=result.extra_layers,
+            )
+        except AtlasBuildError as exc:
+            QMessageBox.critical(
+                self.iface.mainWindow(), "Oversigtskort", str(exc))
+            return
+        except Exception as exc:  # pragma: no cover - sikkerhedsnet
+            QMessageBox.critical(
+                self.iface.mainWindow(),
+                "Oversigtskort",
+                "Uventet fejl under opbygning af oversigtskortet:\n{}".format(
+                    exc),
+            )
+            return
+
+        designer = self.iface.openLayoutDesigner(layout)
+        lag = getattr(builder, "ejere_lag", None)
+        tekst = ("Oversigtskortet '{}' er klar. Er du utilfreds med en "
+                 "lodsejers farve eller skravering, kan du rette den — "
+                 "kortet og forklaringen følger med.".format(layout.name()))
+        self.iface.messageBar().pushSuccess("Oversigtskort", tekst)
+        if designer is None or lag is None:
+            return
+        try:
+            besked = designer.messageBar().createMessage("Oversigtskort", tekst)
+            knap = QPushButton("Ret symboler…")
+            knap.clicked.connect(
+                lambda _=False, l=lag, w=designer.window():
+                self._ret_symboler(l, w))
+            besked.layout().addWidget(knap)
+            designer.messageBar().pushWidget(besked, Qgis.MessageLevel.Info, 0)
+        except Exception:  # pragma: no cover - beskeden er en bekvemmelighed
+            pass
+
+    def _ret_symboler(self, lag, forael=None):
+        """Åbn QGIS' symbologi for lodsejerlaget.
+
+        Laget ligger i lagpanelet (gruppen med layoutets navn), så det kan
+        også rettes derfra senere: højreklik → Egenskaber → Symbologi. Dobbeltklik
+        på en lodsejer i listen for at skifte farve eller skravering.
+        """
+        if QgsProject.instance().mapLayer(lag.id()) is None:
+            QMessageBox.information(
+                forael or self.iface.mainWindow(), "Oversigtskort",
+                "Lodsejerlaget findes ikke længere i projektet. Byg "
+                "oversigtskortet igen.")
+            return
+        self.iface.showLayerProperties(lag, "mOptsPage_Symbology")
